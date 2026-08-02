@@ -225,6 +225,15 @@
 <body>
 
     <div id="init-screen">
+        <div style="font-size:20px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px;">🎨 Pixel Art Hub</div>
+
+        <div id="hubContinueSection" style="display:none; width:260px; flex-direction:column; gap:8px; margin: 6px 0 4px;">
+            <div class="picker-label">Current Work</div>
+            <button class="btn-start" style="width:100%; height:44px; background:#2a2a2a;" onclick="continueEditing()">▶️ Continue Editing</button>
+            <button class="btn-start" style="width:100%; height:44px; background:#2a2a2a;" onclick="saveProject()">💾 Save Current Project</button>
+        </div>
+
+        <div class="picker-label" style="margin-top:6px;">New Project</div>
         <div id="profileRow">
             <button class="profile-btn active" data-profile="standard" onclick="selectProfile('standard')">Standard</button>
             <button class="profile-btn" data-profile="portrait" onclick="selectProfile('portrait')">Portrait</button>
@@ -237,6 +246,10 @@
         <div class="digit-col" id="h-group"></div>
         <button class="btn-start" onclick="initApp()">Create Canvas</button>
         <button class="btn-start" id="startFreshBtn" style="background:#631e1e; margin-top:8px;" onclick="handleStartFreshClick()">🆕 Start Fresh</button>
+
+        <div class="picker-label" style="margin-top:14px;">Open Project</div>
+        <button class="btn-start" style="width:260px; background:#2a2a2a;" onclick="projectInput.click()">📂 Load Project File</button>
+        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">No persistent storage yet -- projects only exist as files you save/load yourself.</div>
     </div>
 
     <div id="main-app">
@@ -246,6 +259,7 @@
                     <div id="pixel-cursor"></div>
                     <canvas id="floatBuffer" class="layer-canvas"></canvas>
                     <canvas id="shapePreview" class="layer-canvas" style="z-index:160; display:none; opacity:0.85;"></canvas>
+                    <div id="gridOverlay" style="position:absolute; top:0; left:0; pointer-events:none; z-index:170; display:none;"></div>
                     <div id="selectionBox"></div>
                     <div id="canvas-safety-overlay" onclick="cancelClear()"></div>
                 </div>
@@ -259,6 +273,9 @@
 
         <div class="side-drawer left" id="toolsDrawer">
             <div class="panel-title">Tools</div>
+            <div class="row">
+                <button class="btn" id="gridToggleBtn" onclick="uiAction(toggleGridLines)">▦ GRID LINES: OFF</button>
+            </div>
             <div class="row">
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 DROPPER</button>
             </div>
@@ -428,7 +445,7 @@
             <button class="fbtn" id="tab-colors" onclick="togglePanel('colors')">🎨 COLOUR</button>
             <button class="fbtn" id="tab-layers" onclick="togglePanel('layers')">📚 LAYERS</button>
             <button class="fbtn" id="tab-file" onclick="togglePanel('file')">📁 FILE</button>
-            <button class="fbtn" id="tab-debug" onclick="toggleDrawer('debug')">🐛 JS LOGS</button>
+            <button class="fbtn" id="tab-debug" onclick="toggleDrawer('debug')">⚙️ DEBUG</button>
         </div>
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
@@ -497,7 +514,7 @@ document.addEventListener('touchstart', (e) => {
     const t = e.touches[0];
     if (!t) return;
     const hitEl = document.elementFromPoint(t.clientX, t.clientY);
-    pushDebugLog('log', ['TAP at (' + Math.round(t.clientX) + ',' + Math.round(t.clientY) + ') hit: ' + describeEl(hitEl) + ' | event target: ' + describeEl(e.target)], 'touch');
+    pushDebugLog('log', ['TAP (fingers=' + e.touches.length + ') at (' + Math.round(t.clientX) + ',' + Math.round(t.clientY) + ') hit: ' + describeEl(hitEl) + ' | event target: ' + describeEl(e.target)], 'touch');
 }, true);
 document.addEventListener('click', (e) => {
     if (!logTouchEnabled) return;
@@ -611,6 +628,13 @@ let eventsInitialized = false;
 /* ============================================================
    SPLASH SCREEN PROFILES
    ============================================================ */
+// Shows/hides the hub's "Current Work" section (Continue/Save) depending
+// on whether there's anything in memory yet to continue or save.
+function updateHubState() {
+    const section = document.getElementById('hubContinueSection');
+    if (section) section.style.display = frames.length > 0 ? 'flex' : 'none';
+}
+
 function selectProfile(p) {
     selectedProfile = p;
     document.querySelectorAll('.profile-btn').forEach(b => b.classList.toggle('active', b.dataset.profile === p));
@@ -987,12 +1011,41 @@ function readDigitGroup(id) {
 }
 
 // Runs once, when "Create Canvas" is pressed: sets up the first layer/frame, wires up all the one-time event listeners, and swaps from the splash screen to the main app.
-function initApp() {
-    const newW = selectedProfile === 'portrait' ? 40 : readDigitGroup('w-group');
-    const newH = selectedProfile === 'portrait' ? 40 : readDigitGroup('h-group');
+// Shared by initApp()/continueEditing()/loadProjectFile(): reveals the
+// main app and wires up its one-time event listeners. Safe to call
+// multiple times -- getElementById and the eventsInitialized guard make
+// it idempotent.
+function revealMainApp() {
     viewport = document.getElementById('viewport');
     container = document.getElementById('container');
     pixelCursor = document.getElementById('pixel-cursor');
+    document.getElementById('init-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+    if (!eventsInitialized) {
+        setupDrawingEvents();
+        setupPaletteDragEvents();
+        setupKeyboardShortcuts();
+        eventsInitialized = true;
+    }
+    updateCanvasWrapPadding();
+}
+
+// Resumes work left over from Main Menu exactly as it was, ignoring
+// whatever the splash screen's size pickers currently show -- unlike
+// Create Canvas, this never resizes anything.
+function continueEditing() {
+    if (frames.length === 0) return;
+    traceLog('continueEditing(): resuming without touching size');
+    revealMainApp();
+    document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
+    layoutAll();
+    renderLayersPanel();
+    renderFramesPanel();
+}
+
+function initApp() {
+    const newW = selectedProfile === 'portrait' ? 40 : readDigitGroup('w-group');
+    const newH = selectedProfile === 'portrait' ? 40 : readDigitGroup('h-group');
 
     // Preserve existing work only when the profile is unchanged, or when
     // easing from Portrait down to Standard (that's just lifting the size
@@ -1010,9 +1063,7 @@ function initApp() {
         gridW = newW; gridH = newH;
         frames.forEach(f => f.layers.forEach(l => { if (l instanceof PixelLayer) l.resizeToCanvas(newW, newH); }));
         document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
-        document.getElementById('init-screen').style.display = 'none';
-        document.getElementById('main-app').style.display = 'block';
-        updateCanvasWrapPadding();
+        revealMainApp();
         layoutAll();
         renderLayersPanel();
         renderFramesPanel();
@@ -1027,6 +1078,7 @@ function initApp() {
     }
 
     gridW = newW; gridH = newH;
+    revealMainApp(); // needed now so `container` is assigned before we append the base layer
     const base = new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers }];
@@ -1035,20 +1087,8 @@ function initApp() {
     setActiveLayer(0);
 
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
-
-    document.getElementById('init-screen').style.display = 'none';
-    document.getElementById('main-app').style.display = 'block';
     lastEnteredProfile = selectedProfile;
-
-    updateCanvasWrapPadding();
     layoutAll();
-    if (!eventsInitialized) {
-        setupDrawingEvents();
-        setupPaletteDragEvents();
-        setupKeyboardShortcuts();
-        eventsInitialized = true;
-    }
-    setupLayerFileInputs();
 }
 
 // Reads the width/height fields in the View panel and resizes the canvas + every pixel layer to match (anchored top-left, existing pixels preserved where they still fit).
@@ -1067,6 +1107,7 @@ function applyResize() {
    LAYOUT
    ============================================================ */
 let canvasRotation = 0; // degrees, purely a view transform -- grid data is unaffected
+let showGridLines = false;
 
 // Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/canvasRotation.
 function layoutAll() {
@@ -1083,10 +1124,11 @@ function layoutAll() {
     updateRotationLabel();
     updateSelectionBox();
     updateRotationFab();
-    // canvasWrap has generous padding so the canvas can be panned to a
-    // corner even when zoomed out small (see #canvasWrap CSS) -- that
-    // means the canvas is no longer reliably centered by the browser on
-    // its own, so we re-center explicitly here. The one caller that pans
+    updateGridOverlay();
+    // canvasWrap has generous padding (set in JS, see updateCanvasWrapPadding)
+    // so the canvas can be panned to a corner even when zoomed out small --
+    // that means the canvas is no longer reliably centered by the browser
+    // on its own, so we re-center explicitly here. The one caller that pans
     // deliberately (the two-finger gesture) sets scrollLeft/scrollTop of
     // its own right after calling layoutAll(), in the same synchronous
     // block, so this never visibly overrides an active pan.
@@ -1097,6 +1139,17 @@ function layoutAll() {
 // screen. Safe to call any time -- the canvas is always exactly centered
 // within canvasWrap's total (padded) size, so this is just "scroll to
 // the middle of the scrollable range" regardless of zoom level.
+// Minimum canvas visible on-screen when panned all the way to an edge --
+// enough to still see and grab it, not so much it can't tuck into a corner.
+const MIN_CANVAS_PEEK = 15;
+// Keeps a scroll value within [0, maxScroll] but pulled in by
+// MIN_CANVAS_PEEK on each end, so panning to an extreme leaves a sliver
+// of canvas visible instead of letting it scroll completely out of view.
+function clampScrollKeepingPeek(value, maxScroll) {
+    const peek = Math.min(MIN_CANVAS_PEEK, maxScroll / 2);
+    return Math.max(peek, Math.min(maxScroll - peek, value));
+}
+
 function centerCanvasInViewport() {
     if (!viewport) return;
     viewport.scrollLeft = (viewport.scrollWidth - viewport.clientWidth) / 2;
@@ -1114,15 +1167,22 @@ function getViewportSize() {
     return { w: window.innerWidth, h: window.innerHeight };
 }
 
-// Sizes canvasWrap's padding to exactly half the real visible screen on
-// each side (matching the old 50vh/50vw intent, just measured correctly),
-// giving enough room to pan the canvas to any corner -- including having
-// most of it scroll past the edge -- at any zoom level.
+// Sizes canvasWrap's padding to a full viewport dimension on each side
+// (see the comment inside for why half a viewport wasn't enough), giving
+// real room to pan the canvas to any corner -- including scrolling it
+// completely past an edge -- at any zoom level.
 function updateCanvasWrapPadding() {
     const wrap = document.getElementById('canvasWrap');
     if (!wrap) return;
     const { w, h } = getViewportSize();
-    wrap.style.padding = Math.round(h / 2) + 'px ' + Math.round(w / 2) + 'px';
+    // A full viewport dimension of padding per side (not half) is what's
+    // actually needed here: the scrollable range works out to roughly
+    // (padding*2 + canvas size - viewport size), so half-viewport padding
+    // only yields a scroll range on the order of the canvas's own size --
+    // nowhere near enough to drag a small canvas out to an edge. A full
+    // viewport per side guarantees the canvas can be pushed completely
+    // past any edge, however small it is.
+    wrap.style.padding = Math.round(h) + 'px ' + Math.round(w) + 'px';
     centerCanvasInViewport();
 }
 
@@ -1144,6 +1204,29 @@ function updateRotationFab() {
 
 // Sets the canvas view rotation back to 0 degrees.
 function resetCanvasRotation() { canvasRotation = 0; layoutAll(); }
+
+// Redraws the pixel-grid overlay (a 1px line between each grid cell) to
+// match the current size/zoom. Hidden below 4x zoom, since at low zoom
+// the lines would be denser than the pixels themselves and just look
+// like a solid haze rather than a useful grid.
+function updateGridOverlay() {
+    const el = document.getElementById('gridOverlay');
+    if (!el) return;
+    if (!showGridLines || scale < 4) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.style.width = (gridW * scale) + 'px';
+    el.style.height = (gridH * scale) + 'px';
+    el.style.backgroundImage =
+        'linear-gradient(to right, rgba(128,128,128,0.5) 1px, transparent 1px), ' +
+        'linear-gradient(to bottom, rgba(128,128,128,0.5) 1px, transparent 1px)';
+    el.style.backgroundSize = scale + 'px ' + scale + 'px';
+}
+function toggleGridLines() {
+    showGridLines = !showGridLines;
+    const btn = document.getElementById('gridToggleBtn');
+    if (btn) { btn.innerText = '\u25A6 GRID LINES: ' + (showGridLines ? 'ON' : 'OFF'); btn.classList.toggle('active', showGridLines); }
+    updateGridOverlay();
+}
 // Updates the degree readout in the View panel to match canvasRotation.
 function updateRotationLabel() {
     const el = document.getElementById('rotationLabel');
@@ -2414,6 +2497,8 @@ function setupDrawingEvents() {
         g.pendingTouch = null;
         isDrawing = false;
         hideCursor();
+        const fab = document.getElementById('rotationResetFab');
+        if (fab) fab.style.pointerEvents = 'none';
         const [t0, t1] = touches;
         const m = mid2(t0, t1);
         if (transformActive()) {
@@ -2457,8 +2542,10 @@ function setupDrawingEvents() {
         for (const t of snapTargets) { if (Math.abs(newRotation - t) < 3) { newRotation = t; break; } }
         canvasRotation = newRotation;
         layoutAll();
-        viewport.scrollLeft = g.panStart.sl - (m.x - g.panStart.x);
-        viewport.scrollTop = g.panStart.st - (m.y - g.panStart.y);
+        const maxL = viewport.scrollWidth - viewport.clientWidth;
+        const maxT = viewport.scrollHeight - viewport.clientHeight;
+        viewport.scrollLeft = clampScrollKeepingPeek(g.panStart.sl - (m.x - g.panStart.x), maxL);
+        viewport.scrollTop = clampScrollKeepingPeek(g.panStart.st - (m.y - g.panStart.y), maxT);
     };
 
     const onStart = (e) => {
@@ -2542,6 +2629,8 @@ function setupDrawingEvents() {
         }
         g.xform = null;
         g.panStart = null;
+        const fab = document.getElementById('rotationResetFab');
+        if (fab) fab.style.pointerEvents = '';
         if (g.pendingTouch) commitPendingTouch();
 
         if (isDrawing) {
@@ -2676,12 +2765,11 @@ function goToMainMenu() {
         if (selBox) selBox.style.display = 'none';
         document.getElementById('main-app').style.display = 'none';
         document.getElementById('init-screen').style.display = 'flex';
-        // Note: frames/layers/undo history are deliberately left intact --
-        // Main Menu just switches screens. Pressing "Create Canvas" again
-        // resumes this same work (resized in place) rather than starting
-        // over. There is currently no separate "discard and start fresh"
-        // action.
-        traceLog('goToMainMenu() completed, back at splash screen (work preserved)');
+        updateHubState();
+        // frames/layers/undo history are deliberately left intact -- Main
+        // Menu just switches screens. The hub's Continue/Save buttons pick
+        // up this same work; Start Fresh discards it explicitly instead.
+        traceLog('goToMainMenu() completed, back at the hub (work preserved)');
     } catch (err) {
         console.error('goToMainMenu failed:', err && err.message);
         alert('Something went wrong returning to the main menu -- check the Debug tab for details.');
@@ -2740,6 +2828,7 @@ function loadProjectFile(file) {
         let data;
         try { data = JSON.parse(reader.result); } catch (e) { alert('Invalid project file.'); return; }
 
+        revealMainApp();
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         gridW = data.gridW; gridH = data.gridH;
         scale = data.scale || scale;
@@ -2760,6 +2849,7 @@ function loadProjectFile(file) {
             layers.forEach(l => container.appendChild(l.el));
             reindexDom();
             setActiveLayer(Math.min(data.activeLayerIndex || 0, layers.length - 1));
+            lastEnteredProfile = selectedProfile;
             layoutAll();
             renderLayersPanel();
             renderFramesPanel();
@@ -2815,6 +2905,8 @@ if (window.visualViewport) {
 document.getElementById('colorPicker').onchange = (e) => { uiAction(() => createSwatch(e.target.value.toUpperCase())); };
 setupPickers();
 selectProfile('standard');
+setupLayerFileInputs();
+updateHubState();
 ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF"].forEach(c => createSwatch(c));
 handleToolBtn('brush');
 </script>
