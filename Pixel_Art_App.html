@@ -46,7 +46,7 @@
             position: fixed; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch;
             display: flex; background: #121212; touch-action: none;
         }
-        #canvasWrap { margin: auto; padding: 40px; box-sizing: border-box; }
+        #canvasWrap { margin: auto; box-sizing: border-box; }
 
         .canvas-container {
             position: relative; border: 2px solid #333; flex-shrink: 0;
@@ -100,6 +100,38 @@
             background: rgba(0,0,0,0.01);
         }
         #panelBackdrop.open { display: block; }
+
+        /* Edge-swipe zones for Tools (left) / Debug+Log (right) drawers.
+           Invisible, sit above the canvas so a swipe starting right at the
+           screen edge is caught before the canvas gets it. */
+        #leftEdgeZone, #rightEdgeZone { position: fixed; top: 0; bottom: 0; width: 20px; z-index: 940; }
+        #leftEdgeZone { left: 0; }
+        #rightEdgeZone { right: 0; }
+
+        #drawerBackdrop {
+            position: fixed; inset: 0; z-index: 945; display: none;
+            background: rgba(0,0,0,0.35);
+        }
+        #drawerBackdrop.open { display: block; }
+
+        .side-drawer {
+            position: fixed; top: 0; bottom: 0; width: 280px; max-width: 84vw;
+            background: #1c1c1c; z-index: 950; overflow-y: auto;
+            padding: 10px; padding-top: max(16px, env(safe-area-inset-top));
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
+            transition: transform 0.22s ease-out;
+        }
+        .side-drawer.left { left: 0; border-right: 1px solid #333; transform: translateX(-100%); }
+        .side-drawer.right { right: 0; border-left: 1px solid #333; transform: translateX(100%); }
+        .side-drawer.open { transform: translateX(0); }
+
+        #rotationResetFab {
+            position: fixed; z-index: 870; display: none;
+            background: #1c1c1c; border: 1px solid #444; color: #fff;
+            font-size: 11px; font-weight: bold; border-radius: 20px;
+            padding: 8px 14px; white-space: nowrap;
+        }
 
         .floating-panel {
             position: fixed; left: 8px; right: 8px; bottom: 60px; margin: 0 auto;
@@ -186,6 +218,8 @@
         }
         .log-error { color: #ff6b6b !important; }
         .log-warn { color: #ffd166 !important; }
+        .log-touch { color: #6ab7ff; }
+        .log-trace { color: #b98aff; }
     </style>
 </head>
 <body>
@@ -202,6 +236,7 @@
         <div class="picker-label">Height</div>
         <div class="digit-col" id="h-group"></div>
         <button class="btn-start" onclick="initApp()">Create Canvas</button>
+        <button class="btn-start" id="startFreshBtn" style="background:#631e1e; margin-top:8px;" onclick="handleStartFreshClick()">🆕 Start Fresh</button>
     </div>
 
     <div id="main-app">
@@ -210,6 +245,7 @@
                 <div class="canvas-container" id="container">
                     <div id="pixel-cursor"></div>
                     <canvas id="floatBuffer" class="layer-canvas"></canvas>
+                    <canvas id="shapePreview" class="layer-canvas" style="z-index:160; display:none; opacity:0.85;"></canvas>
                     <div id="selectionBox"></div>
                     <div id="canvas-safety-overlay" onclick="cancelClear()"></div>
                 </div>
@@ -217,25 +253,56 @@
         </div>
 
         <div id="panelBackdrop"></div>
+        <div id="drawerBackdrop"></div>
+        <div id="leftEdgeZone"></div>
+        <div id="rightEdgeZone"></div>
 
-        <div class="floating-panel" id="panel-tools">
+        <div class="side-drawer left" id="toolsDrawer">
             <div class="panel-title">Tools</div>
             <div class="row">
-                <button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH</button>
-                <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 DROPPER</button>
             </div>
-            <div class="row">
-                <button class="btn tool-btn" data-tool="select" onclick="uiAction(() => handleToolBtn('select'))">🔲 SELECT</button>
-                <button class="btn tool-btn" data-tool="line" onclick="uiAction(() => handleToolBtn('line'))">📏 LINE</button>
-                <button class="btn tool-btn" data-tool="rect" onclick="uiAction(() => handleToolBtn('rect'))">⬛ RECT</button>
-                <button class="btn tool-btn" data-tool="ellipse" onclick="uiAction(() => handleToolBtn('ellipse'))">⭕ ELLIPSE</button>
+            <div id="pixelToolsSection">
+                <div class="row">
+                    <button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH</button>
+                    <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
+                </div>
+                <div class="row">
+                    <button class="btn tool-btn" data-tool="select" onclick="uiAction(() => handleToolBtn('select'))">🔲 SELECT</button>
+                    <button class="btn tool-btn" data-tool="line" onclick="uiAction(() => handleToolBtn('line'))">📏 LINE</button>
+                    <button class="btn tool-btn" data-tool="rect" onclick="uiAction(() => handleToolBtn('rect'))">⬛ RECT</button>
+                    <button class="btn tool-btn" data-tool="ellipse" onclick="uiAction(() => handleToolBtn('ellipse'))">⭕ ELLIPSE</button>
+                </div>
+                <div class="panel-subtitle">Selection</div>
+                <div class="row">
+                    <button class="btn" id="moveSelBtn" onclick="uiAction(toggleMoveSelection)">✋ MOVE SEL</button>
+                    <button class="btn" onclick="uiAction(deleteSelection)">🧽 DELETE SEL</button>
+                    <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
+                </div>
             </div>
-            <div class="panel-subtitle">Selection</div>
-            <div class="row">
-                <button class="btn" id="moveSelBtn" onclick="uiAction(toggleMoveSelection)">✋ MOVE SEL</button>
-                <button class="btn" onclick="uiAction(deleteSelection)">🧽 DELETE SEL</button>
-                <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
+            <div id="vectorToolsSection">
+                <div class="panel-subtitle">Vector (freehand-drag draws + smooths; a quick tap-in-place instead places single points to build up manually)</div>
+                <div class="row">
+                    <button class="btn tool-btn" data-tool="vpen" onclick="uiAction(() => handleToolBtn('vpen'))">🖊️ PEN (open)</button>
+                    <button class="btn tool-btn" data-tool="vshape" onclick="uiAction(() => handleToolBtn('vshape'))">🔷 SHAPE (closed)</button>
+                    <button class="btn tool-btn" data-tool="vedit" onclick="uiAction(() => handleToolBtn('vedit'))">🖐️ EDIT PTS</button>
+                </div>
+                <div class="row">
+                    <button class="btn" onclick="uiAction(finishVectorDraft)">✅ FINISH</button>
+                    <button class="btn" onclick="uiAction(undoLastDraftPoint)">↩️ UNDO POINT</button>
+                    <button class="btn" onclick="uiAction(cancelVectorDraft)">✖️ CANCEL</button>
+                </div>
+                <div class="row">
+                    <button class="btn" onclick="uiAction(extendLastSpline)">➕ EXTEND LAST SPLINE</button>
+                </div>
+                <div id="vectorDraftStatus" style="font-size:10px; color:#888; text-align:center;">No draft in progress</div>
+            </div>
+            <div id="flipToolsSection">
+                <div class="panel-subtitle">Flip Active Layer</div>
+                <div class="row">
+                    <button class="btn" onclick="uiAction(flipActiveLayerH)">↔️ FLIP HORIZONTAL</button>
+                    <button class="btn" onclick="uiAction(flipActiveLayerV)">↕️ FLIP VERTICAL</button>
+                </div>
             </div>
             <div class="panel-subtitle">History</div>
             <div class="row">
@@ -259,6 +326,13 @@
             </div>
             <div class="row">
                 <button class="btn" onclick="uiAction(applyResize)">📐 APPLY SIZE</button>
+            </div>
+            <div class="panel-subtitle">Canvas Rotation (2-finger twist)</div>
+            <div class="row">
+                <div id="rotationLabel" style="flex:1; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; color:#ccc;">0&deg;</div>
+            </div>
+            <div class="row">
+                <button class="btn" onclick="uiAction(resetCanvasRotation)">↩️ RESET ROTATION</button>
             </div>
         </div>
 
@@ -300,7 +374,10 @@
             <div id="layersList"></div>
             <div class="row">
                 <button class="btn" onclick="uiAction(addPixelLayer)">➕ PIXEL LAYER</button>
-                <button class="btn" onclick="uiAction(() => refInput.click())">🌄 REFERENCE</button>
+                <button class="btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })">🌄 REFERENCE</button>
+            </div>
+            <div class="row">
+                <button class="btn" onclick="uiAction(addVectorLayer)">➕ 🖊️ VECTOR</button>
             </div>
             <input type="file" id="refInput" accept="image/*" style="display:none">
         </div>
@@ -320,67 +397,143 @@
             </div>
             <input type="file" id="projectInput" accept="application/json,.json" style="display:none">
             <div class="row">
-                <button class="btn" onclick="uiAction(goToMainMenu)">🏠 MAIN MENU</button>
+                <button class="btn btn-clear" id="mainMenuBtn" onclick="handleMainMenuClick()">🏠 MAIN MENU</button>
             </div>
         </div>
 
-        <div class="floating-panel" id="panel-debug">
-            <div class="panel-title">Debug</div>
-            <div id="debugStats"></div>
-            <div class="row">
-                <button class="btn" onclick="uiAction(refreshDebugStats)">\ud83d\udd04 REFRESH STATS</button>
-            </div>
-        </div>
-
-        <div class="floating-panel" id="panel-log">
-            <div class="panel-title">Log</div>
-            <div class="row">
-                <button class="btn" id="exportLogBtn" onclick="uiAction(exportLogToClipboard)">\ud83d\udccb EXPORT LOG</button>
+        <div class="side-drawer right" id="debugDrawer">
+            <div id="debugDrawerControls" style="position:sticky; top:0; z-index:2; background:#1c1c1c; display:flex; flex-direction:column; gap:8px; padding-bottom:4px;">
+                <div class="panel-title">JS Logs</div>
+                <div id="debugStats"></div>
+                <div class="row">
+                    <button class="btn" onclick="uiAction(refreshDebugStats)">🔄 REFRESH STATS</button>
+                </div>
+                <div class="panel-subtitle">Log Capture</div>
+                <div class="row">
+                    <button class="btn" id="logToggle-touch" onclick="uiAction(() => setLogToggle('touch', !logTouchEnabled))">👆 TOUCH</button>
+                    <button class="btn" id="logToggle-js" onclick="uiAction(() => setLogToggle('js', !logJsEnabled))">📜 LOGS</button>
+                    <button class="btn" id="logToggle-trace" onclick="uiAction(() => setLogToggle('trace', !logTraceEnabled))">🔍 TRACE</button>
+                </div>
+                <div class="row">
+                    <button class="btn" id="exportLogBtn" onclick="uiAction(exportLogToClipboard)">📋 COPY LOG</button>
+                    <button class="btn" onclick="uiAction(clearDebugLog)">🧹 CLEAR LOG</button>
+                </div>
             </div>
             <div id="debugLog"></div>
         </div>
 
         <div id="floatingBar">
-            <button class="fbtn" id="tab-tools" onclick="togglePanel('tools')">🛠️ TOOLS</button>
+            <button class="fbtn" id="tab-tools" onclick="toggleDrawer('tools')">🛠️ TOOLS</button>
             <button class="fbtn" id="tab-view" onclick="togglePanel('view')">🔍 VIEW</button>
             <button class="fbtn" id="tab-colors" onclick="togglePanel('colors')">🎨 COLOUR</button>
             <button class="fbtn" id="tab-layers" onclick="togglePanel('layers')">📚 LAYERS</button>
             <button class="fbtn" id="tab-file" onclick="togglePanel('file')">📁 FILE</button>
-            <button class="fbtn" id="tab-debug" onclick="togglePanel('debug')">🐞 DEBUG</button>
-            <button class="fbtn" id="tab-log" onclick="togglePanel('log')">📜 LOG</button>
+            <button class="fbtn" id="tab-debug" onclick="toggleDrawer('debug')">🐛 JS LOGS</button>
         </div>
+
+        <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
     </div>
+
 
 <script>
 /* ============================================================
    DEBUG CAPTURE (installed first, so it catches everything below)
    ============================================================ */
 const debugLogEntries = [];
-function pushDebugLog(kind, args) {
+// Which log categories are currently being captured. All three default
+// off -- they're diagnostic tools you turn on when actually chasing
+// something, not something you leave running.
+//  - touch: every tap/click anywhere on screen (very chatty)
+//  - js:    console.warn/error + uncaught exceptions (real problems)
+//  - trace: UI action tracing sprinkled through button handlers, e.g.
+//           "togglePanel(layers) called" -- useful for "why didn't my
+//           tap do anything" bugs, separate from genuine JS errors
+let logTouchEnabled = false;
+let logJsEnabled = false;
+let logTraceEnabled = false;
+
+// Adds one entry to the in-memory debug log and re-renders the Log panel.
+// category is one of 'touch' | 'js' | 'trace', used purely for colour-
+// coding in the in-app Log drawer (kind still governs error/warn colour).
+function pushDebugLog(kind, args, category) {
     const msg = args.map(a => { try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch (e) { return String(a); } }).join(' ');
-    debugLogEntries.push({ kind, msg, t: new Date().toISOString().substr(11, 8) });
+    debugLogEntries.push({ kind, category: category || 'js', msg, t: new Date().toISOString().substr(11, 8) });
     if (debugLogEntries.length > 300) debugLogEntries.shift();
     renderDebugLog();
 }
-['log', 'warn', 'error'].forEach(kind => {
-    const orig = console[kind] ? console[kind].bind(console) : () => {};
-    console[kind] = (...args) => { orig(...args); pushDebugLog(kind, args); };
-});
-window.addEventListener('error', (e) => pushDebugLog('error', [(e.message || 'error') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')]));
-window.addEventListener('unhandledrejection', (e) => pushDebugLog('error', ['unhandled promise: ' + (e.reason && e.reason.message || e.reason)]));
+// UI action tracing (button presses, function entry/exit) -- a separate
+// category from real console.log/warn/error. Always reaches the real
+// browser/devtools console via console.debug regardless of the in-app
+// TRACE toggle, since a real console doesn't have the same "clutters a
+// tiny screen" problem the in-app one does -- only the in-app copy is
+// gated by logTraceEnabled.
+function traceLog(...args) {
+    try {
+        const fn = console.debug || console.log;
+        if (fn) fn.call(console, '[trace]', ...args);
+    } catch (e) { /* some sandboxed console implementations don't support every method -- never let logging itself break the app */ }
+    if (logTraceEnabled) pushDebugLog('log', args, 'trace');
+}
 
+['warn', 'error'].forEach(kind => {
+    const orig = console[kind] ? console[kind].bind(console) : () => {};
+    console[kind] = (...args) => { orig(...args); if (logJsEnabled) pushDebugLog(kind, args, 'js'); };
+});
+window.addEventListener('error', (e) => { if (logJsEnabled) pushDebugLog('error', [(e.message || 'error') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')], 'js'); });
+window.addEventListener('unhandledrejection', (e) => { if (logJsEnabled) pushDebugLog('error', ['unhandled promise: ' + (e.reason && e.reason.message || e.reason)], 'js'); });
+
+// Turns a DOM element into a short readable string (TAG#id.class) for logging.
+function describeEl(el) {
+    if (!el) return 'null';
+    const id = el.id ? '#' + el.id : '';
+    const cls = el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : '';
+    return el.tagName + id + cls;
+}
+// Capture phase runs before any other handler and can't be blocked by
+// stopPropagation() downstream, so this always sees the real target.
+// Gated behind logTouchEnabled since this fires on every single tap.
+document.addEventListener('touchstart', (e) => {
+    if (!logTouchEnabled) return;
+    const t = e.touches[0];
+    if (!t) return;
+    const hitEl = document.elementFromPoint(t.clientX, t.clientY);
+    pushDebugLog('log', ['TAP at (' + Math.round(t.clientX) + ',' + Math.round(t.clientY) + ') hit: ' + describeEl(hitEl) + ' | event target: ' + describeEl(e.target)], 'touch');
+}, true);
+document.addEventListener('click', (e) => {
+    if (!logTouchEnabled) return;
+    pushDebugLog('log', ['CLICK fired on: ' + describeEl(e.target)], 'touch');
+}, true);
+
+function setLogToggle(kind, on) {
+    if (kind === 'touch') logTouchEnabled = on;
+    else if (kind === 'js') logJsEnabled = on;
+    else if (kind === 'trace') logTraceEnabled = on;
+    renderLogToggleButtons();
+}
+function renderLogToggleButtons() {
+    const map = { touch: logTouchEnabled, js: logJsEnabled, trace: logTraceEnabled };
+    Object.keys(map).forEach(k => {
+        const btn = document.getElementById('logToggle-' + k);
+        if (btn) btn.classList.toggle('active', map[k]);
+    });
+}
+
+
+// Redraws the Log panel content from debugLogEntries and scrolls it to the bottom if open.
 function renderDebugLog() {
     const el = document.getElementById('debugLog');
     if (!el) return;
-    el.innerHTML = debugLogEntries.map(e =>
-        '<div class="' + (e.kind === 'error' ? 'log-error' : e.kind === 'warn' ? 'log-warn' : '') + '">[' + e.t + '] ' + escapeHtml(e.msg) + '</div>'
-    ).join('');
-    const panel = document.getElementById('panel-log');
+    el.innerHTML = debugLogEntries.map(e => {
+        const cls = e.kind === 'error' ? 'log-error' : e.kind === 'warn' ? 'log-warn' : e.category === 'touch' ? 'log-touch' : e.category === 'trace' ? 'log-trace' : '';
+        return '<div class="' + cls + '">[' + e.t + '] [' + e.category + '] ' + escapeHtml(e.msg) + '</div>';
+    }).join('');
+    const panel = document.getElementById('debugDrawer');
     if (panel && panel.classList.contains('open')) panel.scrollTop = panel.scrollHeight;
 }
+// Empties the debug log.
 function clearDebugLog() { debugLogEntries.length = 0; renderDebugLog(); }
 async function exportLogToClipboard() {
-    const text = debugLogEntries.map(e => '[' + e.t + '] [' + e.kind + '] ' + e.msg).join('\n') || '(log is empty)';
+    const text = debugLogEntries.map(e => '[' + e.t + '] [' + e.kind + '/' + e.category + '] ' + e.msg).join('\n') || '(log is empty)';
     const btn = document.getElementById('exportLogBtn');
     const original = btn.innerText;
     try {
@@ -392,8 +545,10 @@ async function exportLogToClipboard() {
     }
     setTimeout(() => btn.innerText = original, 1500);
 }
+// Escapes &, <, > so log text can be inserted as HTML safely.
 function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// Sums the raw pixel-buffer size of every layer in every frame. This is our own count, not a browser API -- iOS/WebKit exposes no memory API at all.
 function estimateMemoryBytes() {
     let bytes = 0;
     frames.forEach(f => f.layers.forEach(l => {
@@ -402,6 +557,7 @@ function estimateMemoryBytes() {
     }));
     return bytes;
 }
+// Rebuilds the stats readout in the Debug panel (canvas size, layer/frame counts, undo depth, memory estimate).
 function refreshDebugStats() {
     const el = document.getElementById('debugStats');
     if (!el) return;
@@ -438,6 +594,7 @@ let openPanelName = null;
 let transformMode = false;
 
 let selectedProfile = 'standard'; // 'standard' | 'portrait' | 'sprite'
+let lastEnteredProfile = null;    // profile the current work (if any) was created/resumed under
 const PORTRAIT_PALETTE_LIMIT = 15;
 
 let frames = [];                // [{ name, layers: [Layer,...] }]
@@ -465,20 +622,24 @@ function selectProfile(p) {
     else if (p === 'sprite') hint.innerText = 'Adds a Frames strip to the Layers panel for simple flipbook animation.';
     else hint.innerText = '';
 }
+// Sets the three digit <select> pickers (e.g. width or height) to a given number, zero-padded to 3 digits.
 function setDigitGroup(id, val) {
     const digits = String(val).padStart(3, '0').split('');
     [...document.querySelectorAll(`#${id} select`)].forEach((sel, i) => sel.value = digits[i]);
 }
 
 /* ============================================================
-   FLOATING PANELS (closeable menus)
+   FLOATING PANELS (bottom-sheet, closeable menus: View/Colour/Layers/File)
    ============================================================ */
 function togglePanel(name) {
+    traceLog('togglePanel(' + name + ') called, currently open: ' + openPanelName);
     if (openPanelName === name) { closePanel(); return; }
     openPanel(name);
 }
+// Shows one floating panel and hides the others. Sets openPanelName BEFORE running any panel-specific setup, so an error building panel contents can't strand the panel-switching state.
 function openPanel(name) {
     if (isConfirmingClear) cancelClear();
+    closeDrawer();
     document.querySelectorAll('.floating-panel').forEach(p => p.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
     document.getElementById('panel-' + name).classList.add('open');
@@ -491,16 +652,60 @@ function openPanel(name) {
             document.getElementById('resizeH').value = gridH;
         }
         if (name === 'layers') { renderLayersPanel(); renderFramesPanel(); }
-        if (name === 'debug') refreshDebugStats();
     } catch (err) {
         console.error('openPanel(' + name + ') content failed:', err && err.message);
     }
 }
+// Hides whichever floating panel is open and clears the backdrop.
 function closePanel() {
     document.querySelectorAll('.floating-panel').forEach(p => p.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
     document.getElementById('panelBackdrop').classList.remove('open');
     openPanelName = null;
+}
+
+/* ============================================================
+   SIDE DRAWERS (Tools on the left, Debug+Log on the right).
+   Opened either by their floatingBar button or by swiping in from
+   the corresponding 20px screen-edge zone.
+   ============================================================ */
+let drawerOpenName = null; // 'tools' | 'debug' | null
+
+function openDrawer(which) {
+    if (isConfirmingClear) cancelClear();
+    closePanel();
+    document.querySelectorAll('.side-drawer').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
+    document.getElementById(which + 'Drawer').classList.add('open');
+    const tab = document.getElementById('tab-' + which);
+    if (tab) tab.classList.add('active');
+    document.getElementById('drawerBackdrop').classList.add('open');
+    drawerOpenName = which;
+    if (which === 'debug') { refreshDebugStats(); renderLogToggleButtons(); }
+}
+function closeDrawer() {
+    document.querySelectorAll('.side-drawer').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
+    document.getElementById('drawerBackdrop').classList.remove('open');
+    drawerOpenName = null;
+}
+function toggleDrawer(which) {
+    if (drawerOpenName === which) { closeDrawer(); return; }
+    openDrawer(which);
+}
+// Watches a 20px screen-edge strip for a horizontal swipe and opens the
+// given drawer once the finger has moved far enough in from the edge.
+function setupEdgeSwipe(zoneId, drawerName, expectDirection) {
+    const zone = document.getElementById(zoneId);
+    let startX = null;
+    zone.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, {passive: true});
+    zone.addEventListener('touchmove', (e) => {
+        if (startX === null) return;
+        const dx = e.touches[0].clientX - startX;
+        if (expectDirection === 'right' && dx > 28) { openDrawer(drawerName); startX = null; }
+        else if (expectDirection === 'left' && dx < -28) { openDrawer(drawerName); startX = null; }
+    }, {passive: true});
+    zone.addEventListener('touchend', () => { startX = null; });
 }
 
 /* ============================================================
@@ -527,6 +732,7 @@ class Layer {
     }
 }
 
+// A layer bound to the canvas grid: one colour (or null/transparent) per cell.
 class PixelLayer extends Layer {
     constructor(name, w, h) {
         super('pixel', name);
@@ -557,6 +763,20 @@ class PixelLayer extends Layer {
         this.el.width = newW; this.el.height = newH;
         this.redrawFromData();
     }
+    // Mirrors the layer's pixel content left-right in place.
+    flipHorizontal() {
+        const newData = Array(this.gridW).fill().map(() => Array(this.gridH).fill(null));
+        for (let x = 0; x < this.gridW; x++) for (let y = 0; y < this.gridH; y++) newData[this.gridW - 1 - x][y] = this.pixelData[x][y];
+        this.pixelData = newData;
+        this.redrawFromData();
+    }
+    // Mirrors the layer's pixel content top-bottom in place.
+    flipVertical() {
+        const newData = Array(this.gridW).fill().map(() => Array(this.gridH).fill(null));
+        for (let x = 0; x < this.gridW; x++) for (let y = 0; y < this.gridH; y++) newData[x][this.gridH - 1 - y] = this.pixelData[x][y];
+        this.pixelData = newData;
+        this.redrawFromData();
+    }
     layoutCSS() {
         this.el.style.width = (this.gridW * scale) + 'px';
         this.el.style.height = (this.gridH * scale) + 'px';
@@ -578,16 +798,23 @@ class PixelLayer extends Layer {
     }
 }
 
+// A layer holding an imported image at any resolution, positioned/sized in
+// grid-space units (not pixels) so it can be dragged, scaled and rotated
+// freely and still render crisp at any zoom -- see layoutCSS() below.
 class ReferenceLayer extends Layer {
     constructor(name, img) {
         super('reference', name);
         this.el.classList.add('reference-canvas');
         this.image = img;
-        const fit = Math.min(gridW / img.width, gridH / img.height, 1);
-        this.gw = img.width * fit;
-        this.gh = img.height * fit;
+        const fit = Math.min(gridW / img.naturalWidth, gridH / img.naturalHeight, 1);
+        this.gw = img.naturalWidth * fit;
+        this.gh = img.naturalHeight * fit;
         this.gx = (gridW - this.gw) / 2;
         this.gy = (gridH - this.gh) / 2;
+        this.rotation = 0; // degrees, rotates around the layer's own center
+        this.flipH = false;
+        this.flipV = false;
+        traceLog('ReferenceLayer constructed: img=' + img.naturalWidth + '\u00D7' + img.naturalHeight + ' canvas=' + gridW + '\u00D7' + gridH + ' -> gx=' + this.gx.toFixed(2) + ' gy=' + this.gy.toFixed(2) + ' gw=' + this.gw.toFixed(2) + ' gh=' + this.gh.toFixed(2));
     }
     layoutCSS() {
         const dpr = window.devicePixelRatio || 1;
@@ -595,16 +822,122 @@ class ReferenceLayer extends Layer {
         this.el.style.top = (this.gy * scale) + 'px';
         this.el.style.width = (this.gw * scale) + 'px';
         this.el.style.height = (this.gh * scale) + 'px';
-        this.el.width = Math.max(1, Math.round(this.gw * scale * dpr));
-        this.el.height = Math.max(1, Math.round(this.gh * scale * dpr));
+        this.el.style.transform = 'rotate(' + (this.rotation || 0) + 'deg) scaleX(' + (this.flipH ? -1 : 1) + ') scaleY(' + (this.flipV ? -1 : 1) + ')';
+        this.el.style.transformOrigin = 'center center';
+        // Cap the actual pixel buffer size: there's no visible benefit
+        // rendering past ~2x the source image's own resolution, and going
+        // much higher risks exceeding mobile browsers' canvas size limits
+        // -- which don't error, they just silently stop rendering (this is
+        // exactly what was happening at high zoom). MAX_DIM is a safe
+        // ceiling across current iOS/Android browsers.
+        const MAX_DIM = 4096;
+        const rawW = this.gw * scale * dpr;
+        const rawH = this.gh * scale * dpr;
+        const capW = Math.min(MAX_DIM, Math.max(this.image.naturalWidth * 2, 64));
+        const capH = Math.min(MAX_DIM, Math.max(this.image.naturalHeight * 2, 64));
+        this.el.width = Math.max(1, Math.round(Math.min(rawW, capW)));
+        this.el.height = Math.max(1, Math.round(Math.min(rawH, capH)));
         this.ctx.clearRect(0, 0, this.el.width, this.el.height);
-        this.ctx.drawImage(this.image, 0, 0, this.el.width, this.el.height);
+        try {
+            this.ctx.drawImage(this.image, 0, 0, this.el.width, this.el.height);
+        } catch (err) {
+            console.error('ReferenceLayer drawImage failed:', err && err.message);
+        }
+        traceLog('ReferenceLayer.layoutCSS: canvasPx=' + this.el.width + '\u00D7' + this.el.height + ' cssPx=' + this.el.style.width + '/' + this.el.style.height + ' visible=' + this.visible + ' opacity=' + this.opacity);
     }
+}
+
+// Converts 0-255 r,g,b values into a "#RRGGBB" string.
+// A layer holding freeform splines (open strokes or closed filled shapes),
+// each defined by a list of points in grid-space units. Curves are smoothed
+// through the points automatically (Catmull-Rom interpolation) rather than
+// exposing Bezier tangent handles, since those don't translate well to touch.
+class VectorLayer extends Layer {
+    constructor(name) {
+        super('vector', name);
+        this.splines = []; // [{closed, filled, color, width, points:[{x,y},...]}, ...]
+        this.draftPreview = null; // in-progress spline being drafted, rendered dashed
+    }
+    layoutCSS() {
+        this.el.style.left = '0px';
+        this.el.style.top = '0px';
+        this.el.style.width = (gridW * scale) + 'px';
+        this.el.style.height = (gridH * scale) + 'px';
+        const dpr = window.devicePixelRatio || 1;
+        this.el.width = Math.max(1, Math.round(gridW * scale * dpr));
+        this.el.height = Math.max(1, Math.round(gridH * scale * dpr));
+        this.render();
+    }
+    render() {
+        const dpr = window.devicePixelRatio || 1;
+        const s = scale * dpr;
+        this.ctx.clearRect(0, 0, this.el.width, this.el.height);
+        this.splines.forEach(sp => this.renderSpline(sp, s, false));
+        if (this.draftPreview) this.renderSpline(this.draftPreview, s, true);
+    }
+    renderSpline(sp, s, isDraft) {
+        const pts = sp.points;
+        this.ctx.lineJoin = 'round';
+        this.ctx.lineCap = 'round';
+        this.ctx.setLineDash(isDraft ? [6, 4] : []);
+        if (pts.length === 1) {
+            // single point placed so far -- just show a dot for feedback
+            this.ctx.fillStyle = sp.color;
+            this.ctx.beginPath();
+            this.ctx.arc(pts[0].x * s, pts[0].y * s, Math.max(2, (sp.width || 1) * s * 0.6), 0, Math.PI * 2);
+            this.ctx.fill();
+            return;
+        }
+        if (pts.length < 2) return;
+        const smooth = catmullRomPath(pts, sp.closed);
+        this.ctx.beginPath();
+        smooth.forEach((p, i) => { const px = p.x * s, py = p.y * s; if (i === 0) this.ctx.moveTo(px, py); else this.ctx.lineTo(px, py); });
+        if (sp.closed) this.ctx.closePath();
+        if (sp.closed && sp.filled && !isDraft) { this.ctx.fillStyle = sp.color; this.ctx.fill(); }
+        this.ctx.strokeStyle = sp.color;
+        this.ctx.lineWidth = Math.max(1, (sp.width || 1) * s);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        // draw the control points themselves lightly while drafting, so
+        // it's clear where each tap landed
+        if (isDraft) {
+            this.ctx.fillStyle = '#ffffff';
+            pts.forEach(p => { this.ctx.beginPath(); this.ctx.arc(p.x * s, p.y * s, 4, 0, Math.PI * 2); this.ctx.fill(); });
+        }
+    }
+}
+
+// One segment of Catmull-Rom interpolation between 4 control points at
+// parameter t (0..1), producing a point on the smooth curve through p1-p2.
+function catmullRomPoint(p0, p1, p2, p3, t) {
+    const t2 = t * t, t3 = t2 * t;
+    return {
+        x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+        y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+    };
+}
+// Turns a sparse list of control points into a dense smooth polyline.
+// Straight-line fallback for 2 points (nothing to smooth); wraps around
+// for closed splines so the loop join is smooth too.
+function catmullRomPath(points, closed) {
+    const n = points.length;
+    if (n < 3) return points.slice();
+    const samplesPerSeg = 12;
+    const get = (i) => closed ? points[((i % n) + n) % n] : points[Math.max(0, Math.min(n - 1, i))];
+    const result = [];
+    const segCount = closed ? n : n - 1;
+    for (let i = 0; i < segCount; i++) {
+        const p0 = get(i - 1), p1 = get(i), p2 = get(i + 1), p3 = get(i + 2);
+        for (let s = 0; s < samplesPerSeg; s++) result.push(catmullRomPoint(p0, p1, p2, p3, s / samplesPerSeg));
+    }
+    if (!closed) result.push(points[n - 1]);
+    return result;
 }
 
 function rgbToHexBytes(r, g, b) {
     return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
+// Deep-copies a layer (pixel data or reference geometry) into a brand new Layer object. Used when duplicating a sprite frame.
 function cloneLayer(l) {
     if (l.type === 'pixel') {
         const nl = new PixelLayer(l.name, l.gridW, l.gridH);
@@ -613,8 +946,15 @@ function cloneLayer(l) {
         nl.redrawFromData();
         return nl;
     }
+    if (l.type === 'vector') {
+        const nl = new VectorLayer(l.name);
+        nl.splines = l.splines.map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }));
+        nl.visible = l.visible; nl.opacity = l.opacity;
+        return nl;
+    }
     const nl = new ReferenceLayer(l.name, l.image);
     nl.gx = l.gx; nl.gy = l.gy; nl.gw = l.gw; nl.gh = l.gh;
+    nl.rotation = l.rotation; nl.flipH = l.flipH; nl.flipV = l.flipV;
     nl.visible = l.visible; nl.opacity = l.opacity;
     return nl;
 }
@@ -640,18 +980,53 @@ function setupPickers() {
     });
 }
 
+// Reads a three-digit picker group (e.g. #w-group) back into a single number.
 function readDigitGroup(id) {
     const val = parseInt([...document.querySelectorAll(`#${id} select`)].map(s => s.value).join(''), 10);
     return Math.max(1, val || 1);
 }
 
+// Runs once, when "Create Canvas" is pressed: sets up the first layer/frame, wires up all the one-time event listeners, and swaps from the splash screen to the main app.
 function initApp() {
-    gridW = selectedProfile === 'portrait' ? 40 : readDigitGroup('w-group');
-    gridH = selectedProfile === 'portrait' ? 40 : readDigitGroup('h-group');
+    const newW = selectedProfile === 'portrait' ? 40 : readDigitGroup('w-group');
+    const newH = selectedProfile === 'portrait' ? 40 : readDigitGroup('h-group');
     viewport = document.getElementById('viewport');
     container = document.getElementById('container');
     pixelCursor = document.getElementById('pixel-cursor');
 
+    // Preserve existing work only when the profile is unchanged, or when
+    // easing from Portrait down to Standard (that's just lifting the size
+    // lock/colour cap, not a different workflow). Any other profile
+    // change (including Standard/Portrait <-> Sprite) starts fresh, since
+    // Sprite's frame-based workflow doesn't carry over sensibly.
+    const preserve = lastEnteredProfile === selectedProfile ||
+        (lastEnteredProfile === 'portrait' && selectedProfile === 'standard');
+
+    if (frames.length > 0 && preserve) {
+        // Resuming work that Main Menu left intact: just resize in place
+        // (top-left anchored, same as Apply Size) and reveal it again --
+        // nothing gets cleared.
+        traceLog('initApp(): resuming existing work under profile "' + selectedProfile + '", resizing to ' + newW + '\u00D7' + newH);
+        gridW = newW; gridH = newH;
+        frames.forEach(f => f.layers.forEach(l => { if (l instanceof PixelLayer) l.resizeToCanvas(newW, newH); }));
+        document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
+        document.getElementById('init-screen').style.display = 'none';
+        document.getElementById('main-app').style.display = 'block';
+        updateCanvasWrapPadding();
+        layoutAll();
+        renderLayersPanel();
+        renderFramesPanel();
+        lastEnteredProfile = selectedProfile;
+        return;
+    }
+
+    if (frames.length > 0) {
+        traceLog('initApp(): profile changed (' + lastEnteredProfile + ' -> ' + selectedProfile + '), discarding previous work');
+        frames.forEach(f => f.layers.forEach(l => l.el.remove()));
+        undoStack = []; redoStack = [];
+    }
+
+    gridW = newW; gridH = newH;
     const base = new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers }];
@@ -663,7 +1038,9 @@ function initApp() {
 
     document.getElementById('init-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'block';
+    lastEnteredProfile = selectedProfile;
 
+    updateCanvasWrapPadding();
     layoutAll();
     if (!eventsInitialized) {
         setupDrawingEvents();
@@ -674,6 +1051,7 @@ function initApp() {
     setupLayerFileInputs();
 }
 
+// Reads the width/height fields in the View panel and resizes the canvas + every pixel layer to match (anchored top-left, existing pixels preserved where they still fit).
 function applyResize() {
     const wField = document.getElementById('resizeW');
     const hField = document.getElementById('resizeH');
@@ -688,20 +1066,95 @@ function applyResize() {
 /* ============================================================
    LAYOUT
    ============================================================ */
+let canvasRotation = 0; // degrees, purely a view transform -- grid data is unaffected
+
+// Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/canvasRotation.
 function layoutAll() {
     container.style.width = (gridW * scale) + 'px';
     container.style.height = (gridH * scale) + 'px';
     container.style.backgroundSize = (scale * 2) + 'px ' + (scale * 2) + 'px';
     container.style.backgroundPosition = '0 0, ' + scale + 'px ' + scale + 'px';
+    container.style.transform = 'rotate(' + canvasRotation + 'deg)';
+    container.style.transformOrigin = 'center center';
     pixelCursor.style.width = scale + 'px';
     pixelCursor.style.height = scale + 'px';
     layers.forEach(l => l.layoutCSS());
     updateZoomLabel();
+    updateRotationLabel();
     updateSelectionBox();
+    updateRotationFab();
+    // canvasWrap has generous padding so the canvas can be panned to a
+    // corner even when zoomed out small (see #canvasWrap CSS) -- that
+    // means the canvas is no longer reliably centered by the browser on
+    // its own, so we re-center explicitly here. The one caller that pans
+    // deliberately (the two-finger gesture) sets scrollLeft/scrollTop of
+    // its own right after calling layoutAll(), in the same synchronous
+    // block, so this never visibly overrides an active pan.
+    centerCanvasInViewport();
 }
 
+// Scrolls the viewport so the canvas sits in the middle of the visible
+// screen. Safe to call any time -- the canvas is always exactly centered
+// within canvasWrap's total (padded) size, so this is just "scroll to
+// the middle of the scrollable range" regardless of zoom level.
+function centerCanvasInViewport() {
+    if (!viewport) return;
+    viewport.scrollLeft = (viewport.scrollWidth - viewport.clientWidth) / 2;
+    viewport.scrollTop = (viewport.scrollHeight - viewport.clientHeight) / 2;
+}
+
+// The actual usable screen area, measured directly rather than trusting
+// CSS vh/vw units. Mobile Safari's dynamic toolbar (address bar / bottom
+// bar) changes what's really visible without ever updating vh/vw to
+// match, so 100vh can report taller than what you can actually see.
+// visualViewport tracks the true visible area; window.innerWidth/Height
+// is the fallback for anything that doesn't support it.
+function getViewportSize() {
+    if (window.visualViewport) return { w: window.visualViewport.width, h: window.visualViewport.height };
+    return { w: window.innerWidth, h: window.innerHeight };
+}
+
+// Sizes canvasWrap's padding to exactly half the real visible screen on
+// each side (matching the old 50vh/50vw intent, just measured correctly),
+// giving enough room to pan the canvas to any corner -- including having
+// most of it scroll past the edge -- at any zoom level.
+function updateCanvasWrapPadding() {
+    const wrap = document.getElementById('canvasWrap');
+    if (!wrap) return;
+    const { w, h } = getViewportSize();
+    wrap.style.padding = Math.round(h / 2) + 'px ' + Math.round(w / 2) + 'px';
+    centerCanvasInViewport();
+}
+
+// Shows a small "reset rotation" button just below the canvas whenever
+// the canvas is rotated more than a few degrees off 0, so there's always
+// a quick way back to straight without hunting through the View panel.
+function updateRotationFab() {
+    const fab = document.getElementById('rotationResetFab');
+    if (!fab || !container) return;
+    const normalized = ((canvasRotation % 360) + 360) % 360;
+    const offBy = Math.min(normalized, 360 - normalized);
+    if (offBy < 3) { fab.style.display = 'none'; return; }
+    const rect = container.getBoundingClientRect();
+    fab.style.display = 'block';
+    fab.style.left = Math.round(rect.left + rect.width / 2) + 'px';
+    fab.style.top = Math.round(Math.min(rect.bottom + 10, window.innerHeight - 110)) + 'px';
+    fab.style.transform = 'translateX(-50%)';
+}
+
+// Sets the canvas view rotation back to 0 degrees.
+function resetCanvasRotation() { canvasRotation = 0; layoutAll(); }
+// Updates the degree readout in the View panel to match canvasRotation.
+function updateRotationLabel() {
+    const el = document.getElementById('rotationLabel');
+    if (el) el.innerText = Math.round(((canvasRotation % 360) + 360) % 360) + '\u00B0';
+}
+
+// Steps zoom up to the next value in ZOOM_STEPS (integer scales only, so pixels always stay crisp).
 function zoomIn() { if (zoomIndex < ZOOM_STEPS.length - 1) { zoomIndex++; scale = ZOOM_STEPS[zoomIndex]; layoutAll(); } }
+// Steps zoom down to the previous value in ZOOM_STEPS.
 function zoomOut() { if (zoomIndex > 0) { zoomIndex--; scale = ZOOM_STEPS[zoomIndex]; layoutAll(); } }
+// Updates the "Nx" readout in the View panel to match the current scale.
 function updateZoomLabel() { document.getElementById('zoomLabel').innerText = scale + 'x'; }
 
 /* ============================================================
@@ -714,61 +1167,128 @@ function addLayer(layer) {
     layer.applyVisualState();
 }
 
+// Re-orders the layer <canvas> elements in the DOM to match the layers array (bottom to top), keeping the cursor/overlay above all of them.
 function reindexDom() {
     layers.forEach(l => container.insertBefore(l.el, pixelCursor));
 }
 
+// Changes which layer tools act on. Also turns off reference-layer TRANSFORM mode and clears any selection, since both are scoped to whichever layer was previously active.
 function setActiveLayer(idx) {
     if (idx !== activeLayerIndex) { transformMode = false; deselect(); }
     activeLayerIndex = idx;
     if (openPanelName === 'layers') renderLayersPanel();
+    updateToolVisibility();
 }
 
+// Shows/hides whole tool sections in the Tools drawer to match what the
+// active layer can actually use: pixel tools only make sense on a pixel
+// layer, vector tools only on a vector layer, and a reference layer isn't
+// drawable at all -- only the dropper (for sampling its colours) and Flip
+// apply there. Falls back to switching tool away from something now hidden.
+function updateToolVisibility() {
+    const layer = activeLayer();
+    const type = layer ? layer.type : 'pixel';
+    const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+
+    show('pixelToolsSection', type === 'pixel');
+    show('vectorToolsSection', type === 'vector');
+    show('flipToolsSection', type === 'pixel' || type === 'reference');
+
+    const pixelOnlyTools = ['brush', 'bucket', 'select', 'line', 'rect', 'ellipse'];
+    const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
+    if (type !== 'pixel' && pixelOnlyTools.includes(currentTool)) handleToolBtn('eyedrop');
+    if (type !== 'vector' && vectorOnlyTools.includes(currentTool)) handleToolBtn('eyedrop');
+}
+
+// True only when TRANSFORM mode is on AND the active layer is a reference layer -- gates the drag/pinch reposition-and-scale gesture.
 function transformActive() {
     const layer = activeLayer();
     return transformMode && layer && layer.type === 'reference';
 }
 
+// Returns the Layer object tools currently act on (or null).
 function activeLayer() { return layers[activeLayerIndex] || null; }
 
+// Creates a new blank pixel layer, makes it active, and records it on the undo stack.
+// Creates a new empty vector layer for splines.
+function addVectorLayer() {
+    try {
+        const l = new VectorLayer('Vector ' + (layers.length + 1));
+        addLayer(l);
+        reindexDom();
+        setActiveLayer(layers.length - 1);
+        pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: layers.length - 1, layer: l });
+        renderLayersPanel();
+    } catch (err) {
+        console.error('addVectorLayer failed:', err && err.message);
+        alert('Could not add vector layer -- check the Debug tab for details.');
+    }
+}
+
 function addPixelLayer() {
+    traceLog('addPixelLayer() called, layers before: ' + layers.length);
     try {
         const l = new PixelLayer('Layer ' + (layers.length + 1), gridW, gridH);
         addLayer(l);
         reindexDom();
         setActiveLayer(layers.length - 1);
+        pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: layers.length - 1, layer: l });
         renderLayersPanel();
+        traceLog('addPixelLayer() done, layers after: ' + layers.length);
     } catch (err) {
         console.error('addPixelLayer failed:', err && err.message);
         alert('Could not add layer -- check the Debug tab for details.');
     }
 }
 
+// Wires up the two hidden <input type=file> elements: importing a reference layer image, and loading a saved project file.
 function setupLayerFileInputs() {
     document.getElementById('refInput').onchange = (e) => {
         const file = e.target.files[0];
+        traceLog('refInput onchange fired, file: ' + (file ? file.name + ' (' + file.type + ', ' + file.size + ' bytes)' : 'none selected'));
         e.target.value = '';
         if (!file) return;
-        const objectUrl = URL.createObjectURL(file);
         const img = new Image();
-        img.onload = () => {
+        const proceed = () => {
             try {
                 const l = new ReferenceLayer(file.name.replace(/\.[^.]+$/, '') || 'Reference', img);
                 addLayer(l);
                 reindexDom();
                 setActiveLayer(layers.length - 1);
+                pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: layers.length - 1, layer: l });
                 renderLayersPanel();
-                console.log('Reference layer added: ' + l.name + ' (' + img.naturalWidth + '\u00D7' + img.naturalHeight + ')');
+                traceLog('Reference layer added: ' + l.name + ' (' + img.naturalWidth + '\u00D7' + img.naturalHeight + ')');
             } catch (err) {
                 console.error('Reference layer creation failed:', err && err.message);
                 alert('Could not add the reference layer -- check the Debug tab for details.');
+            }
+        };
+        img.onload = () => {
+            traceLog('image onload fired, naturalSize=' + img.naturalWidth + '\u00D7' + img.naturalHeight);
+            if (img.decode) {
+                img.decode().then(proceed).catch((err) => {
+                    console.warn('img.decode() failed, proceeding anyway:', err && err.message);
+                    proceed();
+                });
+            } else {
+                proceed();
             }
         };
         img.onerror = () => {
             console.error('Reference image failed to load/decode: ' + file.name);
             alert('That image could not be loaded as a reference layer.');
         };
-        img.src = objectUrl;
+        const reader = new FileReader();
+        reader.onload = () => {
+            traceLog('FileReader read ' + file.name + ' as data URL (' + reader.result.length + ' chars), handing to <img>...');
+            img.src = reader.result;
+        };
+        reader.onerror = () => {
+            console.error('FileReader failed to read file: ' + file.name);
+            alert('Could not read that file.');
+        };
+        reader.readAsDataURL(file);
+        traceLog('reading file as data URL...');
     };
     document.getElementById('projectInput').onchange = (e) => {
         const file = e.target.files[0];
@@ -777,6 +1297,7 @@ function setupLayerFileInputs() {
     };
 }
 
+// Renders a small preview PNG (as a data URL) of a layer's current content, for the Layers panel list. Fully wrapped in try/catch so one bad layer can't break the whole panel.
 function makeThumbnail(layer, size) {
     try {
         const c = document.createElement('canvas');
@@ -786,7 +1307,7 @@ function makeThumbnail(layer, size) {
         cx.fillStyle = '#4a4a4a';
         for (let yy = 0; yy < size; yy += 6) for (let xx = ((yy/6)%2)*6; xx < size; xx += 12) cx.fillRect(xx, yy, 6, 6);
         try {
-            if (layer.type === 'pixel') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
+            if (layer.type === 'pixel' || layer.type === 'vector') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
             else if (layer.image && layer.image.complete) { cx.imageSmoothingEnabled = true; cx.drawImage(layer.image, 0, 0, size, size); }
         } catch (e) { console.warn('thumbnail draw skipped:', e && e.message); }
         return c.toDataURL();
@@ -796,9 +1317,20 @@ function makeThumbnail(layer, size) {
     }
 }
 
+// Clears a specific pixel layer (by index) without first having to select it, via the per-row broom button.
 function clearLayerAt(i) {
     const layer = layers[i];
-    if (!layer || layer.type !== 'pixel') return;
+    if (!layer) return;
+    if (layer.type === 'vector') {
+        if (layer.splines.length === 0) return;
+        pushUndo({ type: 'clearVectorLayer', frameIndex: activeFrameIndex, layerId: layer.id, before: layer.splines.map(cloneSpline) });
+        layer.splines = [];
+        layer.draftPreview = null;
+        layer.layoutCSS();
+        renderLayersPanel();
+        return;
+    }
+    if (layer.type !== 'pixel') return;
     const wasActive = activeLayerIndex;
     activeLayerIndex = i;
     const snap = beginEdit();
@@ -809,6 +1341,7 @@ function clearLayerAt(i) {
     renderLayersPanel();
 }
 
+// Rebuilds the entire Layers panel list: one row per layer (thumbnail, visibility, name, reorder, clear, delete), plus the opacity slider and transform UI for whichever layer is active.
 function renderLayersPanel() {
     const list = document.getElementById('layersList');
     list.innerHTML = '';
@@ -840,28 +1373,16 @@ function renderLayersPanel() {
         badge.className = 'layer-type-badge';
         badge.innerText = layer.type;
 
-        const up = document.createElement('button');
-        up.className = 'layer-icon-btn';
-        up.innerText = '\u2B06\uFE0F';
+        const up = mkLayerIconBtn('\u2B06\uFE0F', (e) => { e.stopPropagation(); moveLayer(i, i + 1); });
         up.disabled = i === layers.length - 1;
-        up.onclick = (e) => { e.stopPropagation(); moveLayer(i, i + 1); };
 
-        const down = document.createElement('button');
-        down.className = 'layer-icon-btn';
-        down.innerText = '\u2B07\uFE0F';
+        const down = mkLayerIconBtn('\u2B07\uFE0F', (e) => { e.stopPropagation(); moveLayer(i, i - 1); });
         down.disabled = i === 0;
-        down.onclick = (e) => { e.stopPropagation(); moveLayer(i, i - 1); };
 
-        const clr = document.createElement('button');
-        clr.className = 'layer-icon-btn';
-        clr.innerText = '\u{1F9F9}';
-        clr.style.display = layer.type === 'pixel' ? 'flex' : 'none';
-        clr.onclick = (e) => { e.stopPropagation(); clearLayerAt(i); };
+        const clr = mkLayerIconBtn('\u{1F9F9}', (e) => { e.stopPropagation(); clearLayerAt(i); });
+        clr.style.display = (layer.type === 'pixel' || layer.type === 'vector') ? 'flex' : 'none';
 
-        const del = document.createElement('button');
-        del.className = 'layer-icon-btn';
-        del.innerText = '\u{1F5D1}\uFE0F';
-        del.onclick = (e) => { e.stopPropagation(); deleteLayer(i); };
+        const del = mkLayerIconBtn('\u{1F5D1}\uFE0F', (e) => { e.stopPropagation(); deleteLayer(i); });
 
         row.onclick = () => setActiveLayer(i);
         row.append(thumb);
@@ -888,6 +1409,17 @@ function renderLayersPanel() {
     }
 }
 
+// Small factory for the plain icon buttons in each layer row (reorder/
+// clear/delete) -- they only ever differ by label and click handler.
+function mkLayerIconBtn(text, onClick) {
+    const btn = document.createElement('button');
+    btn.className = 'layer-icon-btn';
+    btn.innerText = text;
+    btn.onclick = onClick;
+    return btn;
+}
+
+// Builds the TRANSFORM toggle, X/Y/W/H/rotation fields, and reset button shown under a reference layer when it is the active layer.
 function buildReferenceTransformUI(layer) {
     const wrap = document.createElement('div');
     wrap.className = 'layer-opacity-row';
@@ -900,7 +1432,7 @@ function buildReferenceTransformUI(layer) {
     const toggle = document.createElement('button');
     toggle.className = 'btn' + (transformMode ? ' active' : '');
     toggle.style.fontSize = '10px';
-    toggle.innerText = transformMode ? 'TRANSFORM: ON (drag = move, pinch = scale)' : 'TRANSFORM: OFF';
+    toggle.innerText = transformMode ? 'TRANSFORM: ON (drag=move, pinch=scale+rotate)' : 'TRANSFORM: OFF';
     toggle.onclick = (e) => { e.stopPropagation(); transformMode = !transformMode; renderLayersPanel(); };
     toggleRow.appendChild(toggle);
     wrap.appendChild(toggleRow);
@@ -912,7 +1444,7 @@ function buildReferenceTransformUI(layer) {
         lab.innerText = labelText; lab.style.fontSize = '9px'; lab.style.color = '#888'; lab.style.textAlign = 'center';
         const input = document.createElement('input');
         input.type = 'number'; input.className = 'num-input'; input.style.height = '30px';
-        input.value = Math.round(layer[key] * 100) / 100;
+        input.value = Math.round((layer[key] || 0) * 100) / 100;
         input.onchange = (e) => { e.stopPropagation(); layer[key] = parseFloat(input.value) || 0; layer.layoutCSS(); };
         input.onclick = (e) => e.stopPropagation();
         col.append(lab, input);
@@ -920,11 +1452,32 @@ function buildReferenceTransformUI(layer) {
     };
     const fieldRow = document.createElement('div');
     fieldRow.className = 'row';
-    fieldRow.append(mkField('X', 'gx'), mkField('Y', 'gy'), mkField('W', 'gw'), mkField('H', 'gh'));
+    fieldRow.append(mkField('X', 'gx'), mkField('Y', 'gy'), mkField('W', 'gw'), mkField('H', 'gh'), mkField('\u00B0', 'rotation'));
     wrap.appendChild(fieldRow);
+
+    const resetRow = document.createElement('div');
+    resetRow.className = 'row';
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn';
+    resetBtn.style.fontSize = '10px';
+    resetBtn.innerText = '\u21A9\uFE0F RESET TRANSFORM';
+    resetBtn.onclick = (e) => {
+        e.stopPropagation();
+        const fit = Math.min(gridW / layer.image.naturalWidth, gridH / layer.image.naturalHeight, 1);
+        layer.gw = layer.image.naturalWidth * fit;
+        layer.gh = layer.image.naturalHeight * fit;
+        layer.gx = (gridW - layer.gw) / 2;
+        layer.gy = (gridH - layer.gh) / 2;
+        layer.rotation = 0;
+        layer.layoutCSS();
+        renderLayersPanel();
+    };
+    resetRow.appendChild(resetBtn);
+    wrap.appendChild(resetRow);
     return wrap;
 }
 
+// Swaps a layer to a new stacking position (reorder up/down) and keeps activeLayerIndex pointing at the right layer.
 function moveLayer(from, to) {
     if (to < 0 || to >= layers.length) return;
     const [l] = layers.splice(from, 1);
@@ -935,12 +1488,15 @@ function moveLayer(from, to) {
     renderLayersPanel();
 }
 
+// Removes a layer (unless it's the last one left) and records it on the undo stack so it can be brought straight back.
 function deleteLayer(i) {
     if (layers.length === 1) return;
-    layers[i].el.remove();
+    const layer = layers[i];
+    layer.el.remove();
     layers.splice(i, 1);
     if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
     else if (activeLayerIndex > i) activeLayerIndex--;
+    pushUndo({ type: 'deleteLayer', frameIndex: activeFrameIndex, index: i, layer });
     renderLayersPanel();
 }
 
@@ -957,6 +1513,7 @@ function addFrame(duplicate) {
     switchFrame(activeFrameIndex + 1);
 }
 
+// Sprite profile only: detaches the current frame's layer canvases from the DOM and re-attaches the target frame's. Cheap -- nothing is recreated, just re-parented.
 function switchFrame(idx) {
     if (idx < 0 || idx >= frames.length) return;
     layers.forEach(l => l.el.remove());
@@ -971,6 +1528,7 @@ function switchFrame(idx) {
     if (openPanelName === 'layers') renderLayersPanel();
 }
 
+// Removes a frame (unless it's the last one) and switches to a neighboring frame.
 function deleteFrame(idx) {
     if (frames.length === 1) return;
     frames[idx].layers.forEach(l => l.el.remove());
@@ -978,6 +1536,7 @@ function deleteFrame(idx) {
     switchFrame(Math.min(idx, frames.length - 1));
 }
 
+// Rebuilds the frame-number strip at the top of the Layers panel and updates the Play/Stop button label.
 function renderFramesPanel() {
     const list = document.getElementById('framesList');
     if (!list) return;
@@ -993,6 +1552,7 @@ function renderFramesPanel() {
     if (playBtn) playBtn.innerText = playing ? '\u23F9\uFE0F STOP' : '\u25B6\uFE0F PLAY';
 }
 
+// Starts or stops cycling through frames automatically at the current FPS, for a quick animation preview.
 function togglePlay() {
     playing = !playing;
     clearInterval(playTimer);
@@ -1000,6 +1560,7 @@ function togglePlay() {
     renderFramesPanel();
 }
 
+// Flattens every frame to a PNG and lays them out left-to-right into one spritesheet image file.
 function exportSpritesheet() {
     const sheet = document.createElement('canvas');
     sheet.width = gridW * frames.length; sheet.height = gridH;
@@ -1012,18 +1573,25 @@ function exportSpritesheet() {
 }
 
 /* ============================================================
-   UNDO / REDO (pixel content edits: draw, fill, shapes, selection)
-   Scoped to a layer's pixelData grid. Structural changes (layer
-   add/delete/reorder, frame add/delete, resize) are not covered
-   in this pass.
+   UNDO / REDO (pixel content edits, plus layer add/delete)
+   Reorder and canvas resize are still not covered in this pass.
    ============================================================ */
 function cloneGrid(pixelData) { return pixelData.map(col => col.slice()); }
 
+// Adds an entry to the undo stack, capping its size, and clears the redo stack (a new action invalidates old redo history).
+function pushUndo(entry) {
+    undoStack.push(entry);
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack = [];
+}
+
+// Snapshots the active pixel layer's content before an edit starts, so commitEdit() can later diff and record what changed.
 function beginEdit() {
     const layer = activeLayer();
     if (!layer || layer.type !== 'pixel') return null;
-    return { frameIndex: activeFrameIndex, layerId: layer.id, before: cloneGrid(layer.pixelData) };
+    return { type: 'pixels', frameIndex: activeFrameIndex, layerId: layer.id, before: cloneGrid(layer.pixelData) };
 }
+// Compares the snapshot from beginEdit() against the current content; if anything actually changed, records a before/after undo entry.
 function commitEdit(pending) {
     if (!pending) return;
     const layer = activeLayer();
@@ -1033,34 +1601,88 @@ function commitEdit(pending) {
         if (pending.before[x][y] !== layer.pixelData[x][y]) { changed = true; break outer; }
     }
     if (!changed) return;
-    undoStack.push({ frameIndex: pending.frameIndex, layerId: pending.layerId, before: pending.before, after: cloneGrid(layer.pixelData) });
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
-    redoStack = [];
+    pushUndo({ type: 'pixels', frameIndex: pending.frameIndex, layerId: pending.layerId, before: pending.before, after: cloneGrid(layer.pixelData) });
 }
+// Looks up a layer by its stable id within a specific frame -- used by undo/redo since array indices can shift.
 function findLayerById(frameIndex, layerId) {
     const f = frames[frameIndex];
     if (!f) return null;
     return f.layers.find(l => l.id === layerId) || null;
 }
+// Steps one entry back in history: restores pixel content, or un-deletes/un-adds a layer, depending on the entry type.
 function undo() {
     const entry = undoStack.pop();
     if (!entry) return;
     if (entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex);
-    const layer = findLayerById(entry.frameIndex, entry.layerId);
-    if (layer) { layer.pixelData = cloneGrid(entry.before); layer.redrawFromData(); }
+    if (entry.type === 'pixels') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) { layer.pixelData = cloneGrid(entry.before); layer.redrawFromData(); }
+    } else if (entry.type === 'deleteLayer') {
+        layers.splice(entry.index, 0, entry.layer);
+        container.appendChild(entry.layer.el);
+        reindexDom();
+        entry.layer.applyVisualState();
+        if (activeLayerIndex >= entry.index) activeLayerIndex++;
+        traceLog('Undo restored deleted layer: ' + entry.layer.name);
+    } else if (entry.type === 'addLayer') {
+        entry.layer.el.remove();
+        const idx = layers.indexOf(entry.layer);
+        if (idx !== -1) layers.splice(idx, 1);
+        if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
+    } else if (entry.type === 'addSpline') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) {
+            const idx = layer.splines.indexOf(entry.spline);
+            if (idx !== -1) layer.splines.splice(idx, 1);
+            layer.layoutCSS();
+        }
+    } else if (entry.type === 'editSplinePoints') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) { entry.spline.points = entry.before.map(p => ({ x: p.x, y: p.y })); layer.layoutCSS(); }
+    } else if (entry.type === 'clearVectorLayer') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) { layer.splines = entry.before.map(cloneSpline); layer.layoutCSS(); }
+    }
     redoStack.push(entry);
     if (openPanelName === 'layers') renderLayersPanel();
 }
+// Re-applies whatever the last undo() just reverted.
 function redo() {
     const entry = redoStack.pop();
     if (!entry) return;
     if (entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex);
-    const layer = findLayerById(entry.frameIndex, entry.layerId);
-    if (layer) { layer.pixelData = cloneGrid(entry.after); layer.redrawFromData(); }
+    if (entry.type === 'pixels') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) { layer.pixelData = cloneGrid(entry.after); layer.redrawFromData(); }
+    } else if (entry.type === 'deleteLayer') {
+        const idx = layers.indexOf(entry.layer);
+        if (idx !== -1) { layers[idx].el.remove(); layers.splice(idx, 1); }
+        if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
+    } else if (entry.type === 'addLayer') {
+        layers.splice(entry.index, 0, entry.layer);
+        container.appendChild(entry.layer.el);
+        reindexDom();
+        entry.layer.applyVisualState();
+    } else if (entry.type === 'addSpline') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) {
+            layer.splines.splice(Math.min(entry.index, layer.splines.length), 0, entry.spline);
+            layer.layoutCSS();
+        }
+    } else if (entry.type === 'editSplinePoints') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) { entry.spline.points = entry.after.map(p => ({ x: p.x, y: p.y })); layer.layoutCSS(); }
+    } else if (entry.type === 'clearVectorLayer') {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) { layer.splines = []; layer.layoutCSS(); }
+    }
     undoStack.push(entry);
     if (openPanelName === 'layers') renderLayersPanel();
 }
+// Deep-copies one spline (including its point list) for undo snapshots.
+function cloneSpline(sp) { return { closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }; }
 
+// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y for undo/redo (desktop convenience; touch users use the on-screen buttons).
 function setupKeyboardShortcuts() {
     window.addEventListener('keydown', (e) => {
         if (!(e.ctrlKey || e.metaKey)) return;
@@ -1076,12 +1698,14 @@ function setupKeyboardShortcuts() {
 function withinSelection(x, y) {
     return selection && x >= selection.x0 && x <= selection.x1 && y >= selection.y0 && y <= selection.y1;
 }
+// Turns two arbitrary corner points into a proper {x0,y0,x1,y1} rectangle, clamped to the canvas bounds.
 function normalizeSel(x0, y0, x1, y1) {
     return {
         x0: Math.max(0, Math.min(x0, x1)), y0: Math.max(0, Math.min(y0, y1)),
         x1: Math.min(gridW - 1, Math.max(x0, x1)), y1: Math.min(gridH - 1, Math.max(y0, y1))
     };
 }
+// Repositions the dashed selection-outline overlay to match the current selection (or hides it if there isn't one).
 function updateSelectionBox() {
     const box = document.getElementById('selectionBox');
     if (!box) return;
@@ -1092,17 +1716,50 @@ function updateSelectionBox() {
     box.style.width = ((selection.x1 - selection.x0 + 1) * scale) + 'px';
     box.style.height = ((selection.y1 - selection.y0 + 1) * scale) + 'px';
 }
+// Switches the Select tool between "draw a new rectangle" and "drag to move the existing selection" modes.
 function toggleMoveSelection() {
     if (!selection) return;
     movingSelection = !movingSelection;
     document.getElementById('moveSelBtn').classList.toggle('active', movingSelection);
 }
+// Clears the current selection and turns off move-selection mode.
 function deselect() {
     selection = null; movingSelection = false;
     const btn = document.getElementById('moveSelBtn');
     if (btn) btn.classList.remove('active');
     updateSelectionBox();
 }
+// Erases (sets to transparent) every pixel inside the current selection on the active layer.
+// Flips the active layer left-right. Pixel layers flip their actual data
+// (undoable); reference layers flip visually via CSS transform.
+function flipActiveLayerH() {
+    const layer = activeLayer();
+    if (!layer) return;
+    if (layer.type === 'pixel') {
+        const snap = beginEdit();
+        layer.flipHorizontal();
+        commitEdit(snap);
+    } else {
+        layer.flipH = !layer.flipH;
+        layer.layoutCSS();
+    }
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+// Flips the active layer top-bottom. See flipActiveLayerH() for details.
+function flipActiveLayerV() {
+    const layer = activeLayer();
+    if (!layer) return;
+    if (layer.type === 'pixel') {
+        const snap = beginEdit();
+        layer.flipVertical();
+        commitEdit(snap);
+    } else {
+        layer.flipV = !layer.flipV;
+        layer.layoutCSS();
+    }
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+
 function deleteSelection() {
     if (!selection) return;
     const layer = activeLayer();
@@ -1112,6 +1769,7 @@ function deleteSelection() {
         for (let y = selection.y0; y <= selection.y1; y++) layer.plot(x, y, null);
     commitEdit(snap);
 }
+// Lifts the selected pixels out of the layer into a small in-memory buffer and clears them from the layer, ready to be repositioned before stamping back down.
 function cutSelectionBuffer(layer, sel) {
     const w = sel.x1 - sel.x0 + 1, h = sel.y1 - sel.y0 + 1;
     const buf = [];
@@ -1124,6 +1782,7 @@ function cutSelectionBuffer(layer, sel) {
     }
     return buf;
 }
+// Draws a cut selection buffer into the floating preview canvas so it can be dragged around without touching the real layer data yet.
 function showFloatingBuffer(buf, gx, gy) {
     const w = buf.length, h = buf[0] ? buf[0].length : 0;
     const fb = document.getElementById('floatBuffer');
@@ -1134,16 +1793,19 @@ function showFloatingBuffer(buf, gx, gy) {
     fb.style.display = 'block';
     positionFloatingBuffer(gx, gy, w, h);
 }
+// Moves the floating selection preview to a new grid position while a move-selection drag is in progress.
 function positionFloatingBuffer(gx, gy, w, h) {
     const fb = document.getElementById('floatBuffer');
     fb.style.left = (gx * scale) + 'px'; fb.style.top = (gy * scale) + 'px';
     fb.style.width = (w * scale) + 'px'; fb.style.height = (h * scale) + 'px';
 }
+// Writes a floating selection buffer permanently into the layer at its final dropped position.
 function stampFloatingBuffer(layer, buf, sel) {
     if (!layer || layer.type !== 'pixel') return;
     const w = buf.length, h = buf[0] ? buf[0].length : 0;
     for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) { const c = buf[x][y]; if (c) layer.plot(sel.x0 + x, sel.y0 + y, c); }
 }
+// Hides the floating selection preview canvas once a move is finished.
 function hideFloatingBuffer() {
     const fb = document.getElementById('floatBuffer');
     if (fb) fb.style.display = 'none';
@@ -1164,6 +1826,7 @@ function linePixels(x0, y0, x1, y1) {
     }
     return pts;
 }
+// Returns every grid cell along the border of a rectangle for the Rect tool (outline only, not filled).
 function rectOutlinePixels(x0, y0, x1, y1) {
     const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
     const pts = [];
@@ -1171,6 +1834,7 @@ function rectOutlinePixels(x0, y0, x1, y1) {
     for (let y = ya; y <= yb; y++) { pts.push([xa, y]); pts.push([xb, y]); }
     return pts;
 }
+// Returns grid cells approximating an ellipse outline (parametric sampling) for the Ellipse tool.
 function ellipseOutlinePixels(x0, y0, x1, y1) {
     const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
     const cx = (xa + xb) / 2, cy = (ya + yb) / 2, rx = (xb - xa) / 2 || 0.5, ry = (yb - ya) / 2 || 0.5;
@@ -1181,6 +1845,29 @@ function ellipseOutlinePixels(x0, y0, x1, y1) {
     }
     return pts;
 }
+// Draws the chosen shape tool (line/rect/ellipse) from its start point to its release point, all at once.
+// Live preview while dragging a shape tool, rendered on its own overlay
+// canvas so nothing touches the real layer until commitShape() on release.
+function showShapePreview(kind, start, end) {
+    const canvas = document.getElementById('shapePreview');
+    if (!canvas) return;
+    canvas.width = gridW; canvas.height = gridH;
+    canvas.style.width = (gridW * scale) + 'px';
+    canvas.style.height = (gridH * scale) + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, gridW, gridH);
+    const pts = kind === 'line' ? linePixels(start.x, start.y, end.x, end.y)
+              : kind === 'rect' ? rectOutlinePixels(start.x, start.y, end.x, end.y)
+              : ellipseOutlinePixels(start.x, start.y, end.x, end.y);
+    ctx.fillStyle = selectedColor || '#000000';
+    pts.forEach(([x, y]) => { if (x >= 0 && x < gridW && y >= 0 && y < gridH) ctx.fillRect(x, y, 1, 1); });
+    canvas.style.display = 'block';
+}
+function hideShapePreview() {
+    const canvas = document.getElementById('shapePreview');
+    if (canvas) canvas.style.display = 'none';
+}
+
 function commitShape(kind, start, end) {
     const layer = activeLayer();
     if (!layer || layer.type !== 'pixel') return;
@@ -1191,22 +1878,178 @@ function commitShape(kind, start, end) {
 }
 
 /* ============================================================
+   VECTOR SPLINES (Pen = open stroke, Shape = closed filled loop)
+   Tap to place points one at a time; FINISH commits the spline,
+   UNDO POINT removes the last tap, CANCEL discards the draft.
+   Not yet covered by the undo/redo history -- vector edits are
+   immediate and permanent for this first pass.
+   ============================================================ */
+let vectorDraft = null; // {closed, filled, color, width, points:[{x,y},...], extendSpline, extendFromStart}
+
+function addVectorDraftPoint(x, y, isShape) {
+    const layer = activeLayer();
+    if (!layer || layer.type !== 'vector') return;
+    if (!vectorDraft) {
+        vectorDraft = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: 1, points: [{ x, y }] };
+    } else {
+        vectorDraft.points.push({ x, y });
+    }
+    layer.draftPreview = vectorDraft;
+    layer.layoutCSS();
+    updateVectorDraftStatus();
+}
+// Commits the current draft into the active vector layer's spline list
+// (or merges it into the spline it was extending from), and clears the draft.
+function finishVectorDraft() {
+    const layer = activeLayer();
+    if (!layer || layer.type !== 'vector' || !vectorDraft) return;
+    if (vectorDraft.points.length >= 2) {
+        if (vectorDraft.extendSpline) {
+            const target = vectorDraft.extendSpline;
+            const before = target.points.map(p => ({ x: p.x, y: p.y }));
+            const newPts = vectorDraft.points.slice(1); // first point duplicates the spline's existing endpoint
+            if (vectorDraft.extendFromStart) target.points = newPts.slice().reverse().concat(target.points);
+            else target.points = target.points.concat(newPts);
+            pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: target, before, after: target.points.map(p => ({ x: p.x, y: p.y })) });
+            traceLog('Extended spline: now ' + target.points.length + ' points');
+        } else {
+            const spline = { closed: vectorDraft.closed, filled: vectorDraft.filled, color: vectorDraft.color, width: vectorDraft.width, points: vectorDraft.points };
+            layer.splines.push(spline);
+            pushUndo({ type: 'addSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline, index: layer.splines.length - 1 });
+            traceLog('New spline committed: ' + vectorDraft.points.length + ' points, closed=' + vectorDraft.closed);
+        }
+    } else {
+        traceLog('Draft had fewer than 2 points, discarded');
+    }
+    vectorDraft = null;
+    layer.draftPreview = null;
+    layer.layoutCSS();
+    updateVectorDraftStatus();
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+function cancelVectorDraft() {
+    const layer = activeLayer();
+    vectorDraft = null;
+    if (layer && layer.type === 'vector') { layer.draftPreview = null; layer.layoutCSS(); }
+    updateVectorDraftStatus();
+}
+function undoLastDraftPoint() {
+    if (!vectorDraft || vectorDraft.points.length === 0) return;
+    vectorDraft.points.pop();
+    const layer = activeLayer();
+    if (vectorDraft.points.length === 0) vectorDraft = null;
+    if (layer && layer.type === 'vector') { layer.draftPreview = vectorDraft; layer.layoutCSS(); }
+    updateVectorDraftStatus();
+}
+// First-pass "extend" workflow: takes the most recently added OPEN spline
+// on the active vector layer and starts a new draft continuing from its
+// last point, so the next taps (with the Pen tool) add on to it instead
+// of starting something new.
+function extendLastSpline() {
+    const layer = activeLayer();
+    if (!layer || layer.type !== 'vector') { alert('Select a vector layer first.'); return; }
+    const target = [...layer.splines].reverse().find(sp => !sp.closed);
+    if (!target) { alert('No open spline on this layer to extend yet.'); return; }
+    const endPoint = target.points[target.points.length - 1];
+    vectorDraft = { closed: false, filled: false, color: target.color, width: target.width, points: [{ x: endPoint.x, y: endPoint.y }], extendSpline: target, extendFromStart: false };
+    layer.draftPreview = vectorDraft;
+    layer.layoutCSS();
+    updateVectorDraftStatus();
+    handleToolBtn('vpen');
+    traceLog('Extending spline from its last point -- freehand-draw or tap with PEN, then release (freehand) or FINISH (taps)');
+}
+function updateVectorDraftStatus() {
+    const el = document.getElementById('vectorDraftStatus');
+    if (!el) return;
+    if (!vectorDraft) { el.innerText = 'No draft in progress'; return; }
+    el.innerText = (vectorDraft.extendSpline ? 'Extending spline: ' : 'Drafting: ') + vectorDraft.points.length + ' point(s)' + (vectorDraft.closed ? ' (closed)' : ' (open)');
+}
+
+// Ramer-Douglas-Peucker: reduces a dense freehand-drag point trail down to
+// a small set of key points that Catmull-Rom can smooth through, so a
+// freehand stroke turns into a clean spline instead of one control point
+// per touchmove event.
+function simplifyPoints(points, epsilon) {
+    if (points.length < 3) return points.slice();
+    const distToSegment = (p, a, b) => {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        if (dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+        const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+        return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    };
+    const rdp = (pts) => {
+        if (pts.length < 3) return pts;
+        let maxDist = 0, idx = 0;
+        for (let i = 1; i < pts.length - 1; i++) {
+            const d = distToSegment(pts[i], pts[0], pts[pts.length - 1]);
+            if (d > maxDist) { maxDist = d; idx = i; }
+        }
+        if (maxDist > epsilon) return rdp(pts.slice(0, idx + 1)).slice(0, -1).concat(rdp(pts.slice(idx)));
+        return [pts[0], pts[pts.length - 1]];
+    };
+    return rdp(points);
+}
+
+// Commits a finished freehand stroke as a new spline (or merges it into
+// the spline being extended, if extendLastSpline() set that up).
+function commitFreehandSpline(layer, points, isShape) {
+    if (vectorDraft && vectorDraft.extendSpline) {
+        const target = vectorDraft.extendSpline;
+        const before = target.points.map(p => ({ x: p.x, y: p.y }));
+        const newPts = points.slice(1); // first point duplicates the existing endpoint
+        if (vectorDraft.extendFromStart) target.points = newPts.slice().reverse().concat(target.points);
+        else target.points = target.points.concat(newPts);
+        pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: target, before, after: target.points.map(p => ({ x: p.x, y: p.y })) });
+        traceLog('Freehand-extended spline: now ' + target.points.length + ' points');
+        vectorDraft = null;
+    } else {
+        const spline = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: 1, points };
+        layer.splines.push(spline);
+        pushUndo({ type: 'addSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline, index: layer.splines.length - 1 });
+        traceLog('Freehand spline committed: ' + points.length + ' simplified points, closed=' + isShape);
+    }
+    layer.draftPreview = null;
+    layer.layoutCSS();
+    updateVectorDraftStatus();
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+
+// Finds the nearest existing spline point on a vector layer, for the
+// Edit Points tool. Returns null if nothing is within the touch radius.
+function findNearestVectorPoint(layer, x, y) {
+    let best = null, bestDist = Infinity;
+    layer.splines.forEach(sp => {
+        sp.points.forEach((p, idx) => {
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d < bestDist) { bestDist = d; best = { spline: sp, point: p, index: idx }; }
+        });
+    });
+    const threshold = Math.max(1, 14 / scale); // ~14 screen px touch target, in grid units
+    return (best && bestDist <= threshold) ? best : null;
+}
+
+/* ============================================================
    TOOLS / DRAWING (only pixel layers can be painted on)
    ============================================================ */
-function uiAction(fn) { if (isConfirmingClear) cancelClear(); fn(); }
+function uiAction(fn) { if (isConfirmingClear) cancelClear(); if (mainMenuConfirm.isArmed()) mainMenuConfirm.cancel(); fn(); }
+// Starts a long-press timer for buttons that do something different on hold vs. tap (e.g. manage colours, copy to clipboard).
 function startHold(callback) { if (isConfirmingClear) return; holdTimer = setTimeout(callback, 600); }
+// Cancels a pending long-press timer.
 function clearHold() { clearTimeout(holdTimer); }
 
+// Toggles palette edit mode (wiggling swatches with delete badges), like the iOS home-screen jiggle.
 function handleManageClick() {
     isEditing = !isEditing;
     document.getElementById('palette').classList.toggle('editing', isEditing);
     document.getElementById('manageBtn').innerText = isEditing ? "\u2705 DONE" : "\u{1F3A8} MANAGE COLOURS";
 }
 
+// Counts user-added colour swatches (excluding the transparency swatch and the "+" picker), used to enforce the Portrait profile's 15-colour cap.
 function countCustomSwatches() {
     return document.querySelectorAll('#palette .swatch-wrapper:not(#transparencyWrapper):not(#pickerContainer)').length;
 }
 
+// Adds a new colour swatch to the palette, enforcing the Portrait profile's colour cap if active.
 function createSwatch(color) {
     if (selectedProfile === 'portrait' && countCustomSwatches() >= PORTRAIT_PALETTE_LIMIT) {
         alert('Portrait profile is capped at ' + PORTRAIT_PALETTE_LIMIT + ' colours (the 16th slot is reserved for transparency).');
@@ -1237,6 +2080,7 @@ function createSwatch(color) {
     updateUI();
 }
 
+// Wires up drag-to-reorder for palette swatches while in edit mode.
 function setupPaletteDragEvents() {
     const pal = document.getElementById('palette');
     const onMove = (e) => {
@@ -1263,7 +2107,9 @@ function setupPaletteDragEvents() {
 }
 
 let toolBeforeEyedrop = 'brush';
+// Selects a colour (or transparency) as the current drawing colour.
 function handleSwatchClick(c, isT = false) { selectedColor = isT ? null : c; updateUI(); }
+// Switches the active tool. Remembers the previous tool when switching to the eyedropper, so it can auto-restore after one sample.
 function handleToolBtn(t) {
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
     if (t !== 'select') { /* leaving select tool keeps the selection, just stops editing it */ }
@@ -1271,6 +2117,7 @@ function handleToolBtn(t) {
     updateUI();
 }
 
+// Refreshes which swatch/tool button shows as "selected" to match current state.
 function updateUI() {
     document.querySelectorAll('.swatch').forEach(el => {
         const isSel = (selectedColor === null && el.id === 'transparencyBtn') ||
@@ -1281,20 +2128,24 @@ function updateUI() {
     if (currentTool !== 'brush') hideCursor();
 }
 
+// Converts a CSS "rgb(r,g,b)" string (as read from an element's computed style) into "#RRGGBB".
 function rgbToHex(rgb) {
     if (!rgb || rgb.startsWith('#')) return rgb;
     const vals = rgb.match(/\d+/g);
     return "#" + vals.slice(0, 3).map(x => parseInt(x).toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
+// Sets one grid cell on the active pixel layer to the current colour (or clears it, if colour is null/transparent).
 function plot(x, y) {
     const layer = activeLayer();
     if (!layer || layer.type !== 'pixel') return;
     layer.plot(x, y, selectedColor);
 }
 
+// Hides the square pixel-preview cursor.
 function hideCursor() { pixelCursor.classList.remove('visible'); }
 
+// First press arms a confirmation state (shows the "outside tap to cancel" overlay); second press actually clears.
 function handleClearClick() {
     const btn = document.getElementById('clearBtn');
     if (!isConfirmingClear) {
@@ -1305,6 +2156,7 @@ function handleClearClick() {
         hideCursor();
     } else executeClear();
 }
+// Backs out of the clear-confirmation state without clearing anything.
 function cancelClear() {
     isConfirmingClear = false;
     const btn = document.getElementById('clearBtn');
@@ -1312,6 +2164,7 @@ function cancelClear() {
     btn.classList.remove('confirming');
     document.getElementById('canvas-safety-overlay').style.display = "none";
 }
+// Wipes the active pixel layer's content, recording the change on the undo stack.
 function executeClear() {
     const layer = activeLayer();
     if (layer && layer.type === 'pixel') {
@@ -1334,18 +2187,30 @@ function executeClear() {
    drags it, two fingers pinch-scale it, instead of panning.
    ============================================================ */
 function setupDrawingEvents() {
-    let panStart = null;
-    let xform = null;
-    let pendingTouch = null;
-    let shapeStart = null;
-    let selDragOrigin = null;
-    let moveBuffer = null;
-    let currentEditSnapshot = null;
-    let suppressStroke = false;
+    // All gesture-in-progress state lives on one object so the handlers
+    // below can share it explicitly, instead of as a wall of separate
+    // closure variables that are easy to lose track of.
+    const g = {
+        panStart: null, xform: null, pendingTouch: null, shapeStart: null,
+        selDragOrigin: null, moveBuffer: null, currentEditSnapshot: null,
+        suppressStroke: false, vecDragTarget: null, vecFreehand: null
+    };
 
+    // -- coordinate helpers --------------------------------------------
     const getPosFromClient = (cx, cy) => {
         const r = container.getBoundingClientRect();
-        return [Math.floor((cx - r.left) / scale), Math.floor((cy - r.top) / scale)];
+        // r is the rotated element's axis-aligned bounding box; its center
+        // still coincides with the true rotation center (center-origin
+        // rotation preserves the centroid), so we can un-rotate around it.
+        const centerX = r.left + r.width / 2;
+        const centerY = r.top + r.height / 2;
+        const dx = cx - centerX, dy = cy - centerY;
+        const rad = -canvasRotation * Math.PI / 180;
+        const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+        const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+        const localX = rx + (gridW * scale) / 2;
+        const localY = ry + (gridH * scale) / 2;
+        return [Math.floor(localX / scale), Math.floor(localY / scale)];
     };
     const getPos = (e) => {
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
@@ -1356,6 +2221,10 @@ function setupDrawingEvents() {
         const r = container.getBoundingClientRect();
         return cx >= r.left && cx < r.right && cy >= r.top && cy < r.bottom;
     };
+    const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const mid2 = (t0, t1) => ({ x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 });
+    const angle2 = (t0, t1) => Math.atan2(t1.clientY - t0.clientY, t1.clientX - t0.clientX) * 180 / Math.PI;
+    const normalizeAngleDelta = (d) => { while (d > 180) d -= 360; while (d < -180) d += 360; return d; };
 
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
@@ -1373,9 +2242,27 @@ function setupDrawingEvents() {
         } else { hideCursor(); }
     };
 
+    // -- one-shot tool actions (brush dot / bucket fill / eyedropper) --
     const doToolAt = (x, y) => {
         if (currentTool === 'eyedrop') {
-            if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
+            const activeL = activeLayer();
+            if (activeL && activeL.type === 'reference') {
+                // Sample directly from the reference layer's own canvas
+                // (its raw un-rotated/un-flipped render), mapped through
+                // its own gx/gy/gw/gh box. Rotation/flip aren't accounted
+                // for in this mapping yet, so a rotated or flipped
+                // reference layer may sample a slightly different pixel
+                // than what's visually under your finger.
+                if (x >= activeL.gx && x < activeL.gx + activeL.gw && y >= activeL.gy && y < activeL.gy + activeL.gh) {
+                    try {
+                        const localX = Math.min(activeL.el.width - 1, Math.max(0, Math.floor((x - activeL.gx) / activeL.gw * activeL.el.width)));
+                        const localY = Math.min(activeL.el.height - 1, Math.max(0, Math.floor((y - activeL.gy) / activeL.gh * activeL.el.height)));
+                        const d = activeL.ctx.getImageData(localX, localY, 1, 1).data;
+                        selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
+                        updateUI();
+                    } catch (err) { console.error('reference layer eyedrop failed:', err && err.message); }
+                }
+            } else if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
                 const comp = flattenToCanvas();
                 const d = comp.getContext('2d').getImageData(x, y, 1, 1).data;
                 selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
@@ -1383,7 +2270,12 @@ function setupDrawingEvents() {
             }
             currentTool = toolBeforeEyedrop;
             updateUI();
-            suppressStroke = true;
+            g.suppressStroke = true;
+            return;
+        }
+        if (currentTool === 'vpen' || currentTool === 'vshape') {
+            // Placement goes through the freehand start/move/end functions
+            // below instead, not through doToolAt.
             return;
         }
         const layer = activeLayer();
@@ -1402,88 +2294,179 @@ function setupDrawingEvents() {
         } else plot(x, y);
     };
 
+    // -- Select tool: draw a new rectangle, or drag the existing one ---
     const startSelectionDrag = (x, y) => {
         if (movingSelection && withinSelection(x, y)) {
             const layer = activeLayer();
             if (!layer || layer.type !== 'pixel') { movingSelection = false; return; }
-            currentEditSnapshot = beginEdit();
+            g.currentEditSnapshot = beginEdit();
             const sel = { ...selection };
             const buf = cutSelectionBuffer(layer, sel);
-            moveBuffer = buf;
-            selDragOrigin = { x, y, sel };
+            g.moveBuffer = buf;
+            g.selDragOrigin = { x, y, sel };
             showFloatingBuffer(buf, sel.x0, sel.y0);
         } else {
             movingSelection = false;
-            selDragOrigin = { x, y, drawing: true };
+            g.selDragOrigin = { x, y, drawing: true };
             selection = normalizeSel(x, y, x, y);
             updateSelectionBox();
         }
     };
     const updateSelectionDrag = (x, y) => {
-        if (!selDragOrigin) return;
-        if (selDragOrigin.drawing) {
-            selection = normalizeSel(selDragOrigin.x, selDragOrigin.y, x, y);
+        if (!g.selDragOrigin) return;
+        if (g.selDragOrigin.drawing) {
+            selection = normalizeSel(g.selDragOrigin.x, g.selDragOrigin.y, x, y);
             updateSelectionBox();
-        } else if (moveBuffer) {
-            const dx = x - selDragOrigin.x, dy = y - selDragOrigin.y;
-            const w = moveBuffer.length, h = moveBuffer[0] ? moveBuffer[0].length : 0;
-            positionFloatingBuffer(selDragOrigin.sel.x0 + dx, selDragOrigin.sel.y0 + dy, w, h);
-            selection = { x0: selDragOrigin.sel.x0 + dx, y0: selDragOrigin.sel.y0 + dy, x1: selDragOrigin.sel.x1 + dx, y1: selDragOrigin.sel.y1 + dy };
+        } else if (g.moveBuffer) {
+            const dx = x - g.selDragOrigin.x, dy = y - g.selDragOrigin.y;
+            const w = g.moveBuffer.length, h = g.moveBuffer[0] ? g.moveBuffer[0].length : 0;
+            positionFloatingBuffer(g.selDragOrigin.sel.x0 + dx, g.selDragOrigin.sel.y0 + dy, w, h);
+            selection = { x0: g.selDragOrigin.sel.x0 + dx, y0: g.selDragOrigin.sel.y0 + dy, x1: g.selDragOrigin.sel.x1 + dx, y1: g.selDragOrigin.sel.y1 + dy };
             updateSelectionBox();
         }
     };
     const endSelectionDrag = () => {
-        if (moveBuffer) {
+        if (g.moveBuffer) {
             const layer = activeLayer();
-            stampFloatingBuffer(layer, moveBuffer, selection);
+            stampFloatingBuffer(layer, g.moveBuffer, selection);
             hideFloatingBuffer();
-            moveBuffer = null;
-            if (currentEditSnapshot) { commitEdit(currentEditSnapshot); currentEditSnapshot = null; }
+            g.moveBuffer = null;
+            if (g.currentEditSnapshot) { commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null; }
         }
-        selDragOrigin = null;
+        g.selDragOrigin = null;
+    };
+
+    // -- Edit Points tool: drag the nearest existing vector point ------
+    const startVectorEditDrag = (x, y) => {
+        const layer = activeLayer();
+        g.vecDragTarget = (layer && layer.type === 'vector') ? findNearestVectorPoint(layer, x, y) : null;
+        traceLog('vedit start: ' + (g.vecDragTarget ? 'grabbed a point' : 'no point within reach'));
+    };
+    const updateVectorEditDrag = (x, y) => {
+        if (!g.vecDragTarget) return;
+        g.vecDragTarget.point.x = x; g.vecDragTarget.point.y = y;
+        const layer = activeLayer();
+        if (layer) layer.layoutCSS();
+    };
+    const endVectorEditDrag = () => { g.vecDragTarget = null; };
+
+    // -- Pen/Shape tools: freehand-drag records a path and auto-fits a
+    //    spline on release; a stationary tap instead places one precise
+    //    point at a time (see addVectorDraftPoint/finishVectorDraft).
+    const startVectorFreehand = (x, y) => {
+        const layer = activeLayer();
+        if (!layer || layer.type !== 'vector') { console.warn('vpen/vshape: active layer is not a vector layer, ignoring'); return; }
+        g.vecFreehand = { points: [{ x, y }], moved: false, isShape: currentTool === 'vshape' };
+        traceLog('vpen/vshape stroke started at (' + x + ',' + y + ')');
+    };
+    const updateVectorFreehand = (x, y) => {
+        if (!g.vecFreehand) return;
+        const last = g.vecFreehand.points[g.vecFreehand.points.length - 1];
+        if (Math.hypot(x - last.x, y - last.y) <= 0.15) return;
+        g.vecFreehand.points.push({ x, y });
+        g.vecFreehand.moved = true;
+        const layer = activeLayer();
+        if (layer && layer.type === 'vector') {
+            layer.draftPreview = { closed: g.vecFreehand.isShape, filled: false, color: selectedColor || '#000000', width: 1, points: g.vecFreehand.points };
+            layer.layoutCSS();
+        }
+    };
+    const endVectorFreehand = () => {
+        if (!g.vecFreehand) return;
+        const layer = activeLayer();
+        if (layer && layer.type === 'vector') {
+            if (g.vecFreehand.moved && g.vecFreehand.points.length >= 2) {
+                commitFreehandSpline(layer, simplifyPoints(g.vecFreehand.points, 0.6), g.vecFreehand.isShape);
+            } else {
+                // no real movement -- treat as a precise single-point tap instead
+                addVectorDraftPoint(g.vecFreehand.points[0].x, g.vecFreehand.points[0].y, g.vecFreehand.isShape);
+            }
+        }
+        g.vecFreehand = null;
     };
 
     const startStroke = (x, y) => {
         isDrawing = true;
-        suppressStroke = false;
+        g.suppressStroke = false;
         if (currentTool === 'select') { startSelectionDrag(x, y); return; }
+        if (currentTool === 'vedit') { startVectorEditDrag(x, y); return; }
+        if (currentTool === 'vpen' || currentTool === 'vshape') { startVectorFreehand(x, y); return; }
         if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
-            shapeStart = { x, y };
-            currentEditSnapshot = beginEdit();
+            g.shapeStart = { x, y };
+            g.currentEditSnapshot = beginEdit();
             return;
         }
-        currentEditSnapshot = beginEdit();
+        g.currentEditSnapshot = beginEdit();
         doToolAt(x, y);
     };
 
     const commitPendingTouch = () => {
-        if (!pendingTouch) return;
-        clearTimeout(pendingTouch.timer);
-        const { x, y } = pendingTouch;
-        pendingTouch = null;
+        if (!g.pendingTouch) return;
+        clearTimeout(g.pendingTouch.timer);
+        const { x, y } = g.pendingTouch;
+        g.pendingTouch = null;
         startStroke(x, y);
     };
 
-    const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-    const mid2 = (t0, t1) => ({ x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 });
+    // -- two-finger gestures: pan+zoom+rotate the canvas view, or (in
+    //    TRANSFORM mode) move+scale+rotate a reference layer instead ---
+    const startTwoFingerGesture = (touches) => {
+        g.pendingTouch = null;
+        isDrawing = false;
+        hideCursor();
+        const [t0, t1] = touches;
+        const m = mid2(t0, t1);
+        if (transformActive()) {
+            const layer = activeLayer();
+            g.xform = { type: 'pinch', dist: dist2(t0, t1), angle: angle2(t0, t1), midX: m.x, midY: m.y, gx: layer.gx, gy: layer.gy, gw: layer.gw, gh: layer.gh, startRotation: layer.rotation || 0 };
+        } else {
+            g.panStart = { x: m.x, y: m.y, sl: viewport.scrollLeft, st: viewport.scrollTop, dist: dist2(t0, t1), angle: angle2(t0, t1), startZoomIndex: zoomIndex, startRotation: canvasRotation };
+        }
+    };
+    const updateTransformDrag = (cx, cy) => {
+        const layer = activeLayer();
+        layer.gx = g.xform.gx + (cx - g.xform.x) / scale;
+        layer.gy = g.xform.gy + (cy - g.xform.y) / scale;
+        layer.layoutCSS();
+    };
+    const updateTransformPinch = (touches) => {
+        const layer = activeLayer();
+        const [t0, t1] = touches;
+        const factor = dist2(t0, t1) / g.xform.dist;
+        const m = mid2(t0, t1);
+        const deltaAngle = normalizeAngleDelta(angle2(t0, t1) - g.xform.angle);
+        const oldCX = g.xform.gx + g.xform.gw / 2, oldCY = g.xform.gy + g.xform.gh / 2;
+        const newCX = oldCX + (m.x - g.xform.midX) / scale;
+        const newCY = oldCY + (m.y - g.xform.midY) / scale;
+        layer.gw = Math.max(0.5, g.xform.gw * factor);
+        layer.gh = Math.max(0.5, g.xform.gh * factor);
+        layer.gx = newCX - layer.gw / 2;
+        layer.gy = newCY - layer.gh / 2;
+        layer.rotation = g.xform.startRotation + deltaAngle;
+        layer.layoutCSS();
+    };
+    const updateCanvasPanZoomRotate = (touches) => {
+        const [t0, t1] = touches;
+        const m = mid2(t0, t1);
+        const targetScale = ZOOM_STEPS[g.panStart.startZoomIndex] * (dist2(t0, t1) / g.panStart.dist);
+        let bestIdx = 0, bestDiff = Infinity;
+        ZOOM_STEPS.forEach((s, i) => { const d = Math.abs(s - targetScale); if (d < bestDiff) { bestDiff = d; bestIdx = i; } });
+        if (bestIdx !== zoomIndex) { zoomIndex = bestIdx; scale = ZOOM_STEPS[zoomIndex]; }
+        let newRotation = g.panStart.startRotation + normalizeAngleDelta(angle2(t0, t1) - g.panStart.angle);
+        const snapTargets = [-270, -180, -90, 0, 90, 180, 270, 360];
+        for (const t of snapTargets) { if (Math.abs(newRotation - t) < 3) { newRotation = t; break; } }
+        canvasRotation = newRotation;
+        layoutAll();
+        viewport.scrollLeft = g.panStart.sl - (m.x - g.panStart.x);
+        viewport.scrollTop = g.panStart.st - (m.y - g.panStart.y);
+    };
 
     const onStart = (e) => {
         if (isEditing || isConfirmingClear) return;
         const touches = e.touches;
 
         if (touches && touches.length >= 2) {
-            pendingTouch = null;
-            isDrawing = false;
-            hideCursor();
-            const [t0, t1] = touches;
-            if (transformActive()) {
-                const layer = activeLayer();
-                const m = mid2(t0, t1);
-                xform = { type: 'pinch', dist: dist2(t0, t1), midX: m.x, midY: m.y, gx: layer.gx, gy: layer.gy, gw: layer.gw, gh: layer.gh };
-            } else {
-                const m = mid2(t0, t1);
-                panStart = { x: m.x, y: m.y, sl: viewport.scrollLeft, st: viewport.scrollTop, dist: dist2(t0, t1), startZoomIndex: zoomIndex };
-            }
+            startTwoFingerGesture(touches);
             e.preventDefault();
             return;
         }
@@ -1494,17 +2477,17 @@ function setupDrawingEvents() {
 
         if (transformActive()) {
             const layer = activeLayer();
-            xform = { type: 'drag', x: cx, y: cy, gx: layer.gx, gy: layer.gy };
+            g.xform = { type: 'drag', x: cx, y: cy, gx: layer.gx, gy: layer.gy };
             if (touches) e.preventDefault();
             return;
         }
 
         const layer = activeLayer();
-        if (!layer || layer.type !== 'pixel') return;
+        if (!layer) return;
         const [x, y] = getPosFromClient(cx, cy);
         updateCursor(e);
         if (touches) {
-            pendingTouch = { x, y, timer: setTimeout(commitPendingTouch, 70) };
+            g.pendingTouch = { x, y, timer: setTimeout(commitPendingTouch, 70) };
             e.preventDefault();
         } else {
             startStroke(x, y);
@@ -1514,98 +2497,89 @@ function setupDrawingEvents() {
     const onMove = (e) => {
         const touches = e.touches;
 
-        if (xform) {
+        if (g.xform) {
             e.preventDefault();
-            const layer = activeLayer();
-            if (xform.type === 'drag') {
+            if (g.xform.type === 'drag') {
                 const cx = touches ? touches[0].clientX : e.clientX;
                 const cy = touches ? touches[0].clientY : e.clientY;
-                layer.gx = xform.gx + (cx - xform.x) / scale;
-                layer.gy = xform.gy + (cy - xform.y) / scale;
-                layer.layoutCSS();
-            } else if (xform.type === 'pinch' && touches && touches.length === 2) {
-                const [t0, t1] = touches;
-                const factor = dist2(t0, t1) / xform.dist;
-                const m = mid2(t0, t1);
-                const oldCX = xform.gx + xform.gw / 2, oldCY = xform.gy + xform.gh / 2;
-                const newCX = oldCX + (m.x - xform.midX) / scale;
-                const newCY = oldCY + (m.y - xform.midY) / scale;
-                layer.gw = Math.max(0.5, xform.gw * factor);
-                layer.gh = Math.max(0.5, xform.gh * factor);
-                layer.gx = newCX - layer.gw / 2;
-                layer.gy = newCY - layer.gh / 2;
-                layer.layoutCSS();
+                updateTransformDrag(cx, cy);
+            } else if (g.xform.type === 'pinch' && touches && touches.length === 2) {
+                updateTransformPinch(touches);
             }
             if (openPanelName === 'layers') renderLayersPanel();
             return;
         }
 
-        if (touches && touches.length >= 2 && panStart) {
+        if (touches && touches.length >= 2 && g.panStart) {
             e.preventDefault();
             hideCursor();
-            const [t0, t1] = touches;
-            const m = mid2(t0, t1);
-            const ratio = dist2(t0, t1) / panStart.dist;
-            const targetScale = ZOOM_STEPS[panStart.startZoomIndex] * ratio;
-            let bestIdx = 0, bestDiff = Infinity;
-            ZOOM_STEPS.forEach((s, i) => { const d = Math.abs(s - targetScale); if (d < bestDiff) { bestDiff = d; bestIdx = i; } });
-            if (bestIdx !== zoomIndex) { zoomIndex = bestIdx; scale = ZOOM_STEPS[zoomIndex]; layoutAll(); }
-            viewport.scrollLeft = panStart.sl - (m.x - panStart.x);
-            viewport.scrollTop = panStart.st - (m.y - panStart.y);
+            updateCanvasPanZoomRotate(touches);
             return;
         }
 
         updateCursor(e);
-        if (pendingTouch && touches && touches.length === 1) commitPendingTouch();
-        if (isDrawing && !suppressStroke) {
+        if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
+        if (isDrawing && !g.suppressStroke) {
             const [x, y] = getPos(e);
             if (currentTool === 'brush') plot(x, y);
             else if (currentTool === 'select') updateSelectionDrag(x, y);
+            else if (currentTool === 'vedit') updateVectorEditDrag(x, y);
+            else if (currentTool === 'vpen' || currentTool === 'vshape') updateVectorFreehand(x, y);
+            else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && g.shapeStart) {
+                showShapePreview(currentTool, g.shapeStart, { x, y });
+            }
         }
     };
 
     const onEnd = (e) => {
         const touches = e.touches;
         if (touches && touches.length >= 1) {
-            if (xform && xform.type === 'pinch' && touches.length === 1 && transformActive()) {
+            if (g.xform && g.xform.type === 'pinch' && touches.length === 1 && transformActive()) {
                 const layer = activeLayer();
-                xform = { type: 'drag', x: touches[0].clientX, y: touches[0].clientY, gx: layer.gx, gy: layer.gy };
+                g.xform = { type: 'drag', x: touches[0].clientX, y: touches[0].clientY, gx: layer.gx, gy: layer.gy };
             }
             return;
         }
-        xform = null;
-        panStart = null;
-        if (pendingTouch) commitPendingTouch();
+        g.xform = null;
+        g.panStart = null;
+        if (g.pendingTouch) commitPendingTouch();
 
         if (isDrawing) {
             const ct = e.changedTouches && e.changedTouches[0];
             const [ex, ey] = ct ? getPosFromClient(ct.clientX, ct.clientY) : getPosFromClient(e.clientX || 0, e.clientY || 0);
             if (currentTool === 'select') {
                 endSelectionDrag();
-            } else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && shapeStart) {
-                commitShape(currentTool, shapeStart, { x: ex, y: ey });
-                shapeStart = null;
-                if (currentEditSnapshot) { commitEdit(currentEditSnapshot); currentEditSnapshot = null; }
-            } else if (currentEditSnapshot) {
-                commitEdit(currentEditSnapshot); currentEditSnapshot = null;
+                if (openPanelName === 'layers') renderLayersPanel();
+            } else if (currentTool === 'vedit') {
+                endVectorEditDrag();
+            } else if (currentTool === 'vpen' || currentTool === 'vshape') {
+                endVectorFreehand();
+            } else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && g.shapeStart) {
+                commitShape(currentTool, g.shapeStart, { x: ex, y: ey });
+                g.shapeStart = null;
+                hideShapePreview();
+                if (g.currentEditSnapshot) { commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null; }
+                if (openPanelName === 'layers') renderLayersPanel();
+            } else if (g.currentEditSnapshot) {
+                commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null;
+                if (openPanelName === 'layers') renderLayersPanel();
             }
         }
         isDrawing = false;
         pixelCursor.classList.remove('active');
-        if (openPanelName === 'layers') renderLayersPanel();
     };
 
     viewport.addEventListener('mousedown', onStart);
     viewport.addEventListener('touchstart', onStart, {passive: false});
     viewport.addEventListener('mousemove', updateCursor);
     viewport.addEventListener('touchmove', onMove, {passive: false});
-    window.addEventListener('mousemove', (e) => {
-        if (xform) { onMove(e); return; }
-        if (!isDrawing || suppressStroke) return;
-        const [x, y] = getPos(e);
-        if (currentTool === 'brush') plot(x, y);
-        else if (currentTool === 'select') updateSelectionDrag(x, y);
-    });
+    // onMove already fully supports mouse events (e.touches is simply
+    // undefined for a MouseEvent, and every branch already accounts for
+    // that) -- no need for a second copy of its logic here. This used to
+    // be a ~25-line duplicate of onMove's drawing dispatch that had to be
+    // hand-kept in sync every time a tool was added; it drifted at least
+    // twice before being collapsed to this.
+    window.addEventListener('mousemove', (e) => { if (isDrawing || g.xform) onMove(e); });
     window.addEventListener('mouseup', onEnd);
     window.addEventListener('touchend', onEnd, {passive: false});
     window.addEventListener('touchcancel', onEnd, {passive: false});
@@ -1620,37 +2594,101 @@ function flattenLayersToCanvas(layerList) {
     out.width = gridW; out.height = gridH;
     const octx = out.getContext('2d');
     layerList.forEach(l => {
-        if (l.type === 'pixel' && l.visible) {
-            octx.globalAlpha = l.opacity;
-            octx.drawImage(l.el, 0, 0);
-        }
+        if (!l.visible) return;
+        octx.globalAlpha = l.opacity;
+        if (l.type === 'pixel') octx.drawImage(l.el, 0, 0);
+        else if (l.type === 'vector') octx.drawImage(l.el, 0, 0, gridW, gridH);
     });
     octx.globalAlpha = 1;
     return out;
 }
+// Shorthand for flattenLayersToCanvas() on the current frame's layers.
 function flattenToCanvas() { return flattenLayersToCanvas(layers); }
 
+// Generic "tap again to confirm" button: first tap arms it (button text
+// changes, auto-cancels after timeoutMs); a second tap within that window
+// runs onConfirm(). Used for Clear / Main Menu / Start Fresh instead of
+// three copy-pasted implementations -- and instead of the native confirm()
+// dialog, which proved unreliable on iOS.
+function makeTapTwiceConfirm(opts) {
+    let armed = false;
+    let timer = null;
+    function cancel() {
+        if (!armed) return;
+        armed = false;
+        clearTimeout(timer);
+        const btn = document.getElementById(opts.btnId);
+        if (btn) { btn.innerText = opts.idleText; btn.classList.remove('confirming'); }
+        if (opts.onCancel) opts.onCancel();
+    }
+    function trigger() {
+        const btn = document.getElementById(opts.btnId);
+        if (!armed) {
+            armed = true;
+            if (btn) { btn.innerText = opts.armedText; btn.classList.add('confirming'); }
+            clearTimeout(timer);
+            timer = setTimeout(cancel, opts.timeoutMs || 4000);
+            if (opts.onArm) opts.onArm();
+        } else {
+            cancel();
+            opts.onConfirm();
+        }
+    }
+    return { trigger, cancel, isArmed: () => armed };
+}
+
+const mainMenuConfirm = makeTapTwiceConfirm({
+    btnId: 'mainMenuBtn', idleText: '\ud83c\udfe0 MAIN MENU', armedText: '\u26A0\uFE0F TAP AGAIN TO LEAVE',
+    onConfirm: () => goToMainMenu()
+});
+function handleMainMenuClick() { traceLog('MAIN MENU pressed'); mainMenuConfirm.trigger(); }
+
+// Discards any existing work and opens a brand new blank canvas, available
+// from the splash screen. If there's nothing to lose yet, skips the
+// confirmation and just creates the canvas directly.
+const startFreshConfirm = makeTapTwiceConfirm({
+    btnId: 'startFreshBtn', idleText: '\ud83c\udd95 Start Fresh', armedText: '\u26A0\uFE0F TAP AGAIN TO DISCARD & START FRESH',
+    onConfirm: () => {
+        frames.forEach(f => f.layers.forEach(l => l.el.remove()));
+        frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
+        undoStack = []; redoStack = [];
+        selection = null; movingSelection = false; transformMode = false;
+        lastEnteredProfile = null;
+        initApp();
+    }
+});
+function handleStartFreshClick() {
+    if (frames.length === 0) { initApp(); return; }
+    traceLog('START FRESH pressed');
+    startFreshConfirm.trigger();
+}
+
 function goToMainMenu() {
-    if (!confirm('Return to main menu? Anything not exported will be lost.')) return;
+    traceLog('goToMainMenu() executing');
     try {
         if (playing) togglePlay();
         closePanel();
-        frames.forEach(f => f.layers.forEach(l => l.el.remove()));
-        frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
+        closeDrawer();
         selection = null; movingSelection = false;
-        undoStack = []; redoStack = [];
         transformMode = false;
         hideFloatingBuffer();
         const selBox = document.getElementById('selectionBox');
         if (selBox) selBox.style.display = 'none';
         document.getElementById('main-app').style.display = 'none';
         document.getElementById('init-screen').style.display = 'flex';
+        // Note: frames/layers/undo history are deliberately left intact --
+        // Main Menu just switches screens. Pressing "Create Canvas" again
+        // resumes this same work (resized in place) rather than starting
+        // over. There is currently no separate "discard and start fresh"
+        // action.
+        traceLog('goToMainMenu() completed, back at splash screen (work preserved)');
     } catch (err) {
         console.error('goToMainMenu failed:', err && err.message);
         alert('Something went wrong returning to the main menu -- check the Debug tab for details.');
     }
 }
 
+// Flattens the current frame to PNG and triggers a file download.
 function saveImage() {
     const out = flattenToCanvas();
     const link = document.createElement('a');
@@ -1673,12 +2711,14 @@ async function copyToClipboard() {
     } catch (err) { console.error("Clipboard failed", err); }
 }
 
+// Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
-    return l.type === 'pixel'
-        ? { type: 'pixel', name: l.name, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() }
-        : { type: 'reference', name: l.name, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, dataURL: l.image.src };
+    if (l.type === 'pixel') return { type: 'pixel', name: l.name, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
+    if (l.type === 'vector') return { type: 'vector', name: l.name, visible: l.visible, opacity: l.opacity, splines: l.splines };
+    return { type: 'reference', name: l.name, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
 }
 
+// Serializes every frame/layer into one JSON file and triggers a download. This -- not cookies or localStorage -- is the only way project state is ever persisted.
 function saveProject() {
     const data = {
         version: 2,
@@ -1693,6 +2733,7 @@ function saveProject() {
     link.click();
 }
 
+// Rebuilds the entire app state (frames, layers, images) from a saved project file. Builds into indexed slots first so that async image loading can't scramble the saved layer order.
 function loadProjectFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1726,11 +2767,20 @@ function loadProjectFile(file) {
 
         frameDefs.forEach((fd, fi) => {
             fd.layers.forEach((ld, li) => {
+                if (ld.type === 'vector') {
+                    const l = new VectorLayer(ld.name);
+                    l.splines = (ld.splines || []).map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }));
+                    l.visible = ld.visible; l.opacity = ld.opacity;
+                    l.applyVisualState();
+                    builtFrames[fi].layers[li] = l;
+                    finalize();
+                    return;
+                }
                 const img = new Image();
                 img.onload = () => {
                     let l;
                     if (ld.type === 'pixel') { l = new PixelLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
-                    else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; }
+                    else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
                     builtFrames[fi].layers[li] = l;
@@ -1749,6 +2799,18 @@ function loadProjectFile(file) {
 const panelBackdrop = document.getElementById('panelBackdrop');
 panelBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closePanel(); }, {passive: false});
 panelBackdrop.addEventListener('mousedown', () => closePanel());
+
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeDrawer(); }, {passive: false});
+drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
+setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
+setupEdgeSwipe('rightEdgeZone', 'debug', 'left');
+renderLogToggleButtons();
+document.getElementById('viewport').addEventListener('scroll', () => updateRotationFab());
+window.addEventListener('resize', () => { updateRotationFab(); if (viewport) updateCanvasWrapPadding(); });
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => { updateRotationFab(); if (viewport) updateCanvasWrapPadding(); });
+}
 
 document.getElementById('colorPicker').onchange = (e) => { uiAction(() => createSwatch(e.target.value.toUpperCase())); };
 setupPickers();
