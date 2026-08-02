@@ -133,6 +133,16 @@
             padding: 8px 14px; white-space: nowrap;
         }
 
+        #undoFab, #redoFab {
+            position: fixed; z-index: 780; bottom: calc(64px + env(safe-area-inset-bottom));
+            background: #1c1c1c; border: 1px solid #444; color: #fff;
+            font-size: 18px; border-radius: 50%;
+            width: 44px; height: 44px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #undoFab { left: 8px; }
+        #redoFab { right: 8px; }
+
         .floating-panel {
             position: fixed; left: 8px; right: 8px; bottom: 60px; margin: 0 auto;
             max-width: 370px; max-height: 66vh; overflow-y: auto;
@@ -202,6 +212,30 @@
         .layer-icon-btn { flex: none; width: 26px; height: 26px; background: transparent; border: none; color: #fff; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .layer-icon-btn:disabled { opacity: 0.25; }
         .layer-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+
+        #keyboardBackdrop { position: fixed; inset: 0; z-index: 960; display: none; background: rgba(0,0,0,0.3); }
+        #keyboardBackdrop.open { display: block; }
+        #customKeyboard {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 970;
+            background: #1c1c1e; border-top: 1px solid #333;
+            padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom));
+            box-sizing: border-box; transform: translateY(100%);
+            transition: transform 0.2s ease-out; display: flex; flex-direction: column; gap: 6px;
+        }
+        #customKeyboard.open { transform: translateY(0); }
+        #keyboardPreviewRow { display: flex; align-items: center; gap: 10px; padding: 2px 4px 8px; }
+        #keyboardPreviewText {
+            flex: 1; font-size: 16px; color: #fff; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; border-bottom: 1px solid #444; padding-bottom: 6px; min-height: 20px;
+        }
+        #keyboardDoneBtn { background: #0078d4; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: bold; }
+        .kb-row { display: flex; gap: 5px; justify-content: center; }
+        .kb-key {
+            flex: 1; height: 40px; background: #3a3a3c; border: none; border-radius: 5px;
+            color: #fff; font-size: 15px; box-shadow: 0 1px 0 rgba(0,0,0,0.4);
+        }
+        .kb-key.kb-special { background: #232325; flex: 1.6; font-size: 13px; }
+        .kb-key.active { background: #fff; color: #000; }
         .layer-type-badge { flex: none; font-size: 8px; color: #888; text-transform: uppercase; border: 1px solid #444; border-radius: 4px; padding: 2px 4px; }
         .layer-vis.off { opacity: 0.3; }
         .layer-opacity-row { display: flex; align-items: center; gap: 6px; padding: 0 6px 4px; }
@@ -260,6 +294,7 @@
                     <canvas id="floatBuffer" class="layer-canvas"></canvas>
                     <canvas id="shapePreview" class="layer-canvas" style="z-index:160; display:none; opacity:0.85;"></canvas>
                     <div id="gridOverlay" style="position:absolute; top:0; left:0; pointer-events:none; z-index:170; display:none;"></div>
+                    <canvas id="vectorHandlesOverlay" class="layer-canvas reference-canvas" style="z-index:175; display:none;"></canvas>
                     <div id="selectionBox"></div>
                     <div id="canvas-safety-overlay" onclick="cancelClear()"></div>
                 </div>
@@ -303,6 +338,11 @@
                     <button class="btn tool-btn" data-tool="vpen" onclick="uiAction(() => handleToolBtn('vpen'))">🖊️ PEN (open)</button>
                     <button class="btn tool-btn" data-tool="vshape" onclick="uiAction(() => handleToolBtn('vshape'))">🔷 SHAPE (closed)</button>
                     <button class="btn tool-btn" data-tool="vedit" onclick="uiAction(() => handleToolBtn('vedit'))">🖐️ EDIT PTS</button>
+                </div>
+                <div class="row" style="align-items:center; gap:8px;">
+                    <span style="font-size:10px; color:#888; flex:none;">Width</span>
+                    <input type="range" id="penWidthSlider" min="1" max="10" step="1" value="1" oninput="uiAction(() => setPenWidth(this.value))" style="flex:1;">
+                    <span id="penWidthLabel" style="font-size:10px; color:#ccc; flex:none; width:18px; text-align:right;">1</span>
                 </div>
                 <div class="row">
                     <button class="btn" onclick="uiAction(finishVectorDraft)">✅ FINISH</button>
@@ -388,6 +428,9 @@
                 </div>
             </div>
             <div class="panel-title">Layers</div>
+            <div class="row">
+                <button class="btn" id="thumbSizeToggleBtn" onclick="uiAction(toggleLayerThumbSize)">🔍 LARGER THUMBNAILS</button>
+            </div>
             <div id="layersList"></div>
             <div class="row">
                 <button class="btn" onclick="uiAction(addPixelLayer)">➕ PIXEL LAYER</button>
@@ -396,6 +439,11 @@
             <div class="row">
                 <button class="btn" onclick="uiAction(addVectorLayer)">➕ 🖊️ VECTOR</button>
             </div>
+            <div class="row">
+                <button class="btn" onclick="uiAction(addMaskLayer)">➕ 🎭 MASK</button>
+                <button class="btn" onclick="uiAction(addClipLayer)">➕ ✂️ CLIP</button>
+            </div>
+            <div style="font-size:9px; color:#666; text-align:center;">Mask/Clip attach to the pixel layer directly below them when created -- select a pixel layer first. Their effect shows correctly in PNG export, but not yet live on the canvas while editing.</div>
             <input type="file" id="refInput" accept="image/*" style="display:none">
         </div>
 
@@ -425,6 +473,10 @@
                 <div class="row">
                     <button class="btn" onclick="uiAction(refreshDebugStats)">🔄 REFRESH STATS</button>
                 </div>
+                <div class="panel-subtitle">Rendering</div>
+                <div class="row">
+                    <button class="btn" id="debugVectorToggleBtn" onclick="uiAction(toggleDebugUnrestrictedVector)">🐛 UNRESTRICTED VECTOR</button>
+                </div>
                 <div class="panel-subtitle">Log Capture</div>
                 <div class="row">
                     <button class="btn" id="logToggle-touch" onclick="uiAction(() => setLogToggle('touch', !logTouchEnabled))">👆 TOUCH</button>
@@ -449,6 +501,11 @@
         </div>
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
+
+        <div id="keyboardBackdrop"></div>
+        <div id="customKeyboard"></div>
+        <button id="undoFab" onclick="uiAction(undo)">↩️</button>
+        <button id="redoFab" onclick="uiAction(redo)">↪️</button>
     </div>
 
 
@@ -569,12 +626,21 @@ function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 function estimateMemoryBytes() {
     let bytes = 0;
     frames.forEach(f => f.layers.forEach(l => {
-        if (l.type === 'pixel') bytes += l.gridW * l.gridH * 4;
+        if (l.type === 'pixel' || l.type === 'mask' || l.type === 'clip') bytes += l.gridW * l.gridH * 4;
         else if (l.image) bytes += (l.image.naturalWidth || 0) * (l.image.naturalHeight || 0) * 4;
     }));
     return bytes;
 }
 // Rebuilds the stats readout in the Debug panel (canvas size, layer/frame counts, undo depth, memory estimate).
+// Debug-only: switches vector layers between the normal pixel-snapped
+// rendering and the old smooth/display-resolution one, for comparison.
+function toggleDebugUnrestrictedVector() {
+    debugUnrestrictedVector = !debugUnrestrictedVector;
+    const btn = document.getElementById('debugVectorToggleBtn');
+    if (btn) btn.classList.toggle('active', debugUnrestrictedVector);
+    frames.forEach(f => f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); }));
+}
+
 function refreshDebugStats() {
     const el = document.getElementById('debugStats');
     if (!el) return;
@@ -633,6 +699,167 @@ let eventsInitialized = false;
 function updateHubState() {
     const section = document.getElementById('hubContinueSection');
     if (section) section.style.display = frames.length > 0 ? 'flex' : 'none';
+}
+
+/* ============================================================
+   CUSTOM ON-SCREEN KEYBOARD (iOS-styled)
+   A self-contained text entry keyboard, used instead of focusing a real
+   <input> (and therefore the device's native keyboard) so text entry
+   works the same way everywhere regardless of how reliably a given
+   browser/webview triggers its own on-screen keyboard on focus.
+   ============================================================ */
+let customKeyboardState = null; // {value, shift, onCommit}
+const KB_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+
+let kbMode = 'letters'; // 'letters' | 'symbols' | 'emoji'
+const KB_SYMBOL_ROWS = ['1234567890', '-/:;()$&@"', '.,?!\'[]{}#%^*+=_\\|~'];
+const KB_EMOJI = ['😀','😂','😅','😊','😍','😎','🤔','😭','😡','🥳','👍','👎','👏','🙏','💪','🔥','✨','⭐','❤️','💯','🎉','✅','❌','⚠️','🎨','🖌️','✏️','📌','💡','🚀'];
+
+function buildCustomKeyboard() {
+    const kb = document.getElementById('customKeyboard');
+    if (!kb || kb.childElementCount) return; // build once
+    kb.innerHTML = '';
+
+    const preview = document.createElement('div');
+    preview.id = 'keyboardPreviewRow';
+    const previewText = document.createElement('div');
+    previewText.id = 'keyboardPreviewText';
+    const doneBtn = document.createElement('button');
+    doneBtn.id = 'keyboardDoneBtn';
+    doneBtn.innerText = 'Done';
+    doneBtn.onclick = () => closeCustomKeyboard(true);
+    preview.append(previewText, doneBtn);
+    kb.appendChild(preview);
+
+    const keysArea = document.createElement('div');
+    keysArea.id = 'keyboardKeysArea';
+    kb.appendChild(keysArea);
+
+    // Persistent bottom row regardless of mode: switch letters<->symbols,
+    // jump to/from emoji, space, backspace.
+    const bottomRow = document.createElement('div');
+    bottomRow.className = 'kb-row';
+    const modeBtn = document.createElement('button');
+    modeBtn.className = 'kb-key kb-special';
+    modeBtn.id = 'kbModeBtn';
+    modeBtn.style.flex = '2';
+    modeBtn.onclick = () => { kbMode = kbMode === 'symbols' ? 'letters' : 'symbols'; renderKeyboardKeys(); };
+    const emojiBtn = document.createElement('button');
+    emojiBtn.className = 'kb-key kb-special';
+    emojiBtn.id = 'kbEmojiBtn';
+    emojiBtn.innerText = '\u{1F600}';
+    emojiBtn.style.flex = '1.4';
+    emojiBtn.onclick = () => { kbMode = kbMode === 'emoji' ? 'letters' : 'emoji'; renderKeyboardKeys(); };
+    const spaceBtn = document.createElement('button');
+    spaceBtn.className = 'kb-key';
+    spaceBtn.style.flex = '6';
+    spaceBtn.innerText = 'space';
+    spaceBtn.onclick = () => kbTapKey(' ');
+    const bsBtn = document.createElement('button');
+    bsBtn.className = 'kb-key kb-special';
+    bsBtn.style.flex = '2';
+    bsBtn.innerText = '\u232B';
+    bsBtn.onclick = () => kbBackspace();
+    bottomRow.append(modeBtn, emojiBtn, spaceBtn, bsBtn);
+    kb.appendChild(bottomRow);
+
+    renderKeyboardKeys();
+}
+
+// Rebuilds just the key grid for the current kbMode -- called on open and
+// whenever the mode switches, leaving the preview row and bottom row
+// (built once in buildCustomKeyboard) untouched.
+function renderKeyboardKeys() {
+    const area = document.getElementById('keyboardKeysArea');
+    if (!area) return;
+    area.innerHTML = '';
+    const modeBtn = document.getElementById('kbModeBtn');
+    if (modeBtn) modeBtn.innerText = kbMode === 'symbols' ? 'ABC' : '#+=';
+    const emojiBtn = document.getElementById('kbEmojiBtn');
+    if (emojiBtn) emojiBtn.classList.toggle('active', kbMode === 'emoji');
+
+    if (kbMode === 'emoji') {
+        const grid = document.createElement('div');
+        grid.className = 'kb-row';
+        grid.style.flexWrap = 'wrap';
+        KB_EMOJI.forEach(em => {
+            const btn = document.createElement('button');
+            btn.className = 'kb-key';
+            btn.style.cssText = 'flex:0 0 17%; font-size:20px; margin-bottom:5px;';
+            btn.innerText = em;
+            btn.onclick = () => kbTapKey(em);
+            grid.appendChild(btn);
+        });
+        area.appendChild(grid);
+        return;
+    }
+
+    const rows = kbMode === 'symbols' ? KB_SYMBOL_ROWS : KB_ROWS;
+    rows.forEach((row, rowIdx) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'kb-row';
+        if (kbMode === 'letters' && rowIdx === 2) {
+            const shiftBtn = document.createElement('button');
+            shiftBtn.className = 'kb-key kb-special';
+            shiftBtn.id = 'kbShiftBtn';
+            shiftBtn.innerText = '\u21E7';
+            shiftBtn.classList.toggle('active', !!(customKeyboardState && customKeyboardState.shift));
+            shiftBtn.onclick = () => kbToggleShift();
+            rowEl.appendChild(shiftBtn);
+        }
+        row.split('').forEach(ch => {
+            const btn = document.createElement('button');
+            btn.className = 'kb-key';
+            const shown = (kbMode === 'letters' && customKeyboardState && customKeyboardState.shift) ? ch.toUpperCase() : ch;
+            btn.innerText = shown;
+            if (kbMode === 'letters') btn.dataset.ch = ch;
+            btn.onclick = () => kbTapKey(ch);
+            rowEl.appendChild(btn);
+        });
+        area.appendChild(rowEl);
+    });
+}
+
+function kbTapKey(ch) {
+    if (!customKeyboardState) return;
+    customKeyboardState.value += (kbMode === 'letters' && customKeyboardState.shift) ? ch.toUpperCase() : ch;
+    renderCustomKeyboardPreview();
+}
+function kbBackspace() {
+    if (!customKeyboardState) return;
+    customKeyboardState.value = customKeyboardState.value.slice(0, -1);
+    renderCustomKeyboardPreview();
+}
+function kbToggleShift() {
+    if (!customKeyboardState) return;
+    customKeyboardState.shift = !customKeyboardState.shift;
+    renderKeyboardKeys();
+}
+function renderCustomKeyboardPreview() {
+    const el = document.getElementById('keyboardPreviewText');
+    if (el) el.innerText = (customKeyboardState && customKeyboardState.value) || ' ';
+}
+
+// Opens the custom keyboard pre-filled with initialValue; onCommit(value)
+// runs when Done is tapped or the backdrop is tapped (tapping outside
+// commits rather than discards, so an accidental outside-tap can't lose
+// what was typed).
+function openCustomKeyboard(initialValue, onCommit) {
+    buildCustomKeyboard();
+    customKeyboardState = { value: initialValue || '', shift: false, onCommit };
+    renderCustomKeyboardPreview();
+    kbMode = 'letters';
+    renderKeyboardKeys();
+    document.getElementById('customKeyboard').classList.add('open');
+    document.getElementById('keyboardBackdrop').classList.add('open');
+}
+function closeCustomKeyboard(commit) {
+    if (!customKeyboardState) return;
+    const { value, onCommit } = customKeyboardState;
+    customKeyboardState = null;
+    document.getElementById('customKeyboard').classList.remove('open');
+    document.getElementById('keyboardBackdrop').classList.remove('open');
+    if (commit && onCommit) onCommit(value);
 }
 
 function selectProfile(p) {
@@ -822,6 +1049,30 @@ class PixelLayer extends Layer {
     }
 }
 
+// A grayscale-painted layer that controls the opacity of the pixel layer
+// directly below it: paint black to hide, white to reveal, gray for
+// partial. Unpainted cells default to fully visible (white), matching
+// how a fresh layer mask behaves elsewhere. Paintable with every normal
+// pixel tool -- only how it's *used* during compositing differs.
+class MaskLayer extends PixelLayer {
+    constructor(name, w, h) {
+        super(name, w, h);
+        this.type = 'mask';
+        this.hookedTo = null; // id of the pixel layer this mask affects (must be directly below it)
+    }
+}
+
+// A layer that only shows through where the pixel layer directly below it
+// has opaque pixels -- a stencil/clipping mask. Paintable with every
+// normal pixel tool; the clipping only applies during compositing.
+class ClipLayer extends PixelLayer {
+    constructor(name, w, h) {
+        super(name, w, h);
+        this.type = 'clip';
+        this.hookedTo = null; // id of the pixel layer this clips to (must be directly below it)
+    }
+}
+
 // A layer holding an imported image at any resolution, positioned/sized in
 // grid-space units (not pixels) so it can be dragged, scaled and rotated
 // freely and still render crisp at any zoom -- see layoutCSS() below.
@@ -883,50 +1134,113 @@ class VectorLayer extends Layer {
         this.draftPreview = null; // in-progress spline being drafted, rendered dashed
     }
     layoutCSS() {
-        this.el.style.left = '0px';
-        this.el.style.top = '0px';
+        if (debugUnrestrictedVector) {
+            // Debug-only: old smooth/display-resolution rendering, for
+            // comparing against the pixel-snapped version. Not what gets
+            // used normally -- see renderSpline() for that.
+            const dpr = window.devicePixelRatio || 1;
+            this.el.width = Math.max(1, Math.round(gridW * scale * dpr));
+            this.el.height = Math.max(1, Math.round(gridH * scale * dpr));
+            this.el.style.width = (gridW * scale) + 'px';
+            this.el.style.height = (gridH * scale) + 'px';
+            this.renderUnrestricted();
+            return;
+        }
+        // Same model as PixelLayer: the canvas buffer is native grid
+        // resolution, CSS just scales it up with image-rendering:pixelated
+        // (inherited from .layer-canvas) for a crisp blocky look. Splines
+        // are rasterized down to that resolution below -- they don't
+        // render as smooth vector curves at display resolution, since that
+        // would look inconsistent with the rest of the pixel art.
+        this.el.width = gridW;
+        this.el.height = gridH;
         this.el.style.width = (gridW * scale) + 'px';
         this.el.style.height = (gridH * scale) + 'px';
-        const dpr = window.devicePixelRatio || 1;
-        this.el.width = Math.max(1, Math.round(gridW * scale * dpr));
-        this.el.height = Math.max(1, Math.round(gridH * scale * dpr));
         this.render();
     }
-    render() {
+    // Debug-only companion to render(): smooth curves at display
+    // resolution, no pixel-snapping. Not used unless the DEBUG drawer's
+    // "unrestricted vector" toggle is on.
+    renderUnrestricted() {
         const dpr = window.devicePixelRatio || 1;
         const s = scale * dpr;
         this.ctx.clearRect(0, 0, this.el.width, this.el.height);
-        this.splines.forEach(sp => this.renderSpline(sp, s, false));
-        if (this.draftPreview) this.renderSpline(this.draftPreview, s, true);
-    }
-    renderSpline(sp, s, isDraft) {
-        const pts = sp.points;
-        this.ctx.lineJoin = 'round';
-        this.ctx.lineCap = 'round';
-        this.ctx.setLineDash(isDraft ? [6, 4] : []);
-        if (pts.length === 1) {
-            // single point placed so far -- just show a dot for feedback
-            this.ctx.fillStyle = sp.color;
+        const drawOne = (sp, isDraft) => {
+            const pts = sp.points;
+            if (pts.length === 0) return;
+            this.ctx.lineJoin = 'round';
+            this.ctx.lineCap = 'round';
+            this.ctx.setLineDash(isDraft ? [6, 4] : []);
+            if (pts.length === 1) {
+                this.ctx.fillStyle = sp.color;
+                this.ctx.beginPath();
+                this.ctx.arc(pts[0].x * s, pts[0].y * s, Math.max(2, (sp.width || 1) * s * 0.6), 0, Math.PI * 2);
+                this.ctx.fill();
+                return;
+            }
+            const smooth = catmullRomPath(pts, sp.closed);
             this.ctx.beginPath();
-            this.ctx.arc(pts[0].x * s, pts[0].y * s, Math.max(2, (sp.width || 1) * s * 0.6), 0, Math.PI * 2);
-            this.ctx.fill();
-            return;
+            smooth.forEach((p, i) => { const px = p.x * s, py = p.y * s; if (i === 0) this.ctx.moveTo(px, py); else this.ctx.lineTo(px, py); });
+            if (sp.closed) this.ctx.closePath();
+            if (sp.closed && sp.filled && !isDraft) { this.ctx.fillStyle = sp.color; this.ctx.fill(); }
+            this.ctx.strokeStyle = sp.color;
+            this.ctx.lineWidth = Math.max(1, (sp.width || 1) * s);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        };
+        this.splines.forEach(sp => drawOne(sp, false));
+        if (this.draftPreview) drawOne(this.draftPreview, true);
+    }
+    render() {
+        this.ctx.clearRect(0, 0, gridW, gridH);
+        this.splines.forEach(sp => this.renderSpline(sp, false));
+        if (this.draftPreview) this.renderSpline(this.draftPreview, true);
+    }
+    renderSpline(sp, isDraft) {
+        const pts = sp.points;
+        if (pts.length === 0) return;
+        // Canvas fill/stroke is always anti-aliased -- there's no native
+        // "turn it off" flag -- so draw at native grid resolution onto a
+        // scratch canvas first, then threshold every pixel's alpha to
+        // fully solid or fully transparent. That's what actually removes
+        // the soft/blended edges and gives real pixel-art output instead
+        // of a smoothed-out curve that merely happens to be small.
+        const scratch = document.createElement('canvas');
+        scratch.width = gridW; scratch.height = gridH;
+        const sctx = scratch.getContext('2d');
+        sctx.lineJoin = 'round';
+        sctx.lineCap = 'round';
+        sctx.setLineDash(isDraft ? [2, 1.5] : []);
+        if (pts.length === 1) {
+            sctx.fillStyle = sp.color;
+            sctx.beginPath();
+            sctx.arc(pts[0].x, pts[0].y, Math.max(0.5, (sp.width || 1) * 0.6), 0, Math.PI * 2);
+            sctx.fill();
+        } else {
+            const smooth = catmullRomPath(pts, sp.closed);
+            sctx.beginPath();
+            smooth.forEach((p, i) => { if (i === 0) sctx.moveTo(p.x, p.y); else sctx.lineTo(p.x, p.y); });
+            if (sp.closed) sctx.closePath();
+            if (sp.closed && sp.filled && !isDraft) { sctx.fillStyle = sp.color; sctx.fill(); }
+            sctx.strokeStyle = sp.color;
+            sctx.lineWidth = Math.max(1, sp.width || 1);
+            sctx.stroke();
         }
-        if (pts.length < 2) return;
-        const smooth = catmullRomPath(pts, sp.closed);
-        this.ctx.beginPath();
-        smooth.forEach((p, i) => { const px = p.x * s, py = p.y * s; if (i === 0) this.ctx.moveTo(px, py); else this.ctx.lineTo(px, py); });
-        if (sp.closed) this.ctx.closePath();
-        if (sp.closed && sp.filled && !isDraft) { this.ctx.fillStyle = sp.color; this.ctx.fill(); }
-        this.ctx.strokeStyle = sp.color;
-        this.ctx.lineWidth = Math.max(1, (sp.width || 1) * s);
-        this.ctx.stroke();
-        this.ctx.setLineDash([]);
-        // draw the control points themselves lightly while drafting, so
-        // it's clear where each tap landed
+        if (gridW > 0 && gridH > 0) {
+            const img = sctx.getImageData(0, 0, gridW, gridH);
+            const d = img.data;
+            for (let i = 0; i < d.length; i += 4) {
+                if (d[i + 3] > 80) d[i + 3] = 255;
+                else { d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 0; }
+            }
+            sctx.putImageData(img, 0, 0);
+        }
+        this.ctx.drawImage(scratch, 0, 0);
+        // control points, drawn as crisp single pixels while drafting so
+        // it's clear where each tap/sample landed
         if (isDraft) {
             this.ctx.fillStyle = '#ffffff';
-            pts.forEach(p => { this.ctx.beginPath(); this.ctx.arc(p.x * s, p.y * s, 4, 0, Math.PI * 2); this.ctx.fill(); });
+            pts.forEach(p => this.ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1));
         }
     }
 }
@@ -963,10 +1277,13 @@ function rgbToHexBytes(r, g, b) {
 }
 // Deep-copies a layer (pixel data or reference geometry) into a brand new Layer object. Used when duplicating a sprite frame.
 function cloneLayer(l) {
-    if (l.type === 'pixel') {
-        const nl = new PixelLayer(l.name, l.gridW, l.gridH);
+    if (l.type === 'pixel' || l.type === 'mask' || l.type === 'clip') {
+        const nl = l.type === 'mask' ? new MaskLayer(l.name, l.gridW, l.gridH)
+                 : l.type === 'clip' ? new ClipLayer(l.name, l.gridW, l.gridH)
+                 : new PixelLayer(l.name, l.gridW, l.gridH);
         nl.pixelData = l.pixelData.map(col => col.slice());
         nl.visible = l.visible; nl.opacity = l.opacity;
+        if (l.hookedTo != null) nl.hookedTo = l.hookedTo;
         nl.redrawFromData();
         return nl;
     }
@@ -1108,6 +1425,9 @@ function applyResize() {
    ============================================================ */
 let canvasRotation = 0; // degrees, purely a view transform -- grid data is unaffected
 let showGridLines = false;
+let largeLayerThumbs = false;
+let currentPenWidth = 1; // grid units, used for new vector strokes/shapes
+let debugUnrestrictedVector = false; // debug-only: smooth display-resolution vector rendering instead of pixel-snapped
 
 // Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/canvasRotation.
 function layoutAll() {
@@ -1124,7 +1444,9 @@ function layoutAll() {
     updateRotationLabel();
     updateSelectionBox();
     updateRotationFab();
+    updateUndoRedoFabs();
     updateGridOverlay();
+    updateVectorHandles();
     // canvasWrap has generous padding (set in JS, see updateCanvasWrapPadding)
     // so the canvas can be panned to a corner even when zoomed out small --
     // that means the canvas is no longer reliably centered by the browser
@@ -1202,8 +1524,49 @@ function updateRotationFab() {
     fab.style.transform = 'translateX(-50%)';
 }
 
+// Quick-access undo/redo at the bottom corners of the canvas, so a stroke
+// can be undone without opening the Tools drawer. Dimmed (but still
+// tappable) when their stack is empty.
+function updateUndoRedoFabs() {
+    const u = document.getElementById('undoFab');
+    const r = document.getElementById('redoFab');
+    if (!u || !r) return;
+    u.style.opacity = undoStack.length ? '1' : '0.3';
+    r.style.opacity = redoStack.length ? '1' : '0.3';
+}
+
 // Sets the canvas view rotation back to 0 degrees.
 function resetCanvasRotation() { canvasRotation = 0; layoutAll(); }
+
+// Shows draggable-point handles on the active vector layer's committed
+// splines while the Edit Points tool is selected -- without this, a
+// committed spline (as opposed to one still being drafted) has no visual
+// indicator of where its points are, making them impossible to grab.
+function updateVectorHandles() {
+    const el = document.getElementById('vectorHandlesOverlay');
+    if (!el) return;
+    const layer = activeLayer();
+    if (currentTool !== 'vedit' || !layer || layer.type !== 'vector') { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.style.width = (gridW * scale) + 'px';
+    el.style.height = (gridH * scale) + 'px';
+    el.width = Math.max(1, gridW * scale);
+    el.height = Math.max(1, gridH * scale);
+    const ctx = el.getContext('2d');
+    ctx.clearRect(0, 0, el.width, el.height);
+    layer.splines.forEach(sp => {
+        sp.points.forEach(p => {
+            const px = p.x * scale, py = p.y * scale;
+            ctx.beginPath();
+            ctx.arc(px, py, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#000000';
+            ctx.stroke();
+        });
+    });
+}
 
 // Redraws the pixel-grid overlay (a 1px line between each grid cell) to
 // match the current size/zoom. Hidden below 4x zoom, since at low zoom
@@ -1261,6 +1624,7 @@ function setActiveLayer(idx) {
     activeLayerIndex = idx;
     if (openPanelName === 'layers') renderLayersPanel();
     updateToolVisibility();
+    updateVectorHandles();
 }
 
 // Shows/hides whole tool sections in the Tools drawer to match what the
@@ -1273,14 +1637,19 @@ function updateToolVisibility() {
     const type = layer ? layer.type : 'pixel';
     const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
 
-    show('pixelToolsSection', type === 'pixel');
+    show('pixelToolsSection', type === 'pixel' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
-    show('flipToolsSection', type === 'pixel' || type === 'reference');
+    show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
 
     const pixelOnlyTools = ['brush', 'bucket', 'select', 'line', 'rect', 'ellipse'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
-    if (type !== 'pixel' && pixelOnlyTools.includes(currentTool)) handleToolBtn('eyedrop');
-    if (type !== 'vector' && vectorOnlyTools.includes(currentTool)) handleToolBtn('eyedrop');
+    // Prefer switching to the analogous drawing tool over falling back to
+    // the eyedropper: brush<->pen mirror each other as each type's default
+    // "just start drawing" tool. Reference layers have no drawing tool of
+    // their own, so those still fall back to the eyedropper.
+    if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn('vpen');
+    else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn('brush');
+    else if (type === 'reference' && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
 }
 
 // True only when TRANSFORM mode is on AND the active layer is a reference layer -- gates the drag/pinch reposition-and-scale gesture.
@@ -1291,6 +1660,12 @@ function transformActive() {
 
 // Returns the Layer object tools currently act on (or null).
 function activeLayer() { return layers[activeLayerIndex] || null; }
+
+// Mask/clip layers are fully paintable with every normal pixel tool --
+// only how they're combined with the layer below during compositing
+// differs from a plain pixel layer. Used everywhere a check used to be
+// pixel-only, so brush/bucket/select/shapes/undo/etc. all work on them too.
+function isPixelLike(layer) { return !!layer && (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip'); }
 
 // Creates a new blank pixel layer, makes it active, and records it on the undo stack.
 // Creates a new empty vector layer for splines.
@@ -1307,6 +1682,37 @@ function addVectorLayer() {
         alert('Could not add vector layer -- check the Debug tab for details.');
     }
 }
+
+// Inserts a mask or clip layer directly above the active layer and hooks
+// it there -- both require a pixel layer selected first, since that's
+// what they attach to and modify.
+function addHookedLayer(kind) {
+    const target = activeLayer();
+    if (!target || target.type !== 'pixel') {
+        alert((kind === 'mask' ? 'Mask' : 'Clipping') + ' layers attach to a pixel layer -- select one first.');
+        return;
+    }
+    try {
+        const l = kind === 'mask' ? new MaskLayer((kind === 'mask' ? 'Mask' : 'Clip') + ' for ' + target.name, gridW, gridH)
+                                   : new ClipLayer('Clip for ' + target.name, gridW, gridH);
+        l.hookedTo = target.id;
+        const idx = layers.indexOf(target) + 1;
+        layers.splice(idx, 0, l);
+        container.appendChild(l.el);
+        reindexDom();
+        l.layoutCSS();
+        l.applyVisualState();
+        setActiveLayer(idx);
+        pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: idx, layer: l });
+        refreshHookedComposites();
+        renderLayersPanel();
+    } catch (err) {
+        console.error('addHookedLayer(' + kind + ') failed:', err && err.message);
+        alert('Could not add layer -- check the Debug tab for details.');
+    }
+}
+function addMaskLayer() { addHookedLayer('mask'); }
+function addClipLayer() { addHookedLayer('clip'); }
 
 function addPixelLayer() {
     traceLog('addPixelLayer() called, layers before: ' + layers.length);
@@ -1390,7 +1796,7 @@ function makeThumbnail(layer, size) {
         cx.fillStyle = '#4a4a4a';
         for (let yy = 0; yy < size; yy += 6) for (let xx = ((yy/6)%2)*6; xx < size; xx += 12) cx.fillRect(xx, yy, 6, 6);
         try {
-            if (layer.type === 'pixel' || layer.type === 'vector') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
+            if (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
             else if (layer.image && layer.image.complete) { cx.imageSmoothingEnabled = true; cx.drawImage(layer.image, 0, 0, size, size); }
         } catch (e) { console.warn('thumbnail draw skipped:', e && e.message); }
         return c.toDataURL();
@@ -1413,7 +1819,7 @@ function clearLayerAt(i) {
         renderLayersPanel();
         return;
     }
-    if (layer.type !== 'pixel') return;
+    if (!isPixelLike(layer)) return;
     const wasActive = activeLayerIndex;
     activeLayerIndex = i;
     const snap = beginEdit();
@@ -1425,6 +1831,14 @@ function clearLayerAt(i) {
 }
 
 // Rebuilds the entire Layers panel list: one row per layer (thumbnail, visibility, name, reorder, clear, delete), plus the opacity slider and transform UI for whichever layer is active.
+// Toggles between compact (28px) and larger (64px) layer thumbnails.
+function toggleLayerThumbSize() {
+    largeLayerThumbs = !largeLayerThumbs;
+    const btn = document.getElementById('thumbSizeToggleBtn');
+    if (btn) btn.classList.toggle('active', largeLayerThumbs);
+    renderLayersPanel();
+}
+
 function renderLayersPanel() {
     const list = document.getElementById('layersList');
     list.innerHTML = '';
@@ -1435,21 +1849,24 @@ function renderLayersPanel() {
         row.className = 'layer-row' + (i === activeLayerIndex ? ' active-layer' : '');
 
         const thumb = document.createElement('img');
-        thumb.src = makeThumbnail(layer, 28);
-        thumb.style.cssText = 'width:28px;height:28px;border-radius:4px;flex:none;border:1px solid #444;';
+        thumb.src = makeThumbnail(layer, largeLayerThumbs ? 64 : 28);
+        thumb.style.cssText = 'width:' + (largeLayerThumbs ? 64 : 28) + 'px;height:' + (largeLayerThumbs ? 64 : 28) + 'px;border-radius:4px;flex:none;border:1px solid #444;';
 
         const vis = document.createElement('button');
         vis.className = 'layer-icon-btn layer-vis' + (layer.visible ? '' : ' off');
         vis.innerText = layer.visible ? '\u{1F441}\uFE0F' : '\u{1F6AB}';
-        vis.onclick = (e) => { e.stopPropagation(); layer.visible = !layer.visible; layer.applyVisualState(); renderLayersPanel(); };
+        vis.onclick = (e) => { e.stopPropagation(); layer.visible = !layer.visible; layer.applyVisualState(); refreshHookedComposites(); renderLayersPanel(); };
 
         const name = document.createElement('div');
         name.className = 'layer-name';
         name.innerText = layer.name;
         name.onclick = (e) => {
             e.stopPropagation();
-            const n = prompt('Layer name:', layer.name);
-            if (n) { layer.name = n; renderLayersPanel(); }
+            openCustomKeyboard(layer.name, (newName) => {
+                const v = newName.trim();
+                if (v) layer.name = v;
+                renderLayersPanel();
+            });
         };
 
         const badge = document.createElement('div');
@@ -1463,7 +1880,7 @@ function renderLayersPanel() {
         down.disabled = i === 0;
 
         const clr = mkLayerIconBtn('\u{1F9F9}', (e) => { e.stopPropagation(); clearLayerAt(i); });
-        clr.style.display = (layer.type === 'pixel' || layer.type === 'vector') ? 'flex' : 'none';
+        clr.style.display = (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') ? 'flex' : 'none';
 
         const del = mkLayerIconBtn('\u{1F5D1}\uFE0F', (e) => { e.stopPropagation(); deleteLayer(i); });
 
@@ -1480,7 +1897,7 @@ function renderLayersPanel() {
             slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = Math.round(layer.opacity * 100);
             const label = document.createElement('span');
             label.innerText = slider.value + '%';
-            slider.oninput = () => { layer.opacity = slider.value / 100; layer.applyVisualState(); label.innerText = slider.value + '%'; };
+            slider.oninput = () => { layer.opacity = slider.value / 100; layer.applyVisualState(); label.innerText = slider.value + '%'; refreshHookedComposites(); };
             opRow.append(slider, label);
             list.appendChild(opRow);
 
@@ -1568,6 +1985,7 @@ function moveLayer(from, to) {
     if (activeLayerIndex === from) activeLayerIndex = to;
     else if (activeLayerIndex === to) activeLayerIndex = from;
     reindexDom();
+    refreshHookedComposites();
     renderLayersPanel();
 }
 
@@ -1580,6 +1998,7 @@ function deleteLayer(i) {
     if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
     else if (activeLayerIndex > i) activeLayerIndex--;
     pushUndo({ type: 'deleteLayer', frameIndex: activeFrameIndex, index: i, layer });
+    refreshHookedComposites();
     renderLayersPanel();
 }
 
@@ -1591,7 +2010,21 @@ function deleteLayer(i) {
    cheap and doesn't touch layer content.
    ============================================================ */
 function addFrame(duplicate) {
-    const newLayers = duplicate ? layers.map(cloneLayer) : [new PixelLayer('Layer 1', gridW, gridH)];
+    let newLayers;
+    if (duplicate) {
+        newLayers = layers.map(cloneLayer);
+        // cloneLayer() copies hookedTo as-is (pointing at the original
+        // layer's id) -- remap it to the corresponding newly cloned layer
+        // in this frame instead, since ids are unique per instance.
+        layers.forEach((oldLayer, i) => {
+            if (newLayers[i].hookedTo != null) {
+                const oldTargetIdx = layers.findIndex(l => l.id === oldLayer.hookedTo);
+                newLayers[i].hookedTo = oldTargetIdx !== -1 ? newLayers[oldTargetIdx].id : null;
+            }
+        });
+    } else {
+        newLayers = [new PixelLayer('Layer 1', gridW, gridH)];
+    }
     frames.splice(activeFrameIndex + 1, 0, { name: 'Frame ' + (frames.length + 1), layers: newLayers });
     switchFrame(activeFrameIndex + 1);
 }
@@ -1607,6 +2040,7 @@ function switchFrame(idx) {
     layers.forEach(l => container.appendChild(l.el));
     reindexDom();
     layoutAll();
+    refreshHookedComposites();
     renderFramesPanel();
     if (openPanelName === 'layers') renderLayersPanel();
 }
@@ -1666,12 +2100,13 @@ function pushUndo(entry) {
     undoStack.push(entry);
     if (undoStack.length > MAX_UNDO) undoStack.shift();
     redoStack = [];
+    updateUndoRedoFabs();
 }
 
 // Snapshots the active pixel layer's content before an edit starts, so commitEdit() can later diff and record what changed.
 function beginEdit() {
     const layer = activeLayer();
-    if (!layer || layer.type !== 'pixel') return null;
+    if (!isPixelLike(layer)) return null;
     return { type: 'pixels', frameIndex: activeFrameIndex, layerId: layer.id, before: cloneGrid(layer.pixelData) };
 }
 // Compares the snapshot from beginEdit() against the current content; if anything actually changed, records a before/after undo entry.
@@ -1685,6 +2120,7 @@ function commitEdit(pending) {
     }
     if (!changed) return;
     pushUndo({ type: 'pixels', frameIndex: pending.frameIndex, layerId: pending.layerId, before: pending.before, after: cloneGrid(layer.pixelData) });
+    refreshHookedComposites();
 }
 // Looks up a layer by its stable id within a specific frame -- used by undo/redo since array indices can shift.
 function findLayerById(frameIndex, layerId) {
@@ -1728,6 +2164,9 @@ function undo() {
     }
     redoStack.push(entry);
     if (openPanelName === 'layers') renderLayersPanel();
+    updateUndoRedoFabs();
+    updateVectorHandles();
+    refreshHookedComposites();
 }
 // Re-applies whatever the last undo() just reverted.
 function redo() {
@@ -1761,6 +2200,9 @@ function redo() {
     }
     undoStack.push(entry);
     if (openPanelName === 'layers') renderLayersPanel();
+    updateUndoRedoFabs();
+    updateVectorHandles();
+    refreshHookedComposites();
 }
 // Deep-copies one spline (including its point list) for undo snapshots.
 function cloneSpline(sp) { return { closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }; }
@@ -1818,7 +2260,7 @@ function deselect() {
 function flipActiveLayerH() {
     const layer = activeLayer();
     if (!layer) return;
-    if (layer.type === 'pixel') {
+    if (isPixelLike(layer)) {
         const snap = beginEdit();
         layer.flipHorizontal();
         commitEdit(snap);
@@ -1832,7 +2274,7 @@ function flipActiveLayerH() {
 function flipActiveLayerV() {
     const layer = activeLayer();
     if (!layer) return;
-    if (layer.type === 'pixel') {
+    if (isPixelLike(layer)) {
         const snap = beginEdit();
         layer.flipVertical();
         commitEdit(snap);
@@ -1846,7 +2288,7 @@ function flipActiveLayerV() {
 function deleteSelection() {
     if (!selection) return;
     const layer = activeLayer();
-    if (!layer || layer.type !== 'pixel') return;
+    if (!isPixelLike(layer)) return;
     const snap = beginEdit();
     for (let x = selection.x0; x <= selection.x1; x++)
         for (let y = selection.y0; y <= selection.y1; y++) layer.plot(x, y, null);
@@ -1884,7 +2326,7 @@ function positionFloatingBuffer(gx, gy, w, h) {
 }
 // Writes a floating selection buffer permanently into the layer at its final dropped position.
 function stampFloatingBuffer(layer, buf, sel) {
-    if (!layer || layer.type !== 'pixel') return;
+    if (!isPixelLike(layer)) return;
     const w = buf.length, h = buf[0] ? buf[0].length : 0;
     for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) { const c = buf[x][y]; if (c) layer.plot(sel.x0 + x, sel.y0 + y, c); }
 }
@@ -1953,7 +2395,7 @@ function hideShapePreview() {
 
 function commitShape(kind, start, end) {
     const layer = activeLayer();
-    if (!layer || layer.type !== 'pixel') return;
+    if (!isPixelLike(layer)) return;
     const pts = kind === 'line' ? linePixels(start.x, start.y, end.x, end.y)
               : kind === 'rect' ? rectOutlinePixels(start.x, start.y, end.x, end.y)
               : ellipseOutlinePixels(start.x, start.y, end.x, end.y);
@@ -1973,7 +2415,7 @@ function addVectorDraftPoint(x, y, isShape) {
     const layer = activeLayer();
     if (!layer || layer.type !== 'vector') return;
     if (!vectorDraft) {
-        vectorDraft = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: 1, points: [{ x, y }] };
+        vectorDraft = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: currentPenWidth, points: [{ x, y }] };
     } else {
         vectorDraft.points.push({ x, y });
     }
@@ -2028,6 +2470,14 @@ function undoLastDraftPoint() {
 // on the active vector layer and starts a new draft continuing from its
 // last point, so the next taps (with the Pen tool) add on to it instead
 // of starting something new.
+// Sets the stroke width used for new vector strokes/shapes going forward
+// (does not retroactively change already-committed splines).
+function setPenWidth(v) {
+    currentPenWidth = parseInt(v, 10) || 1;
+    const label = document.getElementById('penWidthLabel');
+    if (label) label.innerText = currentPenWidth;
+}
+
 function extendLastSpline() {
     const layer = activeLayer();
     if (!layer || layer.type !== 'vector') { alert('Select a vector layer first.'); return; }
@@ -2043,9 +2493,11 @@ function extendLastSpline() {
 }
 function updateVectorDraftStatus() {
     const el = document.getElementById('vectorDraftStatus');
-    if (!el) return;
-    if (!vectorDraft) { el.innerText = 'No draft in progress'; return; }
-    el.innerText = (vectorDraft.extendSpline ? 'Extending spline: ' : 'Drafting: ') + vectorDraft.points.length + ' point(s)' + (vectorDraft.closed ? ' (closed)' : ' (open)');
+    if (el) {
+        el.innerText = !vectorDraft ? 'No draft in progress' :
+            (vectorDraft.extendSpline ? 'Extending spline: ' : 'Drafting: ') + vectorDraft.points.length + ' point(s)' + (vectorDraft.closed ? ' (closed)' : ' (open)');
+    }
+    updateVectorHandles();
 }
 
 // Ramer-Douglas-Peucker: reduces a dense freehand-drag point trail down to
@@ -2086,7 +2538,7 @@ function commitFreehandSpline(layer, points, isShape) {
         traceLog('Freehand-extended spline: now ' + target.points.length + ' points');
         vectorDraft = null;
     } else {
-        const spline = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: 1, points };
+        const spline = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: currentPenWidth, points };
         layer.splines.push(spline);
         pushUndo({ type: 'addSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline, index: layer.splines.length - 1 });
         traceLog('Freehand spline committed: ' + points.length + ' simplified points, closed=' + isShape);
@@ -2198,6 +2650,7 @@ function handleToolBtn(t) {
     if (t !== 'select') { /* leaving select tool keeps the selection, just stops editing it */ }
     currentTool = t;
     updateUI();
+    updateVectorHandles();
 }
 
 // Refreshes which swatch/tool button shows as "selected" to match current state.
@@ -2221,7 +2674,7 @@ function rgbToHex(rgb) {
 // Sets one grid cell on the active pixel layer to the current colour (or clears it, if colour is null/transparent).
 function plot(x, y) {
     const layer = activeLayer();
-    if (!layer || layer.type !== 'pixel') return;
+    if (!isPixelLike(layer)) return;
     layer.plot(x, y, selectedColor);
 }
 
@@ -2250,7 +2703,7 @@ function cancelClear() {
 // Wipes the active pixel layer's content, recording the change on the undo stack.
 function executeClear() {
     const layer = activeLayer();
-    if (layer && layer.type === 'pixel') {
+    if (isPixelLike(layer)) {
         const snap = beginEdit();
         layer.pixelData = Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null));
         layer.redrawFromData();
@@ -2313,7 +2766,7 @@ function setupDrawingEvents() {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
         const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop';
-        if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !layer || layer.type !== 'pixel') { hideCursor(); return; }
+        if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
@@ -2351,7 +2804,11 @@ function setupDrawingEvents() {
                 selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
                 updateUI();
             }
-            currentTool = toolBeforeEyedrop;
+            // Reference layers only have the dropper -- it should stay
+            // selected there rather than bouncing back to whatever tool
+            // was active before, which would otherwise undo the auto-
+            // switch-to-dropper logic after every single tap.
+            if (!activeL || activeL.type !== 'reference') currentTool = toolBeforeEyedrop;
             updateUI();
             g.suppressStroke = true;
             return;
@@ -2362,7 +2819,7 @@ function setupDrawingEvents() {
             return;
         }
         const layer = activeLayer();
-        if (!layer || layer.type !== 'pixel') return;
+        if (!isPixelLike(layer)) return;
         if (currentTool === 'bucket') {
             const target = layer.pixelData[x] ? layer.pixelData[x][y] : undefined;
             if (target !== undefined && target !== selectedColor) {
@@ -2381,7 +2838,7 @@ function setupDrawingEvents() {
     const startSelectionDrag = (x, y) => {
         if (movingSelection && withinSelection(x, y)) {
             const layer = activeLayer();
-            if (!layer || layer.type !== 'pixel') { movingSelection = false; return; }
+            if (!isPixelLike(layer)) { movingSelection = false; return; }
             g.currentEditSnapshot = beginEdit();
             const sel = { ...selection };
             const buf = cutSelectionBuffer(layer, sel);
@@ -2430,6 +2887,7 @@ function setupDrawingEvents() {
         g.vecDragTarget.point.x = x; g.vecDragTarget.point.y = y;
         const layer = activeLayer();
         if (layer) layer.layoutCSS();
+        updateVectorHandles();
     };
     const endVectorEditDrag = () => { g.vecDragTarget = null; };
 
@@ -2608,7 +3066,7 @@ function setupDrawingEvents() {
         if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
         if (isDrawing && !g.suppressStroke) {
             const [x, y] = getPos(e);
-            if (currentTool === 'brush') plot(x, y);
+            if (currentTool === 'brush') { plot(x, y); if (activeLayerHasLiveHook()) scheduleHookedCompositeRefresh(); }
             else if (currentTool === 'select') updateSelectionDrag(x, y);
             else if (currentTool === 'vedit') updateVectorEditDrag(x, y);
             else if (currentTool === 'vpen' || currentTool === 'vshape') updateVectorFreehand(x, y);
@@ -2678,16 +3136,146 @@ function setupDrawingEvents() {
    EXPORT / IMPORT (file-based only -- nothing is ever saved
    to cookies or localStorage)
    ============================================================ */
+// Combines a pixel layer with the mask/clip layer hooked directly above
+// it into a single composited canvas, for export/flatten purposes only
+// (see the note on live preview above flattenLayersToCanvas's caller).
+// Renders a pixel-like layer's true underlying content fresh from its
+// pixelData, ignoring whatever is currently drawn into its .el canvas
+// (which may itself be showing a live composite -- see
+// refreshHookedComposites()). Always use this, never layer.el directly,
+// wherever compositing needs the *real* unmodified content.
+function renderRawPixelLayer(layer) {
+    const c = document.createElement('canvas');
+    c.width = layer.gridW; c.height = layer.gridH;
+    const ctx = c.getContext('2d');
+    for (let x = 0; x < layer.gridW; x++)
+        for (let y = 0; y < layer.gridH; y++)
+            if (layer.pixelData[x][y]) { ctx.fillStyle = layer.pixelData[x][y]; ctx.fillRect(x, y, 1, 1); }
+    return c;
+}
+
+function compositeMaskOrClip(base, effect) {
+    const baseRaw = renderRawPixelLayer(base);
+    if (effect.type === 'clip') {
+        // "source-in" keeps only the parts of the clip layer that overlap
+        // the base's own alpha shape -- i.e. the clip layer's content,
+        // stencilled to the base's silhouette. Composite that back over
+        // the base's own normal rendering so the base still shows through
+        // wherever the clip layer itself is transparent.
+        const clipped = document.createElement('canvas');
+        clipped.width = gridW; clipped.height = gridH;
+        const cctx = clipped.getContext('2d');
+        cctx.drawImage(baseRaw, 0, 0);
+        cctx.globalCompositeOperation = 'source-in';
+        cctx.globalAlpha = effect.opacity;
+        cctx.drawImage(effect.el, 0, 0);
+
+        const result = document.createElement('canvas');
+        result.width = gridW; result.height = gridH;
+        const rctx = result.getContext('2d');
+        rctx.drawImage(baseRaw, 0, 0);
+        rctx.drawImage(clipped, 0, 0);
+        return result;
+    }
+    // Mask: build an alpha-only version of the mask layer from its raw
+    // pixel data (each cell's colour luminance becomes its alpha; an
+    // unpainted cell defaults to fully white/fully visible), then use
+    // "destination-in" to scale the base layer's own alpha by it.
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = gridW; maskCanvas.height = gridH;
+    const mctx = maskCanvas.getContext('2d');
+    const maskImg = mctx.createImageData(gridW, gridH);
+    for (let x = 0; x < gridW; x++) {
+        for (let y = 0; y < gridH; y++) {
+            const c = effect.pixelData[x][y];
+            const i = (y * gridW + x) * 4;
+            let lum = 255;
+            if (c) {
+                const r = parseInt(c.substr(1, 2), 16), gg = parseInt(c.substr(3, 2), 16), b = parseInt(c.substr(5, 2), 16);
+                lum = Math.round(0.299 * r + 0.587 * gg + 0.114 * b);
+            }
+            maskImg.data[i] = 0; maskImg.data[i + 1] = 0; maskImg.data[i + 2] = 0;
+            maskImg.data[i + 3] = Math.round(lum * effect.opacity);
+        }
+    }
+    mctx.putImageData(maskImg, 0, 0);
+
+    const result = document.createElement('canvas');
+    result.width = gridW; result.height = gridH;
+    const rctx = result.getContext('2d');
+    rctx.drawImage(baseRaw, 0, 0);
+    rctx.globalCompositeOperation = 'destination-in';
+    rctx.drawImage(maskCanvas, 0, 0);
+    return result;
+}
+
+// Live preview: for every pixel layer that has a mask/clip hooked
+// directly above it, draws the composited result into that pixel
+// layer's own display canvas -- its pixelData stays the untouched raw
+// paint, only what's shown changes, so this can be safely re-run any
+// time either layer changes without ever compounding on itself. Layers
+// with no hooked effect (or whose effect layer is hidden) just get their
+// own normal content redrawn, undoing any previous composite.
+function refreshHookedComposites() {
+    for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (l.type !== 'pixel') continue;
+        const above = layers[i + 1];
+        if (above && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id && above.visible) {
+            const composited = compositeMaskOrClip(l, above);
+            l.ctx.clearRect(0, 0, l.gridW, l.gridH);
+            l.ctx.drawImage(composited, 0, 0);
+        } else {
+            l.redrawFromData();
+        }
+    }
+}
+
+let hookedCompositeRefreshPending = false;
+// Coalesces rapid refreshHookedComposites() calls (e.g. one per
+// touchmove during a brush stroke) to at most once per rendered frame,
+// so live mask/clip preview stays smooth instead of recomputing the
+// whole composite dozens of times a second.
+function scheduleHookedCompositeRefresh() {
+    if (hookedCompositeRefreshPending) return;
+    hookedCompositeRefreshPending = true;
+    requestAnimationFrame(() => { hookedCompositeRefreshPending = false; refreshHookedComposites(); });
+}
+// True only when the active layer is itself a mask/clip, or is a pixel
+// layer with one hooked directly above it -- i.e. only when there's
+// actually something for scheduleHookedCompositeRefresh() to do, so
+// ordinary drawing on unrelated layers never pays for this check.
+function activeLayerHasLiveHook() {
+    const layer = activeLayer();
+    if (!layer) return false;
+    if (layer.type === 'mask' || layer.type === 'clip') return true;
+    if (layer.type !== 'pixel') return false;
+    const above = layers[layers.indexOf(layer) + 1];
+    return !!(above && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === layer.id);
+}
+
 function flattenLayersToCanvas(layerList) {
     const out = document.createElement('canvas');
     out.width = gridW; out.height = gridH;
     const octx = out.getContext('2d');
-    layerList.forEach(l => {
-        if (!l.visible) return;
+    for (let i = 0; i < layerList.length; i++) {
+        const l = layerList[i];
+        if (l.type === 'mask' || l.type === 'clip') continue; // composited in when we reach their target below
+        if (!l.visible) continue;
         octx.globalAlpha = l.opacity;
-        if (l.type === 'pixel') octx.drawImage(l.el, 0, 0);
-        else if (l.type === 'vector') octx.drawImage(l.el, 0, 0, gridW, gridH);
-    });
+        if (l.type === 'vector') {
+            if (debugUnrestrictedVector) octx.drawImage(l.el, 0, 0, gridW, gridH);
+            else octx.drawImage(l.el, 0, 0);
+            continue;
+        }
+        if (l.type !== 'pixel') continue; // reference layers stay guide-only, excluded from export
+        const above = layerList[i + 1];
+        if (above && above.visible && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id) {
+            octx.drawImage(compositeMaskOrClip(l, above), 0, 0);
+        } else {
+            octx.drawImage(l.el, 0, 0);
+        }
+    }
     octx.globalAlpha = 1;
     return out;
 }
@@ -2802,6 +3390,7 @@ async function copyToClipboard() {
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
     if (l.type === 'pixel') return { type: 'pixel', name: l.name, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
+    if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
     if (l.type === 'vector') return { type: 'vector', name: l.name, visible: l.visible, opacity: l.opacity, splines: l.splines };
     return { type: 'reference', name: l.name, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
 }
@@ -2812,7 +3401,17 @@ function saveProject() {
         version: 2,
         gridW, gridH, scale, profile: selectedProfile,
         activeFrameIndex, activeLayerIndex,
-        frames: frames.map(f => ({ name: f.name, layers: f.layers.map(serializeLayer) }))
+        frames: frames.map(f => {
+            const serialized = f.layers.map(serializeLayer);
+            serialized.forEach(sl => {
+                if (sl.hookedTo != null) {
+                    const idx = f.layers.findIndex(l => l.id === sl.hookedTo);
+                    sl.hookedToIndex = idx !== -1 ? idx : null;
+                }
+                delete sl.hookedTo;
+            });
+            return { name: f.name, layers: serialized };
+        })
     };
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const link = document.createElement('a');
@@ -2844,6 +3443,17 @@ function loadProjectFile(file) {
         const finalize = () => {
             if (--remaining > 0) return;
             frames = builtFrames;
+            // Resolve each mask/clip layer's saved hookedToIndex (a
+            // frame-relative position) back into the actual id of the
+            // newly built layer at that position, now that every layer
+            // in every frame exists.
+            frames.forEach((f, fi) => {
+                frameDefs[fi].layers.forEach((ld, li) => {
+                    if ((ld.type === 'mask' || ld.type === 'clip') && ld.hookedToIndex != null && f.layers[ld.hookedToIndex]) {
+                        f.layers[li].hookedTo = f.layers[ld.hookedToIndex].id;
+                    }
+                });
+            });
             activeFrameIndex = Math.min(data.activeFrameIndex || 0, frames.length - 1);
             layers = frames[activeFrameIndex].layers;
             layers.forEach(l => container.appendChild(l.el));
@@ -2851,6 +3461,7 @@ function loadProjectFile(file) {
             setActiveLayer(Math.min(data.activeLayerIndex || 0, layers.length - 1));
             lastEnteredProfile = selectedProfile;
             layoutAll();
+            refreshHookedComposites();
             renderLayersPanel();
             renderFramesPanel();
         };
@@ -2870,6 +3481,8 @@ function loadProjectFile(file) {
                 img.onload = () => {
                     let l;
                     if (ld.type === 'pixel') { l = new PixelLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
+                    else if (ld.type === 'mask') { l = new MaskLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
+                    else if (ld.type === 'clip') { l = new ClipLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
                     else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
@@ -2891,15 +3504,19 @@ panelBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeP
 panelBackdrop.addEventListener('mousedown', () => closePanel());
 
 const drawerBackdrop = document.getElementById('drawerBackdrop');
+const keyboardBackdrop = document.getElementById('keyboardBackdrop');
+keyboardBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeCustomKeyboard(true); }, {passive: false});
+keyboardBackdrop.addEventListener('mousedown', () => closeCustomKeyboard(true));
+buildCustomKeyboard();
 drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeDrawer(); }, {passive: false});
 drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
 setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
 setupEdgeSwipe('rightEdgeZone', 'debug', 'left');
 renderLogToggleButtons();
-document.getElementById('viewport').addEventListener('scroll', () => updateRotationFab());
-window.addEventListener('resize', () => { updateRotationFab(); if (viewport) updateCanvasWrapPadding(); });
+document.getElementById('viewport').addEventListener('scroll', () => { updateRotationFab(); updateUndoRedoFabs(); });
+window.addEventListener('resize', () => { updateRotationFab(); updateUndoRedoFabs(); if (viewport) updateCanvasWrapPadding(); });
 if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => { updateRotationFab(); if (viewport) updateCanvasWrapPadding(); });
+    window.visualViewport.addEventListener('resize', () => { updateRotationFab(); updateUndoRedoFabs(); if (viewport) updateCanvasWrapPadding(); });
 }
 
 document.getElementById('colorPicker').onchange = (e) => { uiAction(() => createSwatch(e.target.value.toUpperCase())); };
