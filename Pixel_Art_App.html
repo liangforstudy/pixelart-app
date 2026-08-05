@@ -2060,7 +2060,7 @@ function renderLayersPanel() {
         down.disabled = i === 0;
 
         const clr = mkLayerIconBtn('\u{1F9F9}', (e) => { e.stopPropagation(); clearLayerAt(i); });
-        clr.style.display = (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') ? 'flex' : 'none';
+        clr.style.display = layer.type !== 'reference' ? 'flex' : 'none';
 
         const del = mkLayerIconBtn('\u{1F5D1}\uFE0F', (e) => { e.stopPropagation(); deleteLayer(i); });
 
@@ -2395,6 +2395,14 @@ function setupKeyboardShortcuts() {
         if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
         else if (k === 'y') { e.preventDefault(); redo(); }
     });
+    // Scroll wheel zooms in/out. Ctrl+scroll is the standard browser pinch-
+    // zoom shortcut on desktop (browsers intercept it for page zoom by default
+    // -- preventDefault stops that). Plain scroll without Ctrl also zooms since
+    // this is a canvas app with nothing else for the wheel to scroll.
+    viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) zoomIn(); else if (e.deltaY > 0) zoomOut();
+    }, { passive: false });
 }
 
 /* ============================================================
