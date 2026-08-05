@@ -212,6 +212,7 @@
         .layer-icon-btn { flex: none; width: 26px; height: 26px; background: transparent; border: none; color: #fff; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .layer-icon-btn:disabled { opacity: 0.25; }
         .layer-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+        .layer-name-input { flex: 1; font-size: 11px; background: #1c1c1c; border: 1px solid #0078d4; border-radius: 4px; color: #fff; padding: 2px 4px; min-width: 0; }
 
         #keyboardBackdrop { position: fixed; inset: 0; z-index: 960; display: none; background: rgba(0,0,0,0.3); }
         #keyboardBackdrop.open { display: block; }
@@ -224,6 +225,7 @@
         }
         #customKeyboard.open { transform: translateY(0); }
         #keyboardPreviewRow { display: flex; align-items: center; gap: 10px; padding: 2px 4px 8px; }
+        #keyboardKeysArea { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
         #keyboardPreviewText {
             flex: 1; font-size: 16px; color: #fff; overflow: hidden; text-overflow: ellipsis;
             white-space: nowrap; border-bottom: 1px solid #444; padding-bottom: 6px; min-height: 20px;
@@ -236,6 +238,8 @@
         }
         .kb-key.kb-special { background: #232325; flex: 1.6; font-size: 13px; }
         .kb-key.active { background: #fff; color: #000; }
+        .kb-caret { display: inline-block; width: 1px; height: 16px; background: #0078d4; vertical-align: middle; animation: kbCaretBlink 1s step-end infinite; }
+        @keyframes kbCaretBlink { 50% { opacity: 0; } }
         .layer-type-badge { flex: none; font-size: 8px; color: #888; text-transform: uppercase; border: 1px solid #444; border-radius: 4px; padding: 2px 4px; }
         .layer-vis.off { opacity: 0.3; }
         .layer-opacity-row { display: flex; align-items: center; gap: 6px; padding: 0 6px 4px; }
@@ -283,7 +287,13 @@
 
         <div class="picker-label" style="margin-top:14px;">Open Project</div>
         <button class="btn-start" style="width:260px; background:#2a2a2a;" onclick="projectInput.click()">📂 Load Project File</button>
-        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">No persistent storage yet -- projects only exist as files you save/load yourself.</div>
+
+        <div class="picker-label" style="margin-top:14px;">Import Image</div>
+        <button class="btn-start" id="hubImportImageBtn" style="width:260px; background:#2a2a2a;" onclick="handleImportImageClick()">🖼️ IMPORT AS NEW PROJECT</button>
+        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">Canvas is sized to match the image (capped at 999px per side, scaled down proportionally if larger) and it's placed on a new pixel layer.</div>
+        <input type="file" id="hubImageInput" accept="image/*" style="display:none">
+
+        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:10px;">No persistent storage yet -- projects only exist as files you save/load yourself.</div>
     </div>
 
     <div id="main-app">
@@ -333,7 +343,7 @@
                 </div>
             </div>
             <div id="vectorToolsSection">
-                <div class="panel-subtitle">Vector (freehand-drag draws + smooths; a quick tap-in-place instead places single points to build up manually)</div>
+                <div class="panel-subtitle">Vector (freehand-drag draws + smooths; a quick tap-in-place places a single point)</div>
                 <div class="row">
                     <button class="btn tool-btn" data-tool="vpen" onclick="uiAction(() => handleToolBtn('vpen'))">🖊️ PEN (open)</button>
                     <button class="btn tool-btn" data-tool="vshape" onclick="uiAction(() => handleToolBtn('vshape'))">🔷 SHAPE (closed)</button>
@@ -344,15 +354,6 @@
                     <input type="range" id="penWidthSlider" min="1" max="10" step="1" value="1" oninput="uiAction(() => setPenWidth(this.value))" style="flex:1;">
                     <span id="penWidthLabel" style="font-size:10px; color:#ccc; flex:none; width:18px; text-align:right;">1</span>
                 </div>
-                <div class="row">
-                    <button class="btn" onclick="uiAction(finishVectorDraft)">✅ FINISH</button>
-                    <button class="btn" onclick="uiAction(undoLastDraftPoint)">↩️ UNDO POINT</button>
-                    <button class="btn" onclick="uiAction(cancelVectorDraft)">✖️ CANCEL</button>
-                </div>
-                <div class="row">
-                    <button class="btn" onclick="uiAction(extendLastSpline)">➕ EXTEND LAST SPLINE</button>
-                </div>
-                <div id="vectorDraftStatus" style="font-size:10px; color:#888; text-align:center;">No draft in progress</div>
             </div>
             <div id="flipToolsSection">
                 <div class="panel-subtitle">Flip Active Layer</div>
@@ -477,6 +478,9 @@
                 <div class="row">
                     <button class="btn" id="debugVectorToggleBtn" onclick="uiAction(toggleDebugUnrestrictedVector)">🐛 UNRESTRICTED VECTOR</button>
                 </div>
+                <div class="row">
+                    <button class="btn" id="forceKeyboardToggleBtn" onclick="uiAction(toggleForceCustomKeyboard)">⌨️ FORCE BUILT-IN KEYBOARD</button>
+                </div>
                 <div class="panel-subtitle">Log Capture</div>
                 <div class="row">
                     <button class="btn" id="logToggle-touch" onclick="uiAction(() => setLogToggle('touch', !logTouchEnabled))">👆 TOUCH</button>
@@ -578,12 +582,14 @@ document.addEventListener('click', (e) => {
     pushDebugLog('log', ['CLICK fired on: ' + describeEl(e.target)], 'touch');
 }, true);
 
+// Sets one of the three log-capture switches (touch/js/trace) and refreshes their button states.
 function setLogToggle(kind, on) {
     if (kind === 'touch') logTouchEnabled = on;
     else if (kind === 'js') logJsEnabled = on;
     else if (kind === 'trace') logTraceEnabled = on;
     renderLogToggleButtons();
 }
+// Syncs the three log-toggle buttons' highlighted state to logTouchEnabled/logJsEnabled/logTraceEnabled.
 function renderLogToggleButtons() {
     const map = { touch: logTouchEnabled, js: logJsEnabled, trace: logTraceEnabled };
     Object.keys(map).forEach(k => {
@@ -641,6 +647,15 @@ function toggleDebugUnrestrictedVector() {
     frames.forEach(f => f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); }));
 }
 
+// Debug-only: forces the custom on-screen keyboard even on a desktop
+// (non-touch) device, for testing it without needing a touch screen.
+function toggleForceCustomKeyboard() {
+    forceCustomKeyboard = !forceCustomKeyboard;
+    const btn = document.getElementById('forceKeyboardToggleBtn');
+    if (btn) btn.classList.toggle('active', forceCustomKeyboard);
+}
+
+// Rebuilds the stats readout in the Debug drawer (canvas size, layer/frame counts, undo depth, memory estimate).
 function refreshDebugStats() {
     const el = document.getElementById('debugStats');
     if (!el) return;
@@ -662,7 +677,10 @@ function refreshDebugStats() {
    ============================================================ */
 let gridW, gridH;
 let scale = 10;
-const ZOOM_STEPS = [1,2,3,4,5,6,8,10,12,16,20,24,32,40,50,64];
+// Below 1x, multiple grid pixels share one screen pixel -- no longer
+// perfectly crisp, but needed to see a large canvas (e.g. 500px+) as a
+// whole. 1x and above stay integer-only so those remain pixel-perfect.
+const ZOOM_STEPS = [0.1,0.16,0.25,0.35,0.5,0.75,1,2,3,4,5,6,8,10,12,16,20,24,32,40,50,64];
 let zoomIndex = ZOOM_STEPS.indexOf(10);
 
 let viewport, container, pixelCursor;
@@ -711,10 +729,37 @@ function updateHubState() {
 let customKeyboardState = null; // {value, shift, onCommit}
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
 
+// Builds one keyboard key button. Mirrors mkLayerIconBtn's pattern.
+function mkKbKey(text, flex, onClick, special) {
+    const btn = document.createElement('button');
+    btn.className = special ? 'kb-key kb-special' : 'kb-key';
+    if (flex != null) btn.style.flex = flex;
+    btn.innerText = text;
+    btn.onclick = onClick;
+    return btn;
+}
+
 let kbMode = 'letters'; // 'letters' | 'symbols' | 'emoji'
 const KB_SYMBOL_ROWS = ['1234567890', '-/:;()$&@"', '.,?!\'[]{}#%^*+=_\\|~'];
-const KB_EMOJI = ['😀','😂','😅','😊','😍','😎','🤔','😭','😡','🥳','👍','👎','👏','🙏','💪','🔥','✨','⭐','❤️','💯','🎉','✅','❌','⚠️','🎨','🖌️','✏️','📌','💡','🚀'];
+// Not the full Unicode emoji set (thousands of hand-coded buttons isn't
+// practical) but a much broader curated list across common categories,
+// in a scrollable grid -- see the .kb-key[flex:0 0 17%] emoji grid CSS.
+const KB_EMOJI = [
+    '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙',
+    '😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥',
+    '😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','🧐',
+    '😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓',
+    '😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','👻','👽','🤖','😺','😸','😹','😻','😼','😽','🙀',
+    '👍','👎','👏','🙌','👐','🤝','🙏','✍️','💪','🦾','👀','👋','🤙','✌️','🤞','🫶','👊','✊','🤛','🤜',
+    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','💯','✨','⭐','🌟','💫','🔥','💥','💢','💤',
+    '✅','❌','⚠️','❗','❓','➕','➖','🔁','🔀','🔄','⏰','⌛','🔒','🔓','🔑','💡','🔍','📌','📍','🚀',
+    '🎉','🎊','🎈','🎁','🏆','🥇','🎨','🖌️','✏️','📝','📷','🎵','🎮','🧩','🔧','⚙️','💻','📱','🖥️','🕹️',
+    '🍎','🍕','🍔','🍟','🍩','🍪','☕','🍺','🍷','🍰',
+    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐸',
+    '🌞','🌙','⭐','☁️','🌈','🌧️','❄️','🔥','🌊','🌍'
+];
 
+// Builds the custom keyboard's static shell (preview row, key area, persistent bottom row) once; renderKeyboardKeys() fills in the actual keys per mode.
 function buildCustomKeyboard() {
     const kb = document.getElementById('customKeyboard');
     if (!kb || kb.childElementCount) return; // build once
@@ -736,31 +781,18 @@ function buildCustomKeyboard() {
     kb.appendChild(keysArea);
 
     // Persistent bottom row regardless of mode: switch letters<->symbols,
-    // jump to/from emoji, space, backspace.
+    // jump to/from emoji, cursor, space, backspace.
     const bottomRow = document.createElement('div');
     bottomRow.className = 'kb-row';
-    const modeBtn = document.createElement('button');
-    modeBtn.className = 'kb-key kb-special';
+    const modeBtn = mkKbKey('', '2', () => { kbMode = kbMode === 'symbols' ? 'letters' : 'symbols'; renderKeyboardKeys(); }, true);
     modeBtn.id = 'kbModeBtn';
-    modeBtn.style.flex = '2';
-    modeBtn.onclick = () => { kbMode = kbMode === 'symbols' ? 'letters' : 'symbols'; renderKeyboardKeys(); };
-    const emojiBtn = document.createElement('button');
-    emojiBtn.className = 'kb-key kb-special';
+    const emojiBtn = mkKbKey('\u{1F600}', '1.4', () => { kbMode = kbMode === 'emoji' ? 'letters' : 'emoji'; renderKeyboardKeys(); }, true);
     emojiBtn.id = 'kbEmojiBtn';
-    emojiBtn.innerText = '\u{1F600}';
-    emojiBtn.style.flex = '1.4';
-    emojiBtn.onclick = () => { kbMode = kbMode === 'emoji' ? 'letters' : 'emoji'; renderKeyboardKeys(); };
-    const spaceBtn = document.createElement('button');
-    spaceBtn.className = 'kb-key';
-    spaceBtn.style.flex = '6';
-    spaceBtn.innerText = 'space';
-    spaceBtn.onclick = () => kbTapKey(' ');
-    const bsBtn = document.createElement('button');
-    bsBtn.className = 'kb-key kb-special';
-    bsBtn.style.flex = '2';
-    bsBtn.innerText = '\u232B';
-    bsBtn.onclick = () => kbBackspace();
-    bottomRow.append(modeBtn, emojiBtn, spaceBtn, bsBtn);
+    const leftBtn = mkKbKey('\u25C0', '1.2', () => kbMoveCursor(-1), true);
+    const spaceBtn = mkKbKey('space', '4', () => kbTapKey(' '));
+    const rightBtn = mkKbKey('\u25B6', '1.2', () => kbMoveCursor(1), true);
+    const bsBtn = mkKbKey('\u232B', '2', () => kbBackspace(), true);
+    bottomRow.append(modeBtn, emojiBtn, leftBtn, spaceBtn, rightBtn, bsBtn);
     kb.appendChild(bottomRow);
 
     renderKeyboardKeys();
@@ -820,24 +852,51 @@ function renderKeyboardKeys() {
     });
 }
 
+// Inserts text at the current cursor position and advances the cursor
+// past it -- the shared primitive behind tapped keys, physical typing,
+// and paste.
+function kbInsertText(text) {
+    if (!customKeyboardState || !text) return;
+    const { value, cursorPos } = customKeyboardState;
+    customKeyboardState.value = value.slice(0, cursorPos) + text + value.slice(cursorPos);
+    customKeyboardState.cursorPos = cursorPos + text.length;
+    renderCustomKeyboardPreview();
+}
+// Inserts one tapped character at the cursor, applying shift-case in letters mode.
 function kbTapKey(ch) {
     if (!customKeyboardState) return;
-    customKeyboardState.value += (kbMode === 'letters' && customKeyboardState.shift) ? ch.toUpperCase() : ch;
-    renderCustomKeyboardPreview();
+    kbInsertText((kbMode === 'letters' && customKeyboardState.shift) ? ch.toUpperCase() : ch);
 }
+// Deletes the character immediately before the cursor, if any.
 function kbBackspace() {
-    if (!customKeyboardState) return;
-    customKeyboardState.value = customKeyboardState.value.slice(0, -1);
+    if (!customKeyboardState || customKeyboardState.cursorPos === 0) return;
+    const { value, cursorPos } = customKeyboardState;
+    customKeyboardState.value = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+    customKeyboardState.cursorPos = cursorPos - 1;
     renderCustomKeyboardPreview();
 }
+// Moves the caret left/right (delta = -1 or 1), clamped to the text bounds.
+function kbMoveCursor(delta) {
+    if (!customKeyboardState) return;
+    customKeyboardState.cursorPos = Math.max(0, Math.min(customKeyboardState.value.length, customKeyboardState.cursorPos + delta));
+    renderCustomKeyboardPreview();
+}
+// Flips the keyboard's shift state and re-renders the key labels to match.
 function kbToggleShift() {
     if (!customKeyboardState) return;
     customKeyboardState.shift = !customKeyboardState.shift;
     renderKeyboardKeys();
 }
+// Renders the preview text with a visible blinking caret at cursorPos,
+// so the on-screen keyboard has an actual editable cursor rather than
+// always appending/deleting at the end.
 function renderCustomKeyboardPreview() {
     const el = document.getElementById('keyboardPreviewText');
-    if (el) el.innerText = (customKeyboardState && customKeyboardState.value) || ' ';
+    if (!el || !customKeyboardState) return;
+    const { value, cursorPos } = customKeyboardState;
+    const before = escapeHtml(value.slice(0, cursorPos));
+    const after = escapeHtml(value.slice(cursorPos));
+    el.innerHTML = before + '<span class="kb-caret"></span>' + after;
 }
 
 // Opens the custom keyboard pre-filled with initialValue; onCommit(value)
@@ -846,13 +905,15 @@ function renderCustomKeyboardPreview() {
 // what was typed).
 function openCustomKeyboard(initialValue, onCommit) {
     buildCustomKeyboard();
-    customKeyboardState = { value: initialValue || '', shift: false, onCommit };
+    const v = initialValue || '';
+    customKeyboardState = { value: v, cursorPos: v.length, shift: false, onCommit };
     renderCustomKeyboardPreview();
     kbMode = 'letters';
     renderKeyboardKeys();
     document.getElementById('customKeyboard').classList.add('open');
     document.getElementById('keyboardBackdrop').classList.add('open');
 }
+// Closes the custom keyboard; commit=true runs the pending onCommit callback with whatever was typed, commit=false discards it.
 function closeCustomKeyboard(commit) {
     if (!customKeyboardState) return;
     const { value, onCommit } = customKeyboardState;
@@ -862,6 +923,33 @@ function closeCustomKeyboard(commit) {
     if (commit && onCommit) onCommit(value);
 }
 
+// Lets a physical keyboard drive the custom on-screen keyboard directly
+// (typing, arrow keys, backspace, Enter/Escape) and adds real clipboard
+// copy/paste -- something tapping on-screen keys alone can't offer. Only
+// intercepts input while the custom keyboard is actually open.
+function handleKeyboardPhysicalKeydown(e) {
+    if (!customKeyboardState) return;
+    if (e.key === 'Enter') { e.preventDefault(); closeCustomKeyboard(true); return; }
+    if (e.key === 'Escape') { e.preventDefault(); closeCustomKeyboard(false); return; }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); kbMoveCursor(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); kbMoveCursor(1); return; }
+    if (e.key === 'Backspace') { e.preventDefault(); kbBackspace(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        navigator.clipboard.writeText(customKeyboardState.value).catch(err => console.warn('clipboard write failed:', err && err.message));
+        return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then(text => kbInsertText(text)).catch(err => console.warn('clipboard read failed:', err && err.message));
+        return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // don't swallow other shortcuts
+    if (e.key.length === 1) { e.preventDefault(); kbInsertText(e.key); }
+}
+window.addEventListener('keydown', handleKeyboardPhysicalKeydown);
+
+// Handles picking Standard/Portrait/Sprite on the hub: locks the size pickers for Portrait and updates the hint text for what each profile changes.
 function selectProfile(p) {
     selectedProfile = p;
     document.querySelectorAll('.profile-btn').forEach(b => b.classList.toggle('active', b.dataset.profile === p));
@@ -922,6 +1010,7 @@ function closePanel() {
    ============================================================ */
 let drawerOpenName = null; // 'tools' | 'debug' | null
 
+// Opens the Tools or Debug side drawer, closing any open bottom-sheet panel first (they're mutually exclusive).
 function openDrawer(which) {
     if (isConfirmingClear) cancelClear();
     closePanel();
@@ -934,12 +1023,14 @@ function openDrawer(which) {
     drawerOpenName = which;
     if (which === 'debug') { refreshDebugStats(); renderLogToggleButtons(); }
 }
+// Closes whichever side drawer (Tools/Debug) is open.
 function closeDrawer() {
     document.querySelectorAll('.side-drawer').forEach(d => d.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
     document.getElementById('drawerBackdrop').classList.remove('open');
     drawerOpenName = null;
 }
+// Opens the named side drawer, or closes it if it was already open (tab button behavior).
 function toggleDrawer(which) {
     if (drawerOpenName === which) { closeDrawer(); return; }
     openDrawer(which);
@@ -1196,36 +1287,18 @@ class VectorLayer extends Layer {
         this.splines.forEach(sp => this.renderSpline(sp, false));
         if (this.draftPreview) this.renderSpline(this.draftPreview, true);
     }
-    renderSpline(sp, isDraft) {
-        const pts = sp.points;
-        if (pts.length === 0) return;
-        // Canvas fill/stroke is always anti-aliased -- there's no native
-        // "turn it off" flag -- so draw at native grid resolution onto a
-        // scratch canvas first, then threshold every pixel's alpha to
-        // fully solid or fully transparent. That's what actually removes
-        // the soft/blended edges and gives real pixel-art output instead
-        // of a smoothed-out curve that merely happens to be small.
+    // Draws onto a scratch canvas via drawFn(scratchCtx), then thresholds
+    // every pixel's alpha to fully solid or fully transparent before
+    // compositing onto this layer's own canvas. Canvas fill/stroke is
+    // always anti-aliased -- there's no native "turn it off" flag -- so
+    // this is what actually produces crisp pixel-art edges instead of a
+    // soft blend. Shared by renderSpline()'s width>=2/fill path and
+    // renderSplineBresenham()'s fill path.
+    rasterizeThresholded(drawFn) {
         const scratch = document.createElement('canvas');
         scratch.width = gridW; scratch.height = gridH;
         const sctx = scratch.getContext('2d');
-        sctx.lineJoin = 'round';
-        sctx.lineCap = 'round';
-        sctx.setLineDash(isDraft ? [2, 1.5] : []);
-        if (pts.length === 1) {
-            sctx.fillStyle = sp.color;
-            sctx.beginPath();
-            sctx.arc(pts[0].x, pts[0].y, Math.max(0.5, (sp.width || 1) * 0.6), 0, Math.PI * 2);
-            sctx.fill();
-        } else {
-            const smooth = catmullRomPath(pts, sp.closed);
-            sctx.beginPath();
-            smooth.forEach((p, i) => { if (i === 0) sctx.moveTo(p.x, p.y); else sctx.lineTo(p.x, p.y); });
-            if (sp.closed) sctx.closePath();
-            if (sp.closed && sp.filled && !isDraft) { sctx.fillStyle = sp.color; sctx.fill(); }
-            sctx.strokeStyle = sp.color;
-            sctx.lineWidth = Math.max(1, sp.width || 1);
-            sctx.stroke();
-        }
+        drawFn(sctx);
         if (gridW > 0 && gridH > 0) {
             const img = sctx.getImageData(0, 0, gridW, gridH);
             const d = img.data;
@@ -1236,12 +1309,81 @@ class VectorLayer extends Layer {
             sctx.putImageData(img, 0, 0);
         }
         this.ctx.drawImage(scratch, 0, 0);
+    }
+    renderSpline(sp, isDraft) {
+        const pts = sp.points;
+        if (pts.length === 0) return;
+        const strokeWidth = Math.max(1, sp.width || 1);
+
+        if (pts.length === 1) {
+            this.ctx.fillStyle = sp.color;
+            this.ctx.beginPath();
+            this.ctx.arc(pts[0].x, pts[0].y, Math.max(0.5, strokeWidth * 0.6), 0, Math.PI * 2);
+            this.ctx.fill();
+            return;
+        }
+
+        // Width-1 committed strokes: canvas stroke+threshold (below) can
+        // produce inconsistent double-wide steps on some diagonals, since
+        // anti-aliasing coverage doesn't fall evenly at every angle. A
+        // clean single-pixel staircase needs an actual Bresenham
+        // rasterization instead -- draft previews keep the simpler
+        // approach since they're temporary and dashed anyway.
+        if (strokeWidth === 1 && !isDraft) {
+            this.renderSplineBresenham(sp);
+            return;
+        }
+
+        const smooth = catmullRomPath(pts, sp.closed);
+        this.rasterizeThresholded(sctx => {
+            sctx.lineJoin = 'round';
+            sctx.lineCap = 'round';
+            sctx.setLineDash(isDraft ? [2, 1.5] : []);
+            sctx.beginPath();
+            smooth.forEach((p, i) => { if (i === 0) sctx.moveTo(p.x, p.y); else sctx.lineTo(p.x, p.y); });
+            if (sp.closed) sctx.closePath();
+            if (sp.closed && sp.filled && !isDraft) { sctx.fillStyle = sp.color; sctx.fill(); }
+            sctx.strokeStyle = sp.color;
+            sctx.lineWidth = strokeWidth;
+            sctx.stroke();
+        });
         // control points, drawn as crisp single pixels while drafting so
         // it's clear where each tap/sample landed
         if (isDraft) {
             this.ctx.fillStyle = '#ffffff';
             pts.forEach(p => this.ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1));
         }
+    }
+    // Rasterizes a width-1 spline as a true single-pixel staircase using
+    // Bresenham line segments between each pair of smoothed curve points
+    // (unioned into a set so overlapping segments don't double-draw),
+    // instead of canvas stroke+threshold -- see renderSpline() for why.
+    renderSplineBresenham(sp) {
+        const smooth = catmullRomPath(sp.points, sp.closed);
+        if (sp.closed && sp.filled) {
+            // Interior fill still goes through the normal path-fill+
+            // threshold approach; only the outline needs the Bresenham
+            // treatment, since a fill has no "diagonal staircase" to
+            // look inconsistent.
+            this.rasterizeThresholded(sctx => {
+                sctx.beginPath();
+                smooth.forEach((p, i) => { if (i === 0) sctx.moveTo(p.x, p.y); else sctx.lineTo(p.x, p.y); });
+                sctx.closePath();
+                sctx.fillStyle = sp.color;
+                sctx.fill();
+            });
+        }
+        const cells = new Set();
+        const addSeg = (ax, ay, bx, by) => {
+            linePixels(Math.round(ax), Math.round(ay), Math.round(bx), Math.round(by)).forEach(([x, y]) => cells.add(x + ',' + y));
+        };
+        for (let i = 0; i < smooth.length - 1; i++) addSeg(smooth[i].x, smooth[i].y, smooth[i + 1].x, smooth[i + 1].y);
+        if (sp.closed) addSeg(smooth[smooth.length - 1].x, smooth[smooth.length - 1].y, smooth[0].x, smooth[0].y);
+        this.ctx.fillStyle = sp.color;
+        cells.forEach(key => {
+            const [x, y] = key.split(',').map(Number);
+            if (x >= 0 && x < gridW && y >= 0 && y < gridH) this.ctx.fillRect(x, y, 1, 1);
+        });
     }
 }
 
@@ -1272,6 +1414,7 @@ function catmullRomPath(points, closed) {
     return result;
 }
 
+// Converts 0-255 r,g,b values into a "#RRGGBB" string.
 function rgbToHexBytes(r, g, b) {
     return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
@@ -1360,6 +1503,7 @@ function continueEditing() {
     renderFramesPanel();
 }
 
+// "Create Canvas" on the hub: either resumes existing work in place (resized, profile-preserving) or starts a brand new canvas, depending on preserveProfile's rules above.
 function initApp() {
     const newW = selectedProfile === 'portrait' ? 40 : readDigitGroup('w-group');
     const newH = selectedProfile === 'portrait' ? 40 : readDigitGroup('h-group');
@@ -1428,6 +1572,16 @@ let showGridLines = false;
 let largeLayerThumbs = false;
 let currentPenWidth = 1; // grid units, used for new vector strokes/shapes
 let debugUnrestrictedVector = false; // debug-only: smooth display-resolution vector rendering instead of pixel-snapped
+let forceCustomKeyboard = false; // debug-only: use the custom on-screen keyboard even on desktop (for testing it without a touch device)
+
+// Desktop (has a real keyboard/mouse, no touch) uses a native <input> for
+// things like renaming a layer, since it already has a working keyboard
+// and doesn't need our on-screen one. Touch devices use the custom
+// keyboard. forceCustomKeyboard (Debug drawer) overrides this for testing.
+function shouldUseCustomKeyboard() {
+    if (forceCustomKeyboard) return true;
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
+}
 
 // Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/canvasRotation.
 function layoutAll() {
@@ -1472,6 +1626,7 @@ function clampScrollKeepingPeek(value, maxScroll) {
     return Math.max(peek, Math.min(maxScroll - peek, value));
 }
 
+// Scrolls the viewport so the canvas sits in the middle of the visible screen. Safe to call any time -- the canvas is always exactly centered within canvasWrap's total (padded) size, so this is just "scroll to the middle of the scrollable range" regardless of zoom level.
 function centerCanvasInViewport() {
     if (!viewport) return;
     viewport.scrollLeft = (viewport.scrollWidth - viewport.clientWidth) / 2;
@@ -1584,6 +1739,7 @@ function updateGridOverlay() {
         'linear-gradient(to bottom, rgba(128,128,128,0.5) 1px, transparent 1px)';
     el.style.backgroundSize = scale + 'px ' + scale + 'px';
 }
+// Flips the pixel-grid overlay on/off and redraws it to match.
 function toggleGridLines() {
     showGridLines = !showGridLines;
     const btn = document.getElementById('gridToggleBtn');
@@ -1601,7 +1757,10 @@ function zoomIn() { if (zoomIndex < ZOOM_STEPS.length - 1) { zoomIndex++; scale 
 // Steps zoom down to the previous value in ZOOM_STEPS.
 function zoomOut() { if (zoomIndex > 0) { zoomIndex--; scale = ZOOM_STEPS[zoomIndex]; layoutAll(); } }
 // Updates the "Nx" readout in the View panel to match the current scale.
-function updateZoomLabel() { document.getElementById('zoomLabel').innerText = scale + 'x'; }
+function updateZoomLabel() {
+    const el = document.getElementById('zoomLabel');
+    if (el) el.innerText = scale < 1 ? Math.round(scale * 100) + '%' : scale + 'x';
+}
 
 /* ============================================================
    LAYER MANAGEMENT
@@ -1711,9 +1870,12 @@ function addHookedLayer(kind) {
         alert('Could not add layer -- check the Debug tab for details.');
     }
 }
+// Adds a mask layer hooked to the active pixel layer.
 function addMaskLayer() { addHookedLayer('mask'); }
+// Adds a clipping layer hooked to the active pixel layer.
 function addClipLayer() { addHookedLayer('clip'); }
 
+// Creates a new blank pixel layer, makes it active, and records it on the undo stack.
 function addPixelLayer() {
     traceLog('addPixelLayer() called, layers before: ' + layers.length);
     try {
@@ -1839,6 +2001,7 @@ function toggleLayerThumbSize() {
     renderLayersPanel();
 }
 
+// Rebuilds the entire Layers panel list: one row per layer (thumbnail, visibility, name, reorder, clear, delete), plus the opacity slider and transform UI for whichever layer is active.
 function renderLayersPanel() {
     const list = document.getElementById('layersList');
     list.innerHTML = '';
@@ -1862,11 +2025,28 @@ function renderLayersPanel() {
         name.innerText = layer.name;
         name.onclick = (e) => {
             e.stopPropagation();
-            openCustomKeyboard(layer.name, (newName) => {
-                const v = newName.trim();
+            const commit = (newName) => {
+                const v = (newName || '').trim();
                 if (v) layer.name = v;
                 renderLayersPanel();
-            });
+            };
+            if (shouldUseCustomKeyboard()) {
+                openCustomKeyboard(layer.name, commit);
+            } else {
+                // Desktop: use a real native input so the device's own
+                // keyboard (and its usual copy/paste/etc.) just works,
+                // instead of popping up our on-screen one unnecessarily.
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'layer-name-input';
+                input.value = layer.name;
+                input.onclick = (ev) => ev.stopPropagation();
+                input.onkeydown = (ev) => { if (ev.key === 'Enter') input.blur(); if (ev.key === 'Escape') { input.value = layer.name; input.blur(); } };
+                input.onblur = () => commit(input.value);
+                name.replaceWith(input);
+                input.focus();
+                input.select();
+            }
         };
 
         const badge = document.createElement('div');
@@ -2285,6 +2465,7 @@ function flipActiveLayerV() {
     if (openPanelName === 'layers') renderLayersPanel();
 }
 
+// Erases (sets to transparent) every pixel inside the current selection on the active layer.
 function deleteSelection() {
     if (!selection) return;
     const layer = activeLayer();
@@ -2388,11 +2569,13 @@ function showShapePreview(kind, start, end) {
     pts.forEach(([x, y]) => { if (x >= 0 && x < gridW && y >= 0 && y < gridH) ctx.fillRect(x, y, 1, 1); });
     canvas.style.display = 'block';
 }
+// Hides the live shape-tool preview overlay once a shape is committed or cancelled.
 function hideShapePreview() {
     const canvas = document.getElementById('shapePreview');
     if (canvas) canvas.style.display = 'none';
 }
 
+// Draws the chosen shape tool (line/rect/ellipse) from its start point to its release point, all at once.
 function commitShape(kind, start, end) {
     const layer = activeLayer();
     if (!isPixelLike(layer)) return;
@@ -2405,99 +2588,15 @@ function commitShape(kind, start, end) {
 /* ============================================================
    VECTOR SPLINES (Pen = open stroke, Shape = closed filled loop)
    Tap to place points one at a time; FINISH commits the spline,
-   UNDO POINT removes the last tap, CANCEL discards the draft.
-   Not yet covered by the undo/redo history -- vector edits are
-   immediate and permanent for this first pass.
+   CANCEL discards the draft. Each committed spline (and clearing
+   a vector layer) is on the undo stack like any other edit.
    ============================================================ */
-let vectorDraft = null; // {closed, filled, color, width, points:[{x,y},...], extendSpline, extendFromStart}
-
-function addVectorDraftPoint(x, y, isShape) {
-    const layer = activeLayer();
-    if (!layer || layer.type !== 'vector') return;
-    if (!vectorDraft) {
-        vectorDraft = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: currentPenWidth, points: [{ x, y }] };
-    } else {
-        vectorDraft.points.push({ x, y });
-    }
-    layer.draftPreview = vectorDraft;
-    layer.layoutCSS();
-    updateVectorDraftStatus();
-}
-// Commits the current draft into the active vector layer's spline list
-// (or merges it into the spline it was extending from), and clears the draft.
-function finishVectorDraft() {
-    const layer = activeLayer();
-    if (!layer || layer.type !== 'vector' || !vectorDraft) return;
-    if (vectorDraft.points.length >= 2) {
-        if (vectorDraft.extendSpline) {
-            const target = vectorDraft.extendSpline;
-            const before = target.points.map(p => ({ x: p.x, y: p.y }));
-            const newPts = vectorDraft.points.slice(1); // first point duplicates the spline's existing endpoint
-            if (vectorDraft.extendFromStart) target.points = newPts.slice().reverse().concat(target.points);
-            else target.points = target.points.concat(newPts);
-            pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: target, before, after: target.points.map(p => ({ x: p.x, y: p.y })) });
-            traceLog('Extended spline: now ' + target.points.length + ' points');
-        } else {
-            const spline = { closed: vectorDraft.closed, filled: vectorDraft.filled, color: vectorDraft.color, width: vectorDraft.width, points: vectorDraft.points };
-            layer.splines.push(spline);
-            pushUndo({ type: 'addSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline, index: layer.splines.length - 1 });
-            traceLog('New spline committed: ' + vectorDraft.points.length + ' points, closed=' + vectorDraft.closed);
-        }
-    } else {
-        traceLog('Draft had fewer than 2 points, discarded');
-    }
-    vectorDraft = null;
-    layer.draftPreview = null;
-    layer.layoutCSS();
-    updateVectorDraftStatus();
-    if (openPanelName === 'layers') renderLayersPanel();
-}
-function cancelVectorDraft() {
-    const layer = activeLayer();
-    vectorDraft = null;
-    if (layer && layer.type === 'vector') { layer.draftPreview = null; layer.layoutCSS(); }
-    updateVectorDraftStatus();
-}
-function undoLastDraftPoint() {
-    if (!vectorDraft || vectorDraft.points.length === 0) return;
-    vectorDraft.points.pop();
-    const layer = activeLayer();
-    if (vectorDraft.points.length === 0) vectorDraft = null;
-    if (layer && layer.type === 'vector') { layer.draftPreview = vectorDraft; layer.layoutCSS(); }
-    updateVectorDraftStatus();
-}
-// First-pass "extend" workflow: takes the most recently added OPEN spline
-// on the active vector layer and starts a new draft continuing from its
-// last point, so the next taps (with the Pen tool) add on to it instead
-// of starting something new.
 // Sets the stroke width used for new vector strokes/shapes going forward
 // (does not retroactively change already-committed splines).
 function setPenWidth(v) {
     currentPenWidth = parseInt(v, 10) || 1;
     const label = document.getElementById('penWidthLabel');
     if (label) label.innerText = currentPenWidth;
-}
-
-function extendLastSpline() {
-    const layer = activeLayer();
-    if (!layer || layer.type !== 'vector') { alert('Select a vector layer first.'); return; }
-    const target = [...layer.splines].reverse().find(sp => !sp.closed);
-    if (!target) { alert('No open spline on this layer to extend yet.'); return; }
-    const endPoint = target.points[target.points.length - 1];
-    vectorDraft = { closed: false, filled: false, color: target.color, width: target.width, points: [{ x: endPoint.x, y: endPoint.y }], extendSpline: target, extendFromStart: false };
-    layer.draftPreview = vectorDraft;
-    layer.layoutCSS();
-    updateVectorDraftStatus();
-    handleToolBtn('vpen');
-    traceLog('Extending spline from its last point -- freehand-draw or tap with PEN, then release (freehand) or FINISH (taps)');
-}
-function updateVectorDraftStatus() {
-    const el = document.getElementById('vectorDraftStatus');
-    if (el) {
-        el.innerText = !vectorDraft ? 'No draft in progress' :
-            (vectorDraft.extendSpline ? 'Extending spline: ' : 'Drafting: ') + vectorDraft.points.length + ' point(s)' + (vectorDraft.closed ? ' (closed)' : ' (open)');
-    }
-    updateVectorHandles();
 }
 
 // Ramer-Douglas-Peucker: reduces a dense freehand-drag point trail down to
@@ -2525,27 +2624,15 @@ function simplifyPoints(points, epsilon) {
     return rdp(points);
 }
 
-// Commits a finished freehand stroke as a new spline (or merges it into
-// the spline being extended, if extendLastSpline() set that up).
+// Commits a finished freehand stroke (or a single tapped point) as a new spline.
 function commitFreehandSpline(layer, points, isShape) {
-    if (vectorDraft && vectorDraft.extendSpline) {
-        const target = vectorDraft.extendSpline;
-        const before = target.points.map(p => ({ x: p.x, y: p.y }));
-        const newPts = points.slice(1); // first point duplicates the existing endpoint
-        if (vectorDraft.extendFromStart) target.points = newPts.slice().reverse().concat(target.points);
-        else target.points = target.points.concat(newPts);
-        pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: target, before, after: target.points.map(p => ({ x: p.x, y: p.y })) });
-        traceLog('Freehand-extended spline: now ' + target.points.length + ' points');
-        vectorDraft = null;
-    } else {
-        const spline = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: currentPenWidth, points };
-        layer.splines.push(spline);
-        pushUndo({ type: 'addSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline, index: layer.splines.length - 1 });
-        traceLog('Freehand spline committed: ' + points.length + ' simplified points, closed=' + isShape);
-    }
+    const spline = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: currentPenWidth, points };
+    layer.splines.push(spline);
+    pushUndo({ type: 'addSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline, index: layer.splines.length - 1 });
+    traceLog('Spline committed: ' + points.length + ' point(s), closed=' + isShape);
     layer.draftPreview = null;
     layer.layoutCSS();
-    updateVectorDraftStatus();
+    updateVectorHandles();
     if (openPanelName === 'layers') renderLayersPanel();
 }
 
@@ -2729,7 +2816,7 @@ function setupDrawingEvents() {
     const g = {
         panStart: null, xform: null, pendingTouch: null, shapeStart: null,
         selDragOrigin: null, moveBuffer: null, currentEditSnapshot: null,
-        suppressStroke: false, vecDragTarget: null, vecFreehand: null
+        suppressStroke: false, vecDragTarget: null, vecFreehand: null, lastBrushPos: null
     };
 
     // -- coordinate helpers --------------------------------------------
@@ -2747,6 +2834,20 @@ function setupDrawingEvents() {
         const localX = rx + (gridW * scale) / 2;
         const localY = ry + (gridH * scale) / 2;
         return [Math.floor(localX / scale), Math.floor(localY / scale)];
+    };
+    // Inverse of getPosFromClient: given a grid-space point, where does it
+    // land on screen right now (at the current scale/rotation)? Used to
+    // re-anchor pinch-zoom -- see updateCanvasPanZoomRotate.
+    const gridToScreenClient = (gx, gy) => {
+        const r = container.getBoundingClientRect();
+        const centerX = r.left + r.width / 2;
+        const centerY = r.top + r.height / 2;
+        const localX = gx * scale - (gridW * scale) / 2;
+        const localY = gy * scale - (gridH * scale) / 2;
+        const rad = canvasRotation * Math.PI / 180;
+        const rx = localX * Math.cos(rad) - localY * Math.sin(rad);
+        const ry = localX * Math.sin(rad) + localY * Math.cos(rad);
+        return [centerX + rx, centerY + ry];
     };
     const getPos = (e) => {
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
@@ -2783,16 +2884,23 @@ function setupDrawingEvents() {
         if (currentTool === 'eyedrop') {
             const activeL = activeLayer();
             if (activeL && activeL.type === 'reference') {
-                // Sample directly from the reference layer's own canvas
-                // (its raw un-rotated/un-flipped render), mapped through
-                // its own gx/gy/gw/gh box. Rotation/flip aren't accounted
-                // for in this mapping yet, so a rotated or flipped
-                // reference layer may sample a slightly different pixel
-                // than what's visually under your finger.
-                if (x >= activeL.gx && x < activeL.gx + activeL.gw && y >= activeL.gy && y < activeL.gy + activeL.gh) {
+                // Un-rotate/un-flip the tapped point around the layer's own
+                // center to find where it actually falls in the layer's
+                // own (untransformed) local space -- the old version
+                // assumed no rotation/flip and mapped straight through
+                // gx/gy/gw/gh, which was wrong for a rotated/flipped layer.
+                const cx = activeL.gx + activeL.gw / 2, cy = activeL.gy + activeL.gh / 2;
+                let dx = x - cx, dy = y - cy;
+                const rad = -(activeL.rotation || 0) * Math.PI / 180;
+                let rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+                let ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+                if (activeL.flipH) rx = -rx; // flip is its own inverse
+                if (activeL.flipV) ry = -ry;
+                const localGX = rx + activeL.gw / 2, localGY = ry + activeL.gh / 2;
+                if (localGX >= 0 && localGX < activeL.gw && localGY >= 0 && localGY < activeL.gh) {
                     try {
-                        const localX = Math.min(activeL.el.width - 1, Math.max(0, Math.floor((x - activeL.gx) / activeL.gw * activeL.el.width)));
-                        const localY = Math.min(activeL.el.height - 1, Math.max(0, Math.floor((y - activeL.gy) / activeL.gh * activeL.el.height)));
+                        const localX = Math.min(activeL.el.width - 1, Math.max(0, Math.floor(localGX / activeL.gw * activeL.el.width)));
+                        const localY = Math.min(activeL.el.height - 1, Math.max(0, Math.floor(localGY / activeL.gh * activeL.el.height)));
                         const d = activeL.ctx.getImageData(localX, localY, 1, 1).data;
                         selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
                         updateUI();
@@ -2892,8 +3000,8 @@ function setupDrawingEvents() {
     const endVectorEditDrag = () => { g.vecDragTarget = null; };
 
     // -- Pen/Shape tools: freehand-drag records a path and auto-fits a
-    //    spline on release; a stationary tap instead places one precise
-    //    point at a time (see addVectorDraftPoint/finishVectorDraft).
+    //    spline on release; a stationary tap instead commits a single
+    //    point immediately (see commitFreehandSpline).
     const startVectorFreehand = (x, y) => {
         const layer = activeLayer();
         if (!layer || layer.type !== 'vector') { console.warn('vpen/vshape: active layer is not a vector layer, ignoring'); return; }
@@ -2919,8 +3027,8 @@ function setupDrawingEvents() {
             if (g.vecFreehand.moved && g.vecFreehand.points.length >= 2) {
                 commitFreehandSpline(layer, simplifyPoints(g.vecFreehand.points, 0.6), g.vecFreehand.isShape);
             } else {
-                // no real movement -- treat as a precise single-point tap instead
-                addVectorDraftPoint(g.vecFreehand.points[0].x, g.vecFreehand.points[0].y, g.vecFreehand.isShape);
+                // no real movement -- commit a single-point spline (renders as a dot) directly
+                commitFreehandSpline(layer, [{ x: g.vecFreehand.points[0].x, y: g.vecFreehand.points[0].y }], g.vecFreehand.isShape);
             }
         }
         g.vecFreehand = null;
@@ -2939,6 +3047,7 @@ function setupDrawingEvents() {
         }
         g.currentEditSnapshot = beginEdit();
         doToolAt(x, y);
+        g.lastBrushPos = (currentTool === 'brush') ? { x, y } : null;
     };
 
     const commitPendingTouch = () => {
@@ -2963,7 +3072,8 @@ function setupDrawingEvents() {
             const layer = activeLayer();
             g.xform = { type: 'pinch', dist: dist2(t0, t1), angle: angle2(t0, t1), midX: m.x, midY: m.y, gx: layer.gx, gy: layer.gy, gw: layer.gw, gh: layer.gh, startRotation: layer.rotation || 0 };
         } else {
-            g.panStart = { x: m.x, y: m.y, sl: viewport.scrollLeft, st: viewport.scrollTop, dist: dist2(t0, t1), angle: angle2(t0, t1), startZoomIndex: zoomIndex, startRotation: canvasRotation };
+            const [anchorCellX, anchorCellY] = getPosFromClient(m.x, m.y);
+            g.panStart = { dist: dist2(t0, t1), angle: angle2(t0, t1), startZoomIndex: zoomIndex, startRotation: canvasRotation, startScrollLeft: viewport.scrollLeft, startScrollTop: viewport.scrollTop, startMidX: m.x, startMidY: m.y, anchorGX: anchorCellX + 0.5, anchorGY: anchorCellY + 0.5 };
         }
     };
     const updateTransformDrag = (cx, cy) => {
@@ -2991,6 +3101,7 @@ function setupDrawingEvents() {
     const updateCanvasPanZoomRotate = (touches) => {
         const [t0, t1] = touches;
         const m = mid2(t0, t1);
+
         const targetScale = ZOOM_STEPS[g.panStart.startZoomIndex] * (dist2(t0, t1) / g.panStart.dist);
         let bestIdx = 0, bestDiff = Infinity;
         ZOOM_STEPS.forEach((s, i) => { const d = Math.abs(s - targetScale); if (d < bestDiff) { bestDiff = d; bestIdx = i; } });
@@ -3000,10 +3111,16 @@ function setupDrawingEvents() {
         for (const t of snapTargets) { if (Math.abs(newRotation - t) < 3) { newRotation = t; break; } }
         canvasRotation = newRotation;
         layoutAll();
-        const maxL = viewport.scrollWidth - viewport.clientWidth;
-        const maxT = viewport.scrollHeight - viewport.clientHeight;
-        viewport.scrollLeft = clampScrollKeepingPeek(g.panStart.sl - (m.x - g.panStart.x), maxL);
-        viewport.scrollTop = clampScrollKeepingPeek(g.panStart.st - (m.y - g.panStart.y), maxT);
+
+        // layoutAll() re-centers the canvas. Find where the anchor grid
+        // point (snapshotted at gesture start in grid-space) now lands on
+        // screen at the new scale/rotation, then scroll so it sits exactly
+        // under the current finger midpoint. Because the anchor is fixed in
+        // grid-space and gridToScreenClient reads the live container rect
+        // after layoutAll, no per-frame scroll error can accumulate.
+        const [afterScreenX, afterScreenY] = gridToScreenClient(g.panStart.anchorGX, g.panStart.anchorGY);
+        viewport.scrollLeft = viewport.scrollLeft + (afterScreenX - m.x);
+        viewport.scrollTop  = viewport.scrollTop  + (afterScreenY - m.y);
     };
 
     const onStart = (e) => {
@@ -3066,7 +3183,17 @@ function setupDrawingEvents() {
         if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
         if (isDrawing && !g.suppressStroke) {
             const [x, y] = getPos(e);
-            if (currentTool === 'brush') { plot(x, y); if (activeLayerHasLiveHook()) scheduleHookedCompositeRefresh(); }
+            if (currentTool === 'brush') {
+                // A fast drag can jump several grid cells between two
+                // consecutive move events -- plotting only the endpoint
+                // would leave gaps. Fill the path between the last plotted
+                // point and this one (same Bresenham walk the Line tool
+                // uses) so the stroke stays continuous at any drag speed.
+                if (g.lastBrushPos) linePixels(g.lastBrushPos.x, g.lastBrushPos.y, x, y).forEach(([lx, ly]) => plot(lx, ly));
+                else plot(x, y);
+                g.lastBrushPos = { x, y };
+                if (activeLayerHasLiveHook()) scheduleHookedCompositeRefresh();
+            }
             else if (currentTool === 'select') updateSelectionDrag(x, y);
             else if (currentTool === 'vedit') updateVectorEditDrag(x, y);
             else if (currentTool === 'vpen' || currentTool === 'vshape') updateVectorFreehand(x, y);
@@ -3113,6 +3240,7 @@ function setupDrawingEvents() {
             }
         }
         isDrawing = false;
+        g.lastBrushPos = null;
         pixelCursor.classList.remove('active');
     };
 
@@ -3154,6 +3282,7 @@ function renderRawPixelLayer(layer) {
     return c;
 }
 
+// Combines a pixel layer with the mask/clip layer hooked directly above it into a single composited canvas -- used both for live on-canvas preview and for PNG export.
 function compositeMaskOrClip(base, effect) {
     const baseRaw = renderRawPixelLayer(base);
     if (effect.type === 'clip') {
@@ -3254,6 +3383,7 @@ function activeLayerHasLiveHook() {
     return !!(above && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === layer.id);
 }
 
+// Composites a given list of layers (bottom to top, respecting visibility/opacity, with mask/clip effects applied) into one flat offscreen canvas. Reference layers are intentionally excluded -- they are guides, not final art.
 function flattenLayersToCanvas(layerList) {
     const out = document.createElement('canvas');
     out.width = gridW; out.height = gridH;
@@ -3318,6 +3448,7 @@ const mainMenuConfirm = makeTapTwiceConfirm({
     btnId: 'mainMenuBtn', idleText: '\ud83c\udfe0 MAIN MENU', armedText: '\u26A0\uFE0F TAP AGAIN TO LEAVE',
     onConfirm: () => goToMainMenu()
 });
+// Main Menu button handler -- arms/triggers the tap-twice confirm.
 function handleMainMenuClick() { traceLog('MAIN MENU pressed'); mainMenuConfirm.trigger(); }
 
 // Discards any existing work and opens a brand new blank canvas, available
@@ -3334,12 +3465,99 @@ const startFreshConfirm = makeTapTwiceConfirm({
         initApp();
     }
 });
+// "Start Fresh" on the hub: discards current work (with tap-twice confirm if there's anything to lose) and opens a brand new blank canvas.
 function handleStartFreshClick() {
     if (frames.length === 0) { initApp(); return; }
     traceLog('START FRESH pressed');
     startFreshConfirm.trigger();
 }
 
+// Same discard-current-work pattern as Start Fresh, but opens the image
+// picker on confirm instead of creating a blank canvas.
+const importImageConfirm = makeTapTwiceConfirm({
+    btnId: 'hubImportImageBtn', idleText: '\ud83d\uddbc\ufe0f IMPORT AS NEW PROJECT', armedText: '\u26A0\uFE0F TAP AGAIN TO DISCARD & IMPORT',
+    onConfirm: () => hubImageInput.click()
+});
+// "Import as New Project" on the hub: discards current work (with tap-twice confirm if there's anything to lose) and opens the image picker.
+function handleImportImageClick() {
+    if (frames.length === 0) { hubImageInput.click(); return; }
+    traceLog('IMPORT AS NEW PROJECT pressed');
+    importImageConfirm.trigger();
+}
+
+// Builds a fresh PixelLayer whose content is the given image, scaled (if
+// needed) to fit exactly w x h -- used so an imported photo's colours
+// land correctly on the grid regardless of whether the canvas ended up
+// the image's native size or a downscaled version of it.
+function pixelLayerFromImage(name, img, w, h) {
+    const l = new PixelLayer(name, w, h);
+    const tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(img, 0, 0, w, h);
+    const data = tctx.getImageData(0, 0, w, h).data;
+    for (let x = 0; x < w; x++) {
+        for (let y = 0; y < h; y++) {
+            const i = (y * w + x) * 4;
+            const a = data[i + 3];
+            l.pixelData[x][y] = a === 0 ? null : rgbToHexBytes(data[i], data[i + 1], data[i + 2]);
+        }
+    }
+    l.redrawFromData();
+    return l;
+}
+
+// Wires up the hidden image-import file input: reads the chosen image, sizes a fresh canvas to match it (capped and scaled down if oversized), and places it on a new pixel layer.
+function setupImportImageInput() {
+    document.getElementById('hubImageInput').onchange = (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        const img = new Image();
+        const proceed = () => {
+            try {
+                let w = img.naturalWidth, h = img.naturalHeight;
+                const MAX = 999;
+                if (w > MAX || h > MAX) {
+                    const f = Math.min(MAX / w, MAX / h);
+                    w = Math.max(1, Math.round(w * f));
+                    h = Math.max(1, Math.round(h * f));
+                }
+                traceLog('Importing image as new project: ' + img.naturalWidth + '\u00D7' + img.naturalHeight + ' -> canvas ' + w + '\u00D7' + h);
+
+                frames.forEach(f => f.layers.forEach(l => l.el.remove()));
+                frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
+                undoStack = []; redoStack = [];
+                selection = null; movingSelection = false; transformMode = false;
+
+                selectedProfile = 'standard';
+                selectProfile('standard');
+                gridW = w; gridH = h;
+                revealMainApp();
+                const base = pixelLayerFromImage('Layer 1', img, w, h);
+                layers = [base];
+                frames = [{ name: 'Frame 1', layers }];
+                activeFrameIndex = 0;
+                container.appendChild(base.el);
+                setActiveLayer(0);
+                document.getElementById('framesSection').style.display = 'none';
+                lastEnteredProfile = 'standard';
+                layoutAll();
+            } catch (err) {
+                console.error('Image import failed:', err && err.message);
+                alert('Could not import that image -- check the Debug tab for details.');
+            }
+        };
+        img.onload = () => { if (img.decode) img.decode().then(proceed).catch(proceed); else proceed(); };
+        img.onerror = () => { console.error('Import image failed to load: ' + file.name); alert('That image could not be loaded.'); };
+        const reader = new FileReader();
+        reader.onload = () => { img.src = reader.result; };
+        reader.onerror = () => { console.error('FileReader failed for import image'); alert('Could not read that file.'); };
+        reader.readAsDataURL(file);
+    };
+}
+
+// Tears down the current screen (closes panels, stops playback) and returns to the hub. Frames/layers/undo history are deliberately left intact -- see the comment inside.
 function goToMainMenu() {
     traceLog('goToMainMenu() executing');
     try {
@@ -3523,6 +3741,7 @@ document.getElementById('colorPicker').onchange = (e) => { uiAction(() => create
 setupPickers();
 selectProfile('standard');
 setupLayerFileInputs();
+setupImportImageInput();
 updateHubState();
 ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF"].forEach(c => createSwatch(c));
 handleToolBtn('brush');
