@@ -435,10 +435,10 @@
             <div id="layersList"></div>
             <div class="row">
                 <button class="btn" onclick="uiAction(addPixelLayer)">➕ PIXEL LAYER</button>
-                <button class="btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })">🌄 REFERENCE</button>
+                <button class="btn" onclick="uiAction(addVectorLayer)">➕ 🖊️ VECTOR</button>
             </div>
             <div class="row">
-                <button class="btn" onclick="uiAction(addVectorLayer)">➕ 🖊️ VECTOR</button>
+                <button class="btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })">🌄 REFERENCE</button>
             </div>
             <div class="row">
                 <button class="btn" onclick="uiAction(addMaskLayer)">➕ 🎭 MASK</button>
