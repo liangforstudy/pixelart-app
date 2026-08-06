@@ -95,6 +95,145 @@
         }
         .fbtn.active { background: #0078d4; border-color: #fff; }
 
+        /* ── Gallery Screen ── */
+        #gallery-screen {
+            position: fixed; inset: 0; background: #0e0e0e; z-index: 1100;
+            display: flex; flex-direction: column;
+        }
+        #gallery-header {
+            flex: none; display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 16px 10px;
+            padding-top: max(16px, env(safe-area-inset-top));
+            background: #0e0e0e; border-bottom: 1px solid #222;
+        }
+        #gallery-header h1 {
+            margin: 0; font-size: 22px; font-weight: 800; color: #fff; letter-spacing: 0.3px;
+        }
+        #gallery-grid {
+            flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            padding: 14px 12px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            align-content: start;
+        }
+        .gallery-card {
+            background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
+            overflow: hidden; cursor: pointer; position: relative;
+            transition: transform 0.1s, border-color 0.15s;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none; -webkit-user-select: none;
+        }
+        .gallery-card:active { transform: scale(0.96); }
+        .gallery-card.new-canvas-card {
+            border: 2px dashed #333; background: #141414;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            min-height: 120px;
+        }
+        .gallery-card.new-canvas-card .nc-icon {
+            font-size: 32px; margin-bottom: 6px; line-height: 1;
+        }
+        .gallery-card.new-canvas-card .nc-label {
+            font-size: 13px; font-weight: 700; color: #0078d4; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .gallery-card.new-canvas-card .nc-hint {
+            font-size: 9px; color: #555; margin-top: 4px; text-align: center; padding: 0 8px;
+        }
+        .gallery-card .thumb-wrap {
+            width: 100%; aspect-ratio: 1 / 1; background: #fff;
+            background-image: linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0),
+                              linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0);
+            background-size: 10px 10px; background-position: 0 0, 5px 5px;
+            overflow: hidden; display: flex; align-items: center; justify-content: center;
+        }
+        .gallery-card .thumb-wrap canvas, .gallery-card .thumb-wrap img {
+            width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated;
+        }
+        .gallery-card .card-info {
+            padding: 8px 10px 9px;
+        }
+        .gallery-card .card-name {
+            font-size: 12px; font-weight: 600; color: #e8e8e8;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .gallery-card .card-dims {
+            font-size: 10px; color: #555; margin-top: 2px;
+        }
+        .gallery-card.selected-card { border-color: #0078d4; }
+
+        /* Context menu */
+        #gallery-ctx-menu {
+            position: fixed; z-index: 1200; background: #1e1e1e;
+            border: 1px solid #333; border-radius: 12px;
+            padding: 6px 0; min-width: 170px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            display: none;
+        }
+        #gallery-ctx-menu.open { display: block; }
+        .ctx-item {
+            padding: 11px 18px; font-size: 13px; color: #e0e0e0; cursor: pointer;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .ctx-item:active { background: #2a2a2a; }
+        .ctx-item.danger { color: #ff453a; }
+        .ctx-divider { border: none; border-top: 1px solid #2a2a2a; margin: 4px 0; }
+        #gallery-ctx-backdrop {
+            position: fixed; inset: 0; z-index: 1190; display: none;
+        }
+        #gallery-ctx-backdrop.open { display: block; }
+
+        /* New canvas / import modal that overlaps the gallery */
+        #new-canvas-modal {
+            position: fixed; inset: 0; z-index: 1150; background: rgba(0,0,0,0.72);
+            display: none; align-items: flex-end; justify-content: center;
+        }
+        #new-canvas-modal.open { display: flex; }
+        #new-canvas-sheet {
+            background: #161616; border-radius: 20px 20px 0 0;
+            width: 100%; max-width: 480px;
+            padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+            box-sizing: border-box;
+            display: flex; flex-direction: column; gap: 12px;
+            max-height: 88vh; overflow-y: auto;
+        }
+        .sheet-title {
+            font-size: 16px; font-weight: 800; color: #fff; text-align: center;
+        }
+        .sheet-hint {
+            font-size: 11px; color: #666; text-align: center; line-height: 1.5;
+        }
+        .import-hint-box {
+            background: #1e1e1e; border: 1px solid #2e2e2e; border-radius: 10px;
+            padding: 12px 14px; font-size: 11px; color: #888; line-height: 1.6;
+        }
+        .import-hint-box strong { color: #ccc; }
+        #ncm-cancel {
+            width: 100%; height: 44px; background: #2a2a2a; border: 1px solid #3a3a3a;
+            color: #aaa; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer;
+        }
+
+        /* Rename inline overlay */
+        #gallery-rename-modal {
+            position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,0.6);
+            display: none; align-items: center; justify-content: center;
+        }
+        #gallery-rename-modal.open { display: flex; }
+        #gallery-rename-box {
+            background: #1c1c1e; border-radius: 14px; padding: 20px;
+            width: min(320px, 90vw); box-sizing: border-box;
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        #gallery-rename-box label { font-size: 13px; color: #888; font-weight: 600; }
+        #gallery-rename-input {
+            background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
+            color: #fff; font-size: 16px; padding: 10px 12px; box-sizing: border-box; width: 100%;
+        }
+        .rename-actions { display: flex; gap: 8px; }
+        .rename-actions button { flex: 1; height: 40px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; border: none; }
+        #rename-cancel-btn { background: #2a2a2a; color: #aaa; }
+        #rename-ok-btn { background: #0078d4; color: #fff; }
+
         #panelBackdrop {
             position: fixed; inset: 0; z-index: 800; display: none;
             background: rgba(0,0,0,0.01);
@@ -262,7 +401,48 @@
 </head>
 <body>
 
-    <div id="init-screen">
+    <!-- ══════════ GALLERY SCREEN ══════════ -->
+    <div id="gallery-screen">
+        <div id="gallery-header">
+            <h1>🎨 Pixel Art Hub</h1>
+        </div>
+        <div id="gallery-grid">
+            <!-- populated by renderGallery() -->
+        </div>
+    </div>
+
+    <!-- New Canvas / Import sheet (slides up over gallery) -->
+    <div id="new-canvas-modal">
+        <div id="new-canvas-sheet">
+            <!-- content injected by openNewCanvasSheet() -->
+        </div>
+    </div>
+
+    <!-- Gallery context menu -->
+    <div id="gallery-ctx-backdrop"></div>
+    <div id="gallery-ctx-menu">
+        <div class="ctx-item" id="ctx-rename">✏️ Rename</div>
+        <div class="ctx-item" id="ctx-duplicate">📋 Duplicate</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item" id="ctx-export">🖼️ Export PNG</div>
+        <div class="ctx-item" id="ctx-save-file">💾 Save as file</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item danger" id="ctx-delete">🗑️ Delete</div>
+    </div>
+
+    <!-- Rename modal -->
+    <div id="gallery-rename-modal">
+        <div id="gallery-rename-box">
+            <label>Project name</label>
+            <input id="gallery-rename-input" type="text" maxlength="60" placeholder="Untitled">
+            <div class="rename-actions">
+                <button id="rename-cancel-btn">Cancel</button>
+                <button id="rename-ok-btn">Rename</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="init-screen" style="display:none;">
         <div style="font-size:20px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px;">🎨 Pixel Art Hub</div>
 
         <div id="hubContinueSection" style="display:none; width:260px; flex-direction:column; gap:8px; margin: 6px 0 4px;">
@@ -1479,6 +1659,7 @@ function revealMainApp() {
     viewport = document.getElementById('viewport');
     container = document.getElementById('container');
     pixelCursor = document.getElementById('pixel-cursor');
+    document.getElementById('gallery-screen').style.display = 'none';
     document.getElementById('init-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'block';
     if (!eventsInitialized) {
@@ -3521,6 +3702,11 @@ function setupImportImageInput() {
         const file = e.target.files[0];
         e.target.value = '';
         if (!file) return;
+
+        // Show loading state on the button if the import sheet is still open
+        const importBtn = document.getElementById('ncm-import-btn');
+        if (importBtn) { importBtn.textContent = '⏳ Loading…'; importBtn.disabled = true; }
+
         const img = new Image();
         const proceed = () => {
             try {
@@ -3537,10 +3723,13 @@ function setupImportImageInput() {
                 frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
                 undoStack = []; redoStack = [];
                 selection = null; movingSelection = false; transformMode = false;
+                currentProjectId = null;
 
                 selectedProfile = 'standard';
                 selectProfile('standard');
                 gridW = w; gridH = h;
+                closeNewCanvasModal(); // success: now safe to close
+                hideGallery();
                 revealMainApp();
                 const base = pixelLayerFromImage('Layer 1', img, w, h);
                 layers = [base];
@@ -3553,42 +3742,29 @@ function setupImportImageInput() {
                 layoutAll();
             } catch (err) {
                 console.error('Image import failed:', err && err.message);
+                // Restore button so user can try again
+                if (importBtn) { importBtn.textContent = '🖼️ Choose Image'; importBtn.disabled = false; }
                 alert('Could not import that image -- check the Debug tab for details.');
             }
         };
         img.onload = () => { if (img.decode) img.decode().then(proceed).catch(proceed); else proceed(); };
-        img.onerror = () => { console.error('Import image failed to load: ' + file.name); alert('That image could not be loaded.'); };
+        img.onerror = () => {
+            console.error('Import image failed to load: ' + file.name);
+            if (importBtn) { importBtn.textContent = '🖼️ Choose Image'; importBtn.disabled = false; }
+            alert('That image could not be loaded.');
+        };
         const reader = new FileReader();
         reader.onload = () => { img.src = reader.result; };
-        reader.onerror = () => { console.error('FileReader failed for import image'); alert('Could not read that file.'); };
+        reader.onerror = () => {
+            console.error('FileReader failed for import image');
+            if (importBtn) { importBtn.textContent = '🖼️ Choose Image'; importBtn.disabled = false; }
+            alert('Could not read that file.');
+        };
         reader.readAsDataURL(file);
     };
 }
 
-// Tears down the current screen (closes panels, stops playback) and returns to the hub. Frames/layers/undo history are deliberately left intact -- see the comment inside.
-function goToMainMenu() {
-    traceLog('goToMainMenu() executing');
-    try {
-        if (playing) togglePlay();
-        closePanel();
-        closeDrawer();
-        selection = null; movingSelection = false;
-        transformMode = false;
-        hideFloatingBuffer();
-        const selBox = document.getElementById('selectionBox');
-        if (selBox) selBox.style.display = 'none';
-        document.getElementById('main-app').style.display = 'none';
-        document.getElementById('init-screen').style.display = 'flex';
-        updateHubState();
-        // frames/layers/undo history are deliberately left intact -- Main
-        // Menu just switches screens. The hub's Continue/Save buttons pick
-        // up this same work; Start Fresh discards it explicitly instead.
-        traceLog('goToMainMenu() completed, back at the hub (work preserved)');
-    } catch (err) {
-        console.error('goToMainMenu failed:', err && err.message);
-        alert('Something went wrong returning to the main menu -- check the Debug tab for details.');
-    }
-}
+// goToMainMenu is defined in the gallery section above (saves state to store, shows gallery).
 
 // Flattens the current frame to PNG and triggers a file download.
 function saveImage() {
@@ -3723,6 +3899,553 @@ function loadProjectFile(file) {
 }
 
 /* ============================================================
+   PROJECT GALLERY (in-memory store, Procreate-style grid)
+   ============================================================ */
+
+// Each entry: { id, name, gridW, gridH, profile, frames, activeFrameIndex,
+//               activeLayerIndex, scale, thumbnailDataURL, updatedAt }
+let projectStore = [];
+let nextProjectId = 1;
+let galleryCtxTargetId = null; // which project the context menu is open for
+let galleryRenameTargetId = null;
+
+// ── Thumbnail generation ────────────────────────────────────
+function generateThumbnailDataURL(framesArr, gW, gH) {
+    try {
+        const size = 200;
+        const out = document.createElement('canvas');
+        out.width = size; out.height = size;
+        const ctx = out.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        // Use frame 0 as the thumbnail source
+        const src = galleryFlattenLayers(framesArr[0].layers, gW, gH);
+        const ratio = Math.min(size / gW, size / gH);
+        const dw = Math.round(gW * ratio);
+        const dh = Math.round(gH * ratio);
+        ctx.drawImage(src, Math.round((size - dw) / 2), Math.round((size - dh) / 2), dw, dh);
+        return out.toDataURL('image/png');
+    } catch (e) {
+        return '';
+    }
+}
+
+// Flatten helper for gallery thumbnails/export (accepts explicit w/h)
+function galleryFlattenLayers(layerList, gW, gH) {
+    const out = document.createElement('canvas');
+    out.width = gW || gridW; out.height = gH || gridH;
+    const octx = out.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    for (let i = 0; i < layerList.length; i++) {
+        const l = layerList[i];
+        if (l.type === 'mask' || l.type === 'clip') continue;
+        if (!l.visible) continue;
+        octx.globalAlpha = l.opacity;
+        if (l.type === 'vector') { octx.drawImage(l.el, 0, 0); continue; }
+        if (l.type !== 'pixel') continue;
+        const above = layerList[i + 1];
+        if (above && above.visible && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id) {
+            try { octx.drawImage(compositeMaskOrClip(l, above), 0, 0); } catch(e) { octx.drawImage(l.el, 0, 0); }
+        } else {
+            octx.drawImage(l.el, 0, 0);
+        }
+    }
+    octx.globalAlpha = 1;
+    return out;
+}
+
+// ── Save current editor state into the store ────────────────
+// Creates a new entry if id is null, otherwise updates in place.
+function saveCurrentStateToStore(existingId, nameOverride) {
+    const thumb = generateThumbnailDataURL(frames, gridW, gridH);
+    const entry = {
+        id: existingId || nextProjectId++,
+        name: nameOverride || ('Untitled ' + (projectStore.length + 1)),
+        gridW, gridH,
+        profile: selectedProfile,
+        frames, // live reference -- the editor holds the same objects
+        activeFrameIndex,
+        activeLayerIndex,
+        scale,
+        thumbnailDataURL: thumb,
+        updatedAt: Date.now()
+    };
+    if (existingId) {
+        const idx = projectStore.findIndex(p => p.id === existingId);
+        if (idx !== -1) { projectStore[idx] = { ...projectStore[idx], ...entry, name: projectStore[idx].name }; return; }
+    }
+    projectStore.unshift(entry); // newest first
+}
+
+// ── Open a project from the store ───────────────────────────
+function openProjectFromStore(id) {
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    // Tear down any live canvas elements from a previous session
+    if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
+    // Restore state
+    frames = proj.frames;
+    gridW = proj.gridW; gridH = proj.gridH;
+    scale = proj.scale || 10;
+    zoomIndex = ZOOM_STEPS.indexOf(scale);
+    if (zoomIndex === -1) zoomIndex = ZOOM_STEPS.indexOf(10);
+    selectedProfile = proj.profile || 'standard';
+    lastEnteredProfile = selectedProfile;
+    activeFrameIndex = proj.activeFrameIndex || 0;
+    layers = frames[activeFrameIndex].layers;
+    undoStack = []; redoStack = [];
+    selection = null; movingSelection = false; transformMode = false;
+    hideGallery();
+    revealMainApp();
+    // Re-attach all layer canvases to the container
+    layers.forEach(l => { if (!container.contains(l.el)) container.appendChild(l.el); });
+    reindexDom();
+    setActiveLayer(Math.min(proj.activeLayerIndex || 0, layers.length - 1));
+    document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
+    layoutAll();
+    renderLayersPanel();
+    renderFramesPanel();
+    // Tag the editor with this project id so "Main Menu" can update it
+    currentProjectId = id;
+}
+
+// Which project is currently open in the editor (null = unsaved new)
+let currentProjectId = null;
+
+// ── Gallery render ───────────────────────────────────────────
+function renderGallery() {
+    const grid = document.getElementById('gallery-grid');
+    grid.innerHTML = '';
+
+    // + New Canvas card (always first)
+    const newCard = document.createElement('div');
+    newCard.className = 'gallery-card new-canvas-card';
+    newCard.innerHTML = '<div class="nc-icon">+</div><div class="nc-label">New Canvas</div><div class="nc-hint">Long-press to import an image</div>';
+    let ncHoldTimer = null;
+    let ncLongPressed = false;
+    // Long-press = import image
+    const ncStartHold = (e) => {
+        ncLongPressed = false;
+        ncHoldTimer = setTimeout(() => {
+            ncHoldTimer = null;
+            ncLongPressed = true;
+            openImportSheet();
+        }, 600);
+    };
+    const ncClearHold = () => { if (ncHoldTimer) { clearTimeout(ncHoldTimer); ncHoldTimer = null; } };
+    newCard.addEventListener('touchstart', ncStartHold, {passive: true});
+    newCard.addEventListener('touchend', ncClearHold);
+    newCard.addEventListener('touchcancel', ncClearHold);
+    newCard.addEventListener('mousedown', ncStartHold);
+    newCard.addEventListener('mouseup', ncClearHold);
+    newCard.addEventListener('mouseleave', ncClearHold);
+    newCard.addEventListener('click', () => { if (!ncLongPressed) openNewCanvasSheet(); });
+    grid.appendChild(newCard);
+
+    // Project cards
+    projectStore.forEach(proj => {
+        const card = document.createElement('div');
+        card.className = 'gallery-card';
+        card.dataset.id = proj.id;
+
+        const thumbWrap = document.createElement('div');
+        thumbWrap.className = 'thumb-wrap';
+        if (proj.thumbnailDataURL) {
+            const img = document.createElement('img');
+            img.src = proj.thumbnailDataURL;
+            thumbWrap.appendChild(img);
+        }
+
+        const info = document.createElement('div');
+        info.className = 'card-info';
+        info.innerHTML = '<div class="card-name">' + escapeHtml(proj.name) + '</div>' +
+                         '<div class="card-dims">' + proj.gridW + ' \u00D7 ' + proj.gridH + 'px &middot; ' + (proj.profile || 'standard') + '</div>';
+
+        card.appendChild(thumbWrap);
+        card.appendChild(info);
+
+        // Single tap = open
+        let holdTimer = null;
+        let didLongPress = false;
+        const startHold = (e) => {
+            didLongPress = false;
+            holdTimer = setTimeout(() => {
+                didLongPress = true;
+                holdTimer = null;
+                openGalleryCtxMenu(proj.id, e);
+            }, 600);
+        };
+        const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+        card.addEventListener('touchstart', startHold, {passive: true});
+        card.addEventListener('touchend', clearHold);
+        card.addEventListener('touchcancel', clearHold);
+        card.addEventListener('mousedown', startHold);
+        card.addEventListener('mouseup', clearHold);
+        card.addEventListener('mouseleave', clearHold);
+        card.addEventListener('click', () => { if (!didLongPress) openProjectFromStore(proj.id); });
+
+        grid.appendChild(card);
+    });
+}
+
+// ── Screen switching ─────────────────────────────────────────
+function showGallery() {
+    document.getElementById('gallery-screen').style.display = 'flex';
+    document.getElementById('init-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'none';
+    renderGallery();
+}
+function hideGallery() {
+    document.getElementById('gallery-screen').style.display = 'none';
+}
+
+// ── New Canvas sheet ─────────────────────────────────────────
+function openNewCanvasSheet() {
+    const sheet = document.getElementById('new-canvas-sheet');
+    sheet.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.className = 'sheet-title';
+    title.textContent = 'New Canvas';
+    sheet.appendChild(title);
+
+    const hint = document.createElement('div');
+    hint.className = 'sheet-hint';
+    hint.textContent = 'Choose a profile and set your canvas size.';
+    sheet.appendChild(hint);
+
+    // Clone the relevant parts of init-screen into the sheet
+    const profileRow = document.createElement('div');
+    profileRow.style.cssText = 'display:flex; gap:6px;';
+    ['standard','portrait','sprite'].forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'profile-btn' + (selectedProfile === p ? ' active' : '');
+        btn.textContent = p.charAt(0).toUpperCase() + p.slice(1);
+        btn.style.cssText = 'flex:1; height:40px; background:#2a2a2a; border:1px solid #444; color:#fff; font-size:10px; font-weight:bold; cursor:pointer; border-radius:8px; text-transform:uppercase;';
+        btn.onclick = () => {
+            document.querySelectorAll('#new-canvas-sheet .ncm-profile-btn').forEach(b => { b.style.background = '#2a2a2a'; b.style.borderColor = '#444'; });
+            btn.style.background = '#0078d4'; btn.style.borderColor = '#fff';
+            selectProfile(p);
+            document.getElementById('ncm-hint').textContent = p === 'portrait' ? 'Locked 40\u00D740. Palette capped at 15 colours.'
+                : p === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : '';
+            const lock = p === 'portrait';
+            document.querySelectorAll('#ncm-pickers select').forEach(s => s.disabled = lock);
+            if (lock) { setDigitGroup('ncm-w-group', 40); setDigitGroup('ncm-h-group', 40); }
+        };
+        btn.className = 'ncm-profile-btn';
+        btn.style.cssText = 'flex:1; height:40px; background:' + (selectedProfile === p ? '#0078d4' : '#2a2a2a') + '; border:1px solid ' + (selectedProfile === p ? '#fff' : '#444') + '; color:#fff; font-size:10px; font-weight:bold; cursor:pointer; border-radius:8px; text-transform:uppercase;';
+        profileRow.appendChild(btn);
+    });
+    sheet.appendChild(profileRow);
+
+    const hintEl = document.createElement('div');
+    hintEl.id = 'ncm-hint';
+    hintEl.style.cssText = 'font-size:9px; color:#888; text-align:center; min-height:18px;';
+    hintEl.textContent = selectedProfile === 'portrait' ? 'Locked 40\u00D740. Palette capped at 15 colours.'
+        : selectedProfile === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : '';
+    sheet.appendChild(hintEl);
+
+    // Size pickers
+    const pickers = document.createElement('div');
+    pickers.id = 'ncm-pickers';
+    pickers.style.cssText = 'display:flex; flex-direction:column; gap:6px;';
+    ['Width','Height'].forEach((label, li) => {
+        const gid = li === 0 ? 'ncm-w-group' : 'ncm-h-group';
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:8px;';
+        const lbl = document.createElement('span');
+        lbl.className = 'picker-label';
+        lbl.textContent = label;
+        lbl.style.cssText = 'font-size:10px; color:#888; text-transform:uppercase; letter-spacing:1px; width:36px;';
+        const grp = document.createElement('div');
+        grp.id = gid;
+        grp.style.cssText = 'display:flex; gap:4px;';
+        const defaultVal = li === 0 ? 32 : 32;
+        for (let i = 0; i < 3; i++) {
+            const sel = document.createElement('select');
+            sel.style.cssText = 'appearance:none; -webkit-appearance:none; background:#2a2a2a; border:2px solid #444; border-radius:10px; width:45px; height:55px; color:#0078d4; font-size:24px; font-weight:bold; text-align:center; cursor:pointer; outline:none;';
+            sel.disabled = selectedProfile === 'portrait';
+            const dv = selectedProfile === 'portrait' ? 40 : defaultVal;
+            const digits = String(dv).padStart(3,'0').split('');
+            for (let d = 0; d <= 9; d++) {
+                const opt = document.createElement('option');
+                opt.value = d; opt.textContent = d;
+                if (parseInt(digits[i]) === d) opt.selected = true;
+                sel.appendChild(opt);
+            }
+            grp.appendChild(sel);
+        }
+        row.appendChild(lbl); row.appendChild(grp);
+        pickers.appendChild(row);
+    });
+    sheet.appendChild(pickers);
+
+    const createBtn = document.createElement('button');
+    createBtn.className = 'btn-start';
+    createBtn.style.cssText = 'width:100%; height:50px; background:#0078d4; border:none; color:white; border-radius:25px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:15px;';
+    createBtn.textContent = 'Create Canvas';
+    createBtn.onclick = () => {
+        const w = selectedProfile === 'portrait' ? 40 : readNcmDigitGroup('ncm-w-group');
+        const h = selectedProfile === 'portrait' ? 40 : readNcmDigitGroup('ncm-h-group');
+        closeNewCanvasModal();
+        startNewProjectFromGallery(w, h);
+    };
+    sheet.appendChild(createBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = 'ncm-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = closeNewCanvasModal;
+    sheet.appendChild(cancelBtn);
+
+    document.getElementById('new-canvas-modal').classList.add('open');
+}
+
+function readNcmDigitGroup(id) {
+    const val = parseInt([...document.querySelectorAll('#' + id + ' select')].map(s => s.value).join(''), 10);
+    return Math.max(1, val || 1);
+}
+
+function openImportSheet() {
+    const sheet = document.getElementById('new-canvas-sheet');
+    sheet.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.className = 'sheet-title';
+    title.textContent = 'Import Image';
+    sheet.appendChild(title);
+
+    const hintBox = document.createElement('div');
+    hintBox.className = 'import-hint-box';
+    hintBox.innerHTML = '<strong>How to import:</strong><br>' +
+        '1. Tap the button below to pick an image from your photos or files.<br>' +
+        '2. The canvas size is matched to the image (capped at 999px per side).<br>' +
+        '3. The image is placed on a new pixel layer you can paint over.';
+    sheet.appendChild(hintBox);
+
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn-start';
+    importBtn.id = 'ncm-import-btn';
+    importBtn.style.cssText = 'width:100%; height:50px; background:#2a6aba; border:none; color:white; border-radius:25px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:14px;';
+    importBtn.textContent = '🖼️ Choose Image';
+    importBtn.onclick = () => {
+        // Don't close yet -- stay open until the image actually loads or fails
+        document.getElementById('hubImageInput').click();
+    };
+    sheet.appendChild(importBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = 'ncm-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = closeNewCanvasModal;
+    sheet.appendChild(cancelBtn);
+
+    document.getElementById('new-canvas-modal').classList.add('open');
+}
+
+function closeNewCanvasModal() {
+    document.getElementById('new-canvas-modal').classList.remove('open');
+}
+
+// Close modal on backdrop tap
+document.getElementById('new-canvas-modal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('new-canvas-modal')) closeNewCanvasModal();
+});
+
+// ── Start new project from gallery ──────────────────────────
+function startNewProjectFromGallery(w, h) {
+    if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
+    frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
+    undoStack = []; redoStack = [];
+    selection = null; movingSelection = false; transformMode = false;
+    gridW = w; gridH = h;
+    currentProjectId = null; // new unsaved project
+    hideGallery();
+    revealMainApp();
+    const base = new PixelLayer('Layer 1', gridW, gridH);
+    layers = [base];
+    frames = [{ name: 'Frame 1', layers }];
+    activeFrameIndex = 0;
+    container.appendChild(base.el);
+    setActiveLayer(0);
+    document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
+    lastEnteredProfile = selectedProfile;
+    layoutAll();
+}
+
+// ── Context menu ─────────────────────────────────────────────
+function openGalleryCtxMenu(id, e) {
+    galleryCtxTargetId = id;
+    const menu = document.getElementById('gallery-ctx-menu');
+    const backdrop = document.getElementById('gallery-ctx-backdrop');
+    menu.classList.add('open');
+    backdrop.classList.add('open');
+    // Position near the touch/click
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) || window.innerWidth / 2;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) || window.innerHeight / 2;
+    const mw = 175, mh = 220;
+    menu.style.left = Math.min(x, window.innerWidth - mw - 8) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - mh - 8) + 'px';
+}
+function closeGalleryCtxMenu() {
+    document.getElementById('gallery-ctx-menu').classList.remove('open');
+    document.getElementById('gallery-ctx-backdrop').classList.remove('open');
+    galleryCtxTargetId = null;
+}
+
+document.getElementById('gallery-ctx-backdrop').addEventListener('click', closeGalleryCtxMenu);
+
+document.getElementById('ctx-rename').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    galleryRenameTargetId = id;
+    const input = document.getElementById('gallery-rename-input');
+    input.value = proj.name;
+    document.getElementById('gallery-rename-modal').classList.add('open');
+    setTimeout(() => input.focus(), 100);
+});
+document.getElementById('rename-cancel-btn').addEventListener('click', () => {
+    document.getElementById('gallery-rename-modal').classList.remove('open');
+    galleryRenameTargetId = null;
+});
+document.getElementById('rename-ok-btn').addEventListener('click', () => {
+    const newName = document.getElementById('gallery-rename-input').value.trim() || 'Untitled';
+    const proj = projectStore.find(p => p.id === galleryRenameTargetId);
+    if (proj) { proj.name = newName; renderGallery(); }
+    document.getElementById('gallery-rename-modal').classList.remove('open');
+    galleryRenameTargetId = null;
+});
+
+document.getElementById('ctx-duplicate').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    // Deep-clone frames
+    const clonedFrames = proj.frames.map(f => ({
+        name: f.name,
+        layers: f.layers.map(l => cloneLayer(l))
+    }));
+    const newEntry = {
+        id: nextProjectId++,
+        name: proj.name + ' copy',
+        gridW: proj.gridW, gridH: proj.gridH,
+        profile: proj.profile,
+        frames: clonedFrames,
+        activeFrameIndex: proj.activeFrameIndex,
+        activeLayerIndex: proj.activeLayerIndex,
+        scale: proj.scale,
+        thumbnailDataURL: proj.thumbnailDataURL,
+        updatedAt: Date.now()
+    };
+    const idx = projectStore.findIndex(p => p.id === id);
+    projectStore.splice(idx + 1, 0, newEntry);
+    renderGallery();
+});
+
+document.getElementById('ctx-export').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    try {
+        const out = galleryFlattenLayers(proj.frames[proj.activeFrameIndex || 0].layers, proj.gridW, proj.gridH);
+        const link = document.createElement('a');
+        link.download = (proj.name || 'pixel') + '.png';
+        link.href = out.toDataURL();
+        link.click();
+    } catch(e) { alert('Export failed.'); }
+});
+
+document.getElementById('ctx-save-file').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    try {
+        const data = {
+            version: 2,
+            gridW: proj.gridW, gridH: proj.gridH,
+            scale: proj.scale, profile: proj.profile,
+            activeFrameIndex: proj.activeFrameIndex,
+            activeLayerIndex: proj.activeLayerIndex,
+            frames: proj.frames.map(f => {
+                const serialized = f.layers.map(serializeLayer);
+                serialized.forEach(sl => {
+                    if (sl.hookedTo != null) {
+                        const idx = f.layers.findIndex(l => l.id === sl.hookedTo);
+                        sl.hookedToIndex = idx !== -1 ? idx : null;
+                        delete sl.hookedTo;
+                    }
+                });
+                return { name: f.name, layers: serialized };
+            })
+        };
+        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.download = (proj.name || 'project') + '.pxproj.json';
+        link.href = URL.createObjectURL(blob);
+        link.click();
+    } catch(e) { alert('Save failed.'); }
+});
+
+document.getElementById('ctx-delete').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    const idx = projectStore.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    // Simple confirm -- tap-twice not needed here as it's already behind a long-press + menu
+    if (!confirm('Delete "' + projectStore[idx].name + '"? This cannot be undone.')) return;
+    projectStore.splice(idx, 1);
+    renderGallery();
+});
+
+// ── Override goToMainMenu to save + return to gallery ────────
+// (Replaces the original which went back to init-screen)
+function goToMainMenu() {
+    traceLog('goToMainMenu() - saving to gallery');
+    try {
+        if (playing) togglePlay();
+        closePanel();
+        closeDrawer();
+        selection = null; movingSelection = false;
+        transformMode = false;
+        hideFloatingBuffer();
+        const selBox = document.getElementById('selectionBox');
+        if (selBox) selBox.style.display = 'none';
+
+        // Save / update project in the gallery store
+        if (frames && frames.length > 0) {
+            const existingProj = currentProjectId ? projectStore.find(p => p.id === currentProjectId) : null;
+            if (existingProj) {
+                existingProj.thumbnailDataURL = generateThumbnailDataURL(frames, gridW, gridH);
+                existingProj.gridW = gridW; existingProj.gridH = gridH;
+                existingProj.profile = selectedProfile;
+                existingProj.frames = frames;
+                existingProj.activeFrameIndex = activeFrameIndex;
+                existingProj.activeLayerIndex = activeLayerIndex;
+                existingProj.scale = scale;
+                existingProj.updatedAt = Date.now();
+            } else {
+                saveCurrentStateToStore(null, 'Untitled ' + (projectStore.length + 1));
+                currentProjectId = projectStore[0].id;
+            }
+        }
+
+        document.getElementById('main-app').style.display = 'none';
+        showGallery();
+        traceLog('goToMainMenu() completed, gallery shown');
+    } catch (err) {
+        console.error('goToMainMenu failed:', err && err.message);
+        alert('Something went wrong returning to the gallery -- check the Debug tab for details.');
+    }
+}
+
+// Also hook up the import image to assign a currentProjectId after import
+const _origSetupImportImageInput = setupImportImageInput;
+
+/* ============================================================
    BOOT
    ============================================================ */
 const panelBackdrop = document.getElementById('panelBackdrop');
@@ -3750,9 +4473,10 @@ setupPickers();
 selectProfile('standard');
 setupLayerFileInputs();
 setupImportImageInput();
-updateHubState();
 ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF"].forEach(c => createSwatch(c));
 handleToolBtn('brush');
+// Start on the gallery screen
+showGallery();
 </script>
 </body>
 </html>
