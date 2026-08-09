@@ -8,6 +8,7 @@
             background: #121212; color: #fff;
             font-family: -apple-system, sans-serif;
             user-select: none; -webkit-user-select: none;
+            height: max-content; min-height: 0; align-self: start;
         }
 
         #init-screen {
@@ -60,6 +61,8 @@
         .layer-canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; display: block; pointer-events: none; }
         .layer-canvas.reference-canvas { image-rendering: auto; }
 
+        #portraitTileIsolationOverlay { position:absolute; inset:0; z-index:180; pointer-events:none; display:none; }
+        #portraitTileIsolationOverlay .pt-mask { position:absolute; background:rgba(14,14,14,0.8); }
         #pixel-cursor {
             position: absolute; width: 10px; height: 10px;
             border: 1px solid rgba(0,0,0,0.5); box-sizing: border-box; pointer-events: none;
@@ -113,9 +116,14 @@
             flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
             padding: 14px 12px;
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-auto-rows: max-content;
             gap: 12px;
             align-content: start;
+            align-items: start;
+            justify-items: stretch;
+            overflow-x: hidden;
+            overflow-y: scroll;
         }
         .gallery-card {
             background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
@@ -146,6 +154,7 @@
                               linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0);
             background-size: 10px 10px; background-position: 0 0, 5px 5px;
             overflow: hidden; display: flex; align-items: center; justify-content: center;
+            flex: none;
         }
         .gallery-card .thumb-wrap canvas, .gallery-card .thumb-wrap img {
             width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; transition: filter 0.15s ease;
@@ -575,11 +584,13 @@
                     <button class="btn tool-btn" data-tool="rect" onclick="uiAction(() => handleToolBtn('rect'))">⬛ RECT</button>
                     <button class="btn tool-btn" data-tool="ellipse" onclick="uiAction(() => handleToolBtn('ellipse'))">⭕ ELLIPSE</button>
                 </div>
-                <div class="panel-subtitle">Selection</div>
-                <div class="row">
-                    <button class="btn" id="moveSelBtn" onclick="uiAction(toggleMoveSelection)">✋ MOVE SEL</button>
-                    <button class="btn" onclick="uiAction(deleteSelection)">🧽 DELETE SEL</button>
-                    <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
+                <div id="selectionToolsSection" style="display:none;">
+                    <div class="panel-subtitle">Selection</div>
+                    <div class="row">
+                        <button class="btn" id="moveSelBtn" onclick="uiAction(toggleMoveSelection)">✋ MOVE SEL</button>
+                        <button class="btn" onclick="uiAction(deleteSelection)">🧽 DELETE SEL</button>
+                        <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
+                    </div>
                 </div>
             </div>
             <div id="vectorToolsSection">
@@ -650,6 +661,9 @@
                     ontouchstart="startHold(() => handleManageClick())"
                     onmouseup="clearHold()" ontouchend="clearHold()"
                     onclick="uiAction(() => handleManageClick())">🎨 MANAGE COLOURS</button>
+            </div>
+            <div class="row">
+                <button id="swatchArrayBtn" class="btn" onclick="uiAction(openSwatchArrayMenu)">↕️ IMPORT / EXPORT SWATCH ARRAY</button>
             </div>
         </div>
 
@@ -970,6 +984,13 @@ let openPanelName = null;
 let transformMode = false;
 
 let selectedProfile = 'standard'; // 'standard' | 'portrait' | 'sprite'
+// Portrait spritesheets are one document with independent 40×40 tile palettes.
+// Each tile owns up to 15 opaque colours; colours may be reused independently in other tiles.
+let portraitTilePalettes = new Map();
+let portraitActiveTileKey = '0,0';
+let portraitTileIsolation = false;
+let portraitTileIsolationOpacity = 0.78;
+let portraitStrokeColor = null;
 let lastEnteredProfile = null;    // profile the current work (if any) was created/resumed under
 const PORTRAIT_PALETTE_LIMIT = 15;
 
@@ -1527,9 +1548,86 @@ function selectProfile(p) {
     document.querySelectorAll('#w-group select, #h-group select').forEach(s => s.disabled = lock);
     if (lock) { setDigitGroup('w-group', 40); setDigitGroup('h-group', 40); }
     const hint = document.getElementById('profileHint');
-    if (p === 'portrait') hint.innerText = 'Locked to 40×40. Palette capped at 15 colours (16th slot is transparency).';
+    if (p === 'portrait') hint.innerText = '40×40 tile palette: each tile has its own 15-colour limit.';
     else if (p === 'sprite') hint.innerText = 'Adds a Frames strip to the Layers panel for simple flipbook animation.';
     else hint.innerText = '';
+    if (p !== 'portrait') { portraitTileIsolation = false; hidePortraitTileIsolationOverlay(); }
+    updateColorPickerAvailability();
+    if (p === 'portrait' && gridW && gridH) syncPortraitPaletteForPoint(0,0,true);
+    updatePortraitTileControls();
+}
+
+function portraitTileKeyForPoint(x,y){
+    if(selectedProfile!=='portrait' || x<0 || y<0 || x>=gridW || y>=gridH) return null;
+    return Math.floor(x/40)+','+Math.floor(y/40);
+}
+function portraitTileCount(){ return selectedProfile==='portrait' ? Math.max(1,Math.ceil(gridW/40)*Math.ceil(gridH/40)) : 0; }
+function ensurePortraitTilePalette(key){
+    if(!portraitTilePalettes.has(key)) portraitTilePalettes.set(key, []);
+    return portraitTilePalettes.get(key);
+}
+function replaceVisiblePalette(colours){
+    document.querySelectorAll('#palette .swatch-wrapper:not(#transparencyWrapper):not(#pickerContainer)').forEach(el=>el.remove());
+    if(selectedProfile==='portrait'){
+        const pal=ensurePortraitTilePalette(portraitActiveTileKey);
+        const copy=[...colours];
+        pal.length=0;
+        copy.forEach(c=>createSwatch(c));
+        // createSwatch rebuilt the same tile palette; preserve its original order.
+    } else copySafeColours(colours).forEach(c=>createSwatch(c));
+    selectedColor=colours[0]||'#000000';
+    updateUI(); updateColorPickerAvailability();
+}
+function copySafeColours(colours){ return Array.from(new Set((colours||[]).filter(c=>/^#[0-9A-F]{6}$/i.test(c)).map(c=>c.toUpperCase()))); }
+function syncPortraitPaletteForPoint(x,y,force=false){
+    if(selectedProfile!=='portrait') return;
+    const key=portraitTileKeyForPoint(x,y); if(!key) return;
+    if(!force && key===portraitActiveTileKey) return;
+    portraitActiveTileKey=key;
+    const pal=ensurePortraitTilePalette(key);
+    replaceVisiblePalette(pal);
+    updatePortraitTileOverlay();
+    updatePortraitTileControls();
+}
+function samplePortraitTilePalettes(img){
+    portraitTilePalettes=new Map();
+    const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const ctx=c.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0);
+    const data=ctx.getImageData(0,0,w,h).data;
+    const cols=Math.ceil(w/40), rows=Math.ceil(h/40);
+    for(let ty=0;ty<rows;ty++) for(let tx=0;tx<cols;tx++){
+        const arr=[], seen=new Set(); const x0=tx*40,y0=ty*40;
+        for(let y=y0;y<Math.min(y0+40,h)&&arr.length<PORTRAIT_PALETTE_LIMIT;y++) for(let x=x0;x<Math.min(x0+40,w)&&arr.length<PORTRAIT_PALETTE_LIMIT;x++){
+            const i=(y*w+x)*4; if(data[i+3]===0) continue;
+            const hex=rgbToHexBytes(data[i],data[i+1],data[i+2]).toUpperCase();
+            if(!seen.has(hex)){seen.add(hex);arr.push(hex);}
+        }
+        portraitTilePalettes.set(tx+','+ty,arr);
+    }
+    portraitActiveTileKey='0,0';
+}
+function hidePortraitTileIsolationOverlay(){ const o=document.getElementById('portraitTileIsolationOverlay'); if(o)o.style.display='none'; }
+function updatePortraitTileOverlay(){
+    const o=document.getElementById('portraitTileIsolationOverlay'); if(!o)return;
+    if(!portraitTileIsolation || selectedProfile!=='portrait' || portraitTileCount()<=1){o.style.display='none';return;}
+    const [tx,ty]=portraitActiveTileKey.split(',').map(Number); const x=tx*40*scale,y=ty*40*scale; const w=Math.min(40,gridW-tx*40)*scale,h=Math.min(40,gridH-ty*40)*scale;
+    o.innerHTML=''; o.style.display='block';
+    const masks=[
+      ['left',0,0,x,gridH*scale],['right',x+w,0,Math.max(0,gridW*scale-x-w),gridH*scale],
+      ['top',x,0,w,y],['bottom',x,y+h,w,Math.max(0,gridH*scale-y-h)]
+    ];
+    masks.forEach(([n,l,t,ww,hh])=>{if(ww<=0||hh<=0)return;const d=document.createElement('div');d.className='pt-mask';d.style.cssText='left:'+l+'px;top:'+t+'px;width:'+ww+'px;height:'+hh+'px;opacity:'+portraitTileIsolationOpacity;o.appendChild(d);});
+}
+function updatePortraitTileControls(){
+    const list=document.getElementById('layersList'); if(!list)return;
+    const old=document.getElementById('portraitTileControls'); if(old)old.remove();
+    if(selectedProfile!=='portrait'||portraitTileCount()<=1)return;
+    const box=document.createElement('div'); box.id='portraitTileControls'; box.style.cssText='padding:8px 6px;border-bottom:1px solid #333;';
+    const b=document.createElement('button'); b.className='btn'; b.style.width='100%'; b.innerText=portraitTileIsolation?'SHOW OTHER TILES':'ISOLATE PORTRAIT TILE';
+    b.onclick=()=>{portraitTileIsolation=!portraitTileIsolation;updatePortraitTileOverlay();updatePortraitTileControls();}; box.appendChild(b);
+    if(portraitTileIsolation){ const label=document.createElement('div');label.style.cssText='font-size:9px;color:#888;margin-top:6px;';label.innerText='other tiles opacity';box.appendChild(label); const sl=document.createElement('input');sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(portraitTileIsolationOpacity*100);sl.style.width='100%';sl.oninput=()=>{portraitTileIsolationOpacity=sl.value/100;updatePortraitTileOverlay();};box.appendChild(sl);}
+    list.prepend(box);
 }
 // Sets the four digit <select> pickers (e.g. width or height) to a given number, zero-padded to 4 digits.
 function setDigitGroup(id, val) {
@@ -2042,6 +2140,7 @@ function setupPickers() {
             }
             c.appendChild(sel);
         }
+        setupDigitKeyboardAdvance(c);
     });
 }
 
@@ -2049,6 +2148,24 @@ function setupPickers() {
 function readDigitGroup(id) {
     const val = parseInt([...document.querySelectorAll(`#${id} select`)].map(s => s.value).join(''), 10);
     return Math.max(1, val || 1);
+}
+
+// Desktop-friendly digit entry: after typing a number into one size digit,
+// immediately move focus to the next digit on the right. This does not affect touch selection.
+function setupDigitKeyboardAdvance(root) {
+    if (!root) return;
+    const selects = [...root.querySelectorAll('select')];
+    selects.forEach((sel, index, all) => {
+        // Native desktop <select> menus close themselves after a digit is chosen.
+        // Do not prevent that native behavior: wait for the resulting change event,
+        // then move focus to the next digit. This makes keyboard entry work with
+        // the browser's normal 0-9 picker instead of fighting the popup menu.
+        sel.addEventListener('change', () => {
+            if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
+            const next = all[index + 1];
+            if (next) setTimeout(() => { next.focus(); }, 0);
+        });
+    });
 }
 
 // Runs once, when "Create Canvas" is pressed: sets up the first layer/frame, wires up all the one-time event listeners, and swaps from the splash screen to the main app.
@@ -2081,6 +2198,7 @@ function continueEditing() {
     if (frames.length === 0) return;
     traceLog('continueEditing(): resuming without touching size');
     revealMainApp();
+    if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     layoutAll();
     renderLayersPanel();
@@ -2123,12 +2241,14 @@ function initApp() {
     }
 
     gridW = newW; gridH = newH;
+    if(selectedProfile==='portrait'){ portraitTilePalettes=new Map([['0,0',[]]]); portraitActiveTileKey='0,0'; } else portraitTilePalettes=new Map();
     revealMainApp(); // needed now so `container` is assigned before we append the base layer
     const base = new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
     container.appendChild(base.el);
+    if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
     setActiveLayer(0);
 
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
@@ -2390,6 +2510,11 @@ function setActiveLayer(idx) {
 // layer, vector tools only on a vector layer, and a reference layer isn't
 // drawable at all -- only the dropper (for sampling its colours) and Flip
 // apply there. Falls back to switching tool away from something now hidden.
+function updateSelectionToolsVisibility() {
+    const el = document.getElementById('selectionToolsSection');
+    if (el) el.style.display = (selection || hasWandSelection()) ? '' : 'none';
+}
+
 function updateToolVisibility() {
     const layer = activeLayer();
     const type = layer ? layer.type : 'pixel';
@@ -2400,6 +2525,7 @@ function updateToolVisibility() {
     show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
+    updateSelectionToolsVisibility();
 
     const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
@@ -2828,6 +2954,8 @@ function renderLayersPanel() {
         if(!node.collapsed)renderNodes(node.children,depth+1);
     };
     renderNodes(f.layerTree,0);
+    updatePortraitTileControls();
+    updatePortraitTileOverlay();
     const searchInput=document.getElementById('layerSearchInput'); if(searchInput && searchInput.value) renderLayerSearchResults(searchInput.value);
     const sb=document.getElementById('layerSelectionToolbar'); const sa=document.getElementById('layerSelectionActions'); const gb=document.getElementById('groupSelectedBtn'); const ga=document.getElementById('groupSelectedActionBtn');
     if(sb) sb.style.display=layerSelectionMode?'none':'flex'; if(sa) sa.style.display=layerSelectionMode?'flex':'none'; const sc=document.getElementById('selectionCount'); if(sc) sc.innerText=selectedNodeIds.size+' selected'; if(gb) gb.disabled=selectedNodeIds.size===0; if(ga) ga.disabled=selectedNodeIds.size===0;
@@ -3319,6 +3447,7 @@ function setSelectionRaw(mask, count, rect) {
     wandSelectionCount = count || 0;
     selection = rect || null;
     updateSelectionOverlay();
+    updateSelectionToolsVisibility();
 }
 function selectionBoundsFromMask(mask) {
     if (!mask) return null;
@@ -3388,7 +3517,7 @@ function animateSelectionAnts(now){
 if(!selectionAnimFrame) selectionAnimFrame=requestAnimationFrame(animateSelectionAnts);
 
 function renderWandSelection(){ updateSelectionOverlay(); }
-function clearWandSelection(){ wandSelection=null; wandSelectionCount=0; selection=null; updateSelectionOverlay(); }
+function clearWandSelection(){ wandSelection=null; wandSelectionCount=0; selection=null; updateSelectionOverlay(); updateSelectionToolsVisibility(); }
 function setWandTolerance(v){ wandTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('wandToleranceLabel'); if(l)l.textContent=wandTolerance; }
 function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementById('wandMatchBtn'); if(b)b.textContent=wandFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('wandTolerance'); if(r)r.disabled=!wandFuzzy; }
 function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementById('wandScopeBtn'); if(b){b.textContent=wandGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!wandGlobal);} }
@@ -3684,7 +3813,7 @@ function simplifyPoints(points, epsilon) {
 
 // Commits a finished freehand stroke (or a single tapped point) as a new spline.
 function commitFreehandSpline(layer, points, isShape) {
-    const spline = { closed: isShape, filled: isShape, color: selectedColor || '#000000', width: currentPenWidth, points };
+    const spline = { closed: isShape, filled: isShape, color: (portraitStrokeColor || selectedColor) || '#000000', width: currentPenWidth, points };
     layer.splines.push(spline);
     pushUndo({ type: 'addSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline, index: layer.splines.length - 1 });
     traceLog('Spline committed: ' + points.length + ' point(s), closed=' + isShape);
@@ -3729,22 +3858,42 @@ function countCustomSwatches() {
     return document.querySelectorAll('#palette .swatch-wrapper:not(#transparencyWrapper):not(#pickerContainer)').length;
 }
 
+// Enables/disables the colour picker when the active profile has reached its palette limit.
+// The picker becomes available again automatically when a swatch is deleted.
+function updateColorPickerAvailability() {
+    const picker = document.getElementById('colorPicker');
+    const wrap = document.getElementById('pickerContainer');
+    if (!picker || !wrap) return;
+    const full = selectedProfile === 'portrait' && countCustomSwatches() >= PORTRAIT_PALETTE_LIMIT;
+    picker.disabled = full;
+    wrap.style.opacity = full ? '0.35' : '1';
+    wrap.style.pointerEvents = full ? 'none' : 'auto';
+    wrap.title = full ? 'Portrait palette is full (15 colours)' : 'Add colour';
+}
+
+// Replaces the editable palette with the first unique opaque colours encountered in an image.
+// This follows the requested GIMP-inspired portrait workflow: scan in normal row-major order,
+// ignore transparent pixels, stop at 15 unique colours, and keep the transparency slot separate.
+function loadPortraitPaletteFromImage(img) { if (selectedProfile !== 'portrait') return; samplePortraitTilePalettes(img); syncPortraitPaletteForPoint(0,0,true); }
+
 // Adds a new colour swatch to the palette, enforcing the Portrait profile's colour cap if active.
 function createSwatch(color) {
-    if (selectedProfile === 'portrait' && countCustomSwatches() >= PORTRAIT_PALETTE_LIMIT) {
-        alert('Portrait profile is capped at ' + PORTRAIT_PALETTE_LIMIT + ' colours (the 16th slot is reserved for transparency).');
-        return;
-    }
     const hex = color.toUpperCase();
 
     // Do not create duplicate colours. If the chosen colour already exists,
-    // simply select the existing swatch instead.
+    // simply select the existing swatch instead. This check intentionally
+    // happens BEFORE the 15-colour cap, so a full tile can still select one
+    // of its existing colours.
     const existing = [...document.querySelectorAll('#palette .swatch')]
         .find(el => !el.classList.contains('transparent-swatch') && rgbToHex(el.style.backgroundColor) === hex);
     if (existing) {
         handleSwatchClick(hex);
         return;
     }
+    if (selectedProfile === 'portrait') {
+        const pal=ensurePortraitTilePalette(portraitActiveTileKey);
+        if (pal.length >= PORTRAIT_PALETTE_LIMIT) { updateColorPickerAvailability(); return; }
+    } else if (countCustomSwatches() >= 999) return;
 
     const wrapper = document.createElement('div');
     wrapper.className = 'swatch-wrapper';
@@ -3753,7 +3902,7 @@ function createSwatch(color) {
     s.style.backgroundColor = hex;
     const badge = document.createElement('div');
     badge.className = 'delete-badge'; badge.innerText = '×';
-    badge.onclick = (e) => { e.stopPropagation(); wrapper.remove(); };
+    badge.onclick = (e) => { e.stopPropagation(); const removed=rgbToHex(wrapper.querySelector('.swatch')?.style.backgroundColor||'').toUpperCase(); wrapper.remove(); if(selectedProfile==='portrait'){ const pal=ensurePortraitTilePalette(portraitActiveTileKey); const ix=pal.indexOf(removed); if(ix>=0)pal.splice(ix,1); } updateColorPickerAvailability(); updateUI(); };
     wrapper.onmousedown = wrapper.ontouchstart = (e) => {
         if (isConfirmingClear) return;
         if (isEditing) {
@@ -3769,7 +3918,9 @@ function createSwatch(color) {
     document.getElementById('palette').insertBefore(wrapper, document.getElementById('transparencyWrapper'));
 
     // A newly created colour becomes the active drawing colour immediately.
+    if(selectedProfile==='portrait'){ const pal=ensurePortraitTilePalette(portraitActiveTileKey); if(!pal.includes(hex)) pal.push(hex); }
     handleSwatchClick(hex);
+    updateColorPickerAvailability();
 }
 
 // Wires up drag-to-reorder for palette swatches while in edit mode.
@@ -3839,7 +3990,9 @@ function rgbToHex(rgb) {
 function plot(x, y) {
     const layer = activeLayer();
     if (!isPixelLike(layer)) return;
-    layer.plot(x, y, selectedColor);
+    let colour = portraitStrokeColor !== null ? portraitStrokeColor : selectedColor;
+    if(selectedProfile==='portrait' && colour!==null){ const key=portraitTileKeyForPoint(x,y); const pal=key?ensurePortraitTilePalette(key):[]; if(!pal.includes(colour)) return; }
+    layer.plot(x, y, colour);
 }
 
 // Hides the square pixel-preview cursor.
@@ -3946,6 +4099,7 @@ function setupDrawingEvents() {
         const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand' || currentTool === 'lasso';
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
+        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop') syncPortraitPaletteForPoint(x,y);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
@@ -4038,6 +4192,7 @@ function setupDrawingEvents() {
     // -- Select tool: draw a new rectangle, or drag the existing one ---
     const setRectSelectionPreview = (sel) => {
         selection = sel;
+        updateSelectionToolsVisibility();
         const box=document.getElementById('selectionBox');
         if(box){
             if(!sel){box.style.display='none';}
@@ -4133,7 +4288,7 @@ function setupDrawingEvents() {
         g.vecFreehand.moved = true;
         const layer = activeLayer();
         if (layer && layer.type === 'vector') {
-            layer.draftPreview = { closed: g.vecFreehand.isShape, filled: false, color: selectedColor || '#000000', width: 1, points: g.vecFreehand.points };
+            layer.draftPreview = { closed: g.vecFreehand.isShape, filled: false, color: (portraitStrokeColor || selectedColor) || '#000000', width: 1, points: g.vecFreehand.points };
             layer.layoutCSS();
         }
     };
@@ -4153,6 +4308,7 @@ function setupDrawingEvents() {
 
     const startStroke = (x, y) => {
         isDrawing = true;
+        portraitStrokeColor = selectedColor;
         g.suppressStroke = false;
         if (currentTool === 'select') { startSelectionDrag(x, y); return; }
         if (currentTool === 'lasso') { g.lasso=[{x:x+.5,y:y+.5}]; g.suppressStroke=true; return; }
@@ -4229,6 +4385,7 @@ function setupDrawingEvents() {
         for (const t of snapTargets) { if (Math.abs(newRotation - t) < 3) { newRotation = t; break; } }
         canvasRotation = newRotation;
         layoutAll();
+        updatePortraitTileOverlay();
 
         // layoutAll() re-centers the canvas. Find where the anchor grid
         // point (snapshotted at gesture start in grid-space) now lands on
@@ -4275,6 +4432,7 @@ function setupDrawingEvents() {
         const layer = activeLayer();
         if (!layer) return;
         const [x, y] = getPosFromClient(cx, cy);
+        syncPortraitPaletteForPoint(x,y);
         updateCursor(e);
         if (touches) {
             g.pendingTouch = { x, y, timer: setTimeout(commitPendingTouch, 70) };
@@ -4382,8 +4540,17 @@ function setupDrawingEvents() {
             }
         }
         isDrawing = false;
+        portraitStrokeColor = null;
         g.lastBrushPos = null;
+        updatePortraitTileOverlay();
         pixelCursor.classList.remove('active');
+        // After any drawing/selection gesture ends, restart the normal cursor
+        // idle timer. While a finger is down the cursor stays visible; once
+        // released, every cursor-bearing tool gets the same 500 ms timeout.
+        if (pixelCursor.classList.contains('visible')) {
+            clearTimeout(cursorTimer);
+            cursorTimer = setTimeout(hideCursor, 500);
+        }
     };
 
     viewport.addEventListener('mousedown', onStart);
@@ -4710,8 +4877,29 @@ function setupImportImageInput() {
                 selection = null; movingSelection = false; transformMode = false;
                 currentProjectId = null;
 
-                selectedProfile = 'standard';
-                selectProfile('standard');
+                // Portrait imports use the GIMP-inspired 15-colour palette, but the image
+                // itself may be larger than 40×40. A non-40×40 image is accepted when at least
+                // one dimension is a multiple of 40 (for example 80×40, 40×80, 120×40, etc.).
+                // The imported image then becomes the actual canvas size.
+                const importProfile = selectedProfile;
+                if (importProfile === 'portrait') {
+                    const iw = img.naturalWidth, ih = img.naturalHeight;
+                    if (iw !== 40 || ih !== 40) {
+                        if ((iw % 40) !== 0 && (ih % 40) !== 0) {
+                            alert('Portrait import rejected: the image must be 40×40, or at least one dimension must be a multiple of 40.');
+                            if (importBtn) { importBtn.textContent = '🖼️ Choose Image'; importBtn.disabled = false; }
+                            return;
+                        }
+                    }
+                    w = iw; h = ih;
+                    selectProfile('portrait');
+                    samplePortraitTilePalettes(img);
+                    syncPortraitPaletteForPoint(0,0,true);
+                } else {
+                    selectedProfile = 'standard';
+                    selectProfile('standard');
+                    updateColorPickerAvailability();
+                }
                 gridW = w; gridH = h;
                 closeNewCanvasModal(); // success: now safe to close
                 hideGallery();
@@ -4722,8 +4910,8 @@ function setupImportImageInput() {
                 activeFrameIndex = 0;
                 container.appendChild(base.el);
                 setActiveLayer(0);
-                document.getElementById('framesSection').style.display = 'none';
-                lastEnteredProfile = 'standard';
+                document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
+                lastEnteredProfile = selectedProfile;
                 pendingImportKind = 'pixel';
                 layoutAll();
             } catch (err) {
@@ -4976,6 +5164,8 @@ function saveCurrentStateToStore(existingId, nameOverride) {
         activeLayerIndex,
         activeLayerId,
         scale,
+        portraitTilePalettes: selectedProfile==='portrait' ? Object.fromEntries(portraitTilePalettes) : null,
+        portraitActiveTileKey,
         thumbnailDataURL: thumb,
         updatedAt: Date.now()
     };
@@ -4999,6 +5189,8 @@ function openProjectFromStore(id) {
     zoomIndex = ZOOM_STEPS.indexOf(scale);
     if (zoomIndex === -1) zoomIndex = ZOOM_STEPS.indexOf(10);
     selectedProfile = proj.profile || 'standard';
+    portraitTilePalettes = new Map(Object.entries(proj.portraitTilePalettes || {}));
+    portraitActiveTileKey = proj.portraitActiveTileKey || '0,0';
     lastEnteredProfile = selectedProfile;
     activeFrameIndex = proj.activeFrameIndex || 0;
     layers = frames[activeFrameIndex].layers;
@@ -5006,6 +5198,7 @@ function openProjectFromStore(id) {
     selection = null; movingSelection = false; transformMode = false;
     hideGallery();
     revealMainApp();
+    if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
     // Re-attach all layer canvases to the container
     layers.forEach(l => { if (!container.contains(l.el)) container.appendChild(l.el); });
     reindexDom();
@@ -5083,17 +5276,19 @@ function renderGallery() {
             holdTimer = setTimeout(() => {
                 didLongPress = true;
                 holdTimer = null;
+                if (e.cancelable) e.preventDefault();
                 openGalleryCtxMenu(proj.id, e);
             }, 600);
         };
         const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+        const cancelLongPressClick = (e) => { if (didLongPress) { e.preventDefault(); e.stopPropagation(); didLongPress = false; } };
         card.addEventListener('touchstart', startHold, {passive: true});
         card.addEventListener('touchend', clearHold);
         card.addEventListener('touchcancel', clearHold);
         card.addEventListener('mousedown', startHold);
         card.addEventListener('mouseup', clearHold);
         card.addEventListener('mouseleave', clearHold);
-        card.addEventListener('click', () => { if (!didLongPress) openProjectFromStore(proj.id); });
+        card.addEventListener('click', (e) => { if (!didLongPress) openProjectFromStore(proj.id); else { e.preventDefault(); e.stopPropagation(); didLongPress = false; } });
 
         grid.appendChild(card);
     });
@@ -5199,6 +5394,7 @@ function openNewCanvasSheet() {
         pickers.appendChild(row);
     });
     sheet.appendChild(pickers);
+    setupDigitKeyboardAdvance(pickers);
 
     const createBtn = document.createElement('button');
     createBtn.className = 'btn-start';
@@ -5285,6 +5481,7 @@ function startNewProjectFromGallery(w, h) {
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
     container.appendChild(base.el);
+    if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
     setActiveLayer(0);
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
@@ -5355,6 +5552,8 @@ document.getElementById('ctx-duplicate').addEventListener('click', () => {
         activeFrameIndex: proj.activeFrameIndex,
         activeLayerIndex: proj.activeLayerIndex,
         scale: proj.scale,
+        portraitTilePalettes: selectedProfile==='portrait' ? Object.fromEntries(portraitTilePalettes) : null,
+        portraitActiveTileKey,
         thumbnailDataURL: proj.thumbnailDataURL,
         updatedAt: Date.now()
     };
@@ -5414,8 +5613,8 @@ document.getElementById('ctx-delete').addEventListener('click', () => {
     closeGalleryCtxMenu();
     const idx = projectStore.findIndex(p => p.id === id);
     if (idx === -1) return;
-    // Simple confirm -- tap-twice not needed here as it's already behind a long-press + menu
-    if (!confirm('Delete "' + projectStore[idx].name + '"? This cannot be undone.')) return;
+    // The user has already explicitly opened the long-press context menu and tapped Delete.
+    // Avoid browser confirm() here because it can be unreliable in touch/PWA environments.
     projectStore.splice(idx, 1);
     renderGallery();
 });
@@ -5487,6 +5686,68 @@ if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => { updateRotationFab(); updateUndoRedoFabs(); if (viewport) updateCanvasWrapPadding(); });
 }
 
+
+// Export/import the editable colour swatches as a simple JSON array. The transparency
+// and colour-picker slots are UI controls, not part of the swatch array.
+function getSwatchArray() {
+    return [...document.querySelectorAll('#palette .swatch')]
+        .filter(el => !el.classList.contains('transparent-swatch'))
+        .map(el => rgbToHex(el.style.backgroundColor).toUpperCase())
+        .filter(Boolean);
+}
+function exportSwatchArray() {
+    const data = JSON.stringify(getSwatchArray(), null, 2);
+    const blob = new Blob([data], {type:'application/json'});
+    const a = document.createElement('a');
+    a.download = 'swatches.json';
+    a.href = URL.createObjectURL(blob);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function importSwatchArrayFile() {
+    const input = document.getElementById('swatchArrayFileInput');
+    if (input) { input.value = ''; input.click(); }
+}
+function applyImportedSwatchArray(raw) {
+    let arr;
+    try { arr = JSON.parse(raw); } catch (_) { alert('Invalid swatch array file.'); return; }
+    if (!Array.isArray(arr)) { alert('Invalid swatch array: expected a JSON array.'); return; }
+    const cleaned = [];
+    const seen = new Set();
+    for (const value of arr) {
+        if (typeof value !== 'string') continue;
+        const hex = value.trim().toUpperCase();
+        if (!/^#[0-9A-F]{6}$/.test(hex) || seen.has(hex)) continue;
+        seen.add(hex); cleaned.push(hex);
+        if (cleaned.length >= (selectedProfile === 'portrait' ? PORTRAIT_PALETTE_LIMIT : 999)) break;
+    }
+    document.querySelectorAll('#palette .swatch-wrapper:not(#transparencyWrapper):not(#pickerContainer)').forEach(el => el.remove());
+    cleaned.forEach(createSwatch);
+    selectedColor = cleaned[0] || '#000000';
+    updateUI();
+    updateColorPickerAvailability();
+}
+function openSwatchArrayMenu() {
+    const menu = document.createElement('div');
+    menu.style.cssText = 'position:fixed;z-index:2000;left:50%;top:50%;transform:translate(-50%,-50%);background:#222;border:1px solid #555;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:220px;box-shadow:0 8px 30px rgba(0,0,0,.5);';
+    const title = document.createElement('div'); title.textContent='Swatch Array'; title.style.cssText='font-weight:bold;color:#fff;text-align:center;';
+    const ex = document.createElement('button'); ex.className='btn'; ex.textContent='EXPORT SWATCH ARRAY'; ex.onclick=()=>{ exportSwatchArray(); menu.remove(); };
+    const im = document.createElement('button'); im.className='btn'; im.textContent='IMPORT SWATCH ARRAY'; im.onclick=()=>{ importSwatchArrayFile(); menu.remove(); };
+    const cancel = document.createElement('button'); cancel.className='btn'; cancel.textContent='CANCEL'; cancel.onclick=()=>menu.remove();
+    menu.append(title,ex,im,cancel); document.body.appendChild(menu);
+}
+
+const swatchArrayFileInput = document.createElement('input');
+swatchArrayFileInput.type = 'file'; swatchArrayFileInput.accept = '.json,application/json'; swatchArrayFileInput.style.display='none';
+swatchArrayFileInput.id='swatchArrayFileInput';
+swatchArrayFileInput.addEventListener('change', e => {
+    const file=e.target.files && e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>applyImportedSwatchArray(String(reader.result||''));
+    reader.readAsText(file);
+});
+document.body.appendChild(swatchArrayFileInput);
+
 document.getElementById('colorPicker').onchange = (e) => { uiAction(() => createSwatch(e.target.value.toUpperCase())); };
 // Let the Pixel Art Hub paint first. Editor controls, palettes and other
 // heavier initialization are deferred one frame so the app feels ready
@@ -5497,6 +5758,10 @@ requestAnimationFrame(() => {
     setupLayerFileInputs();
     setupImportImageInput();
     ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF"].forEach(c => createSwatch(c));
+    // Black is the default drawing colour. The blue used elsewhere in the UI
+    // is an interface accent, not the default paint colour.
+    selectedColor = "#000000";
+    updateUI();
     handleToolBtn('brush');
     showGallery();
 });
