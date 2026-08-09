@@ -3344,7 +3344,7 @@ function updateSelectionOverlay(){
     const box=document.getElementById('selectionBox');
     if(!ov) return;
     if(!hasWandSelection()){
-        ov.style.display='none'; if(box)box.style.display='none'; selectionBoundary=null; return;
+        ov.style.display='none'; const a=document.getElementById('wandSelectionOverlay'); if(a)a.style.display='none'; if(box)box.style.display='none'; selectionBoundary=null; return;
     }
     if(ov.width!==gridW||ov.height!==gridH){ov.width=gridW;ov.height=gridH;}
     ov.style.width=(gridW*scale)+'px'; ov.style.height=(gridH*scale)+'px'; ov.style.display='block';
@@ -3358,21 +3358,31 @@ function updateSelectionOverlay(){
     const c=document.getElementById('wandSelectionCount'); if(c)c.textContent=wandSelectionCount.toLocaleString()+' pixels selected';
 }
 function drawSelectionAnts(){
-    const ov=document.getElementById('selectionOverlay'); if(!ov||!selectionBoundary)return;
+    // Draw marching ants in SCREEN/CSS space rather than canvas-grid space.
+    // This keeps each ant pixel physically small even when the artwork is
+    // zoomed to 2x, 4x, 8x, etc. The blue selection itself remains grid-based.
+    const ov=document.getElementById('wandSelectionOverlay');
+    if(!ov||!selectionBoundary)return;
+    const w=Math.max(1,Math.round(gridW*scale)), h=Math.max(1,Math.round(gridH*scale));
+    if(ov.width!==w||ov.height!==h){ov.width=w;ov.height=h;}
+    ov.style.width=w+'px'; ov.style.height=h+'px'; ov.style.display='block';
     const ctx=ov.getContext('2d');
-    // Repaint only the 1px boundary on top of the blue selection. The dash
-    // pattern is animated by offsetting a simple black/white checker along
-    // the boundary; this is the marching-ants effect without per-frame
-    // regeneration of the full selection mask.
+    ctx.clearRect(0,0,w,h);
+    const ant=Math.max(1,Math.min(2,Math.round(window.devicePixelRatio||1)));
     for(const [x,y] of selectionBoundary){
         const on=((x+y+selectionAntOffset)>>1)&1;
         ctx.fillStyle=on?'#fff':'#111';
-        ctx.fillRect(x,y,1,1);
+        // A fixed physical-size mark, independent of zoom.
+        ctx.fillRect(Math.round(x*scale),Math.round(y*scale),ant,ant);
     }
 }
-function animateSelectionAnts(){
-    selectionAntOffset=(selectionAntOffset+1)&7;
-    drawSelectionAnts();
+function animateSelectionAnts(now){
+    // Slower marching speed: advance about every 140ms instead of every frame.
+    if(!animateSelectionAnts.last || now-animateSelectionAnts.last>=140){
+        selectionAntOffset=(selectionAntOffset+1)&7;
+        drawSelectionAnts();
+        animateSelectionAnts.last=now;
+    }
     selectionAnimFrame=requestAnimationFrame(animateSelectionAnts);
 }
 if(!selectionAnimFrame) selectionAnimFrame=requestAnimationFrame(animateSelectionAnts);
@@ -3801,6 +3811,7 @@ function handleToolBtn(t) {
     if (t !== 'select') { /* leaving select tool keeps the selection, just stops editing it */ }
     currentTool = t;
     updateUI();
+    updateToolVisibility();
     updateVectorHandles();
 }
 
