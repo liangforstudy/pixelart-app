@@ -3513,7 +3513,7 @@ function findLayerById(frameIndex, layerId) {
 function undo() {
     const entry=undoStack.pop();
     if(!entry) return;
-    if(entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex,true);
+    if(entry.frameIndex != null && entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex,true);
     if(entry.type==='pixels'){
         const layer=findLayerById(entry.frameIndex,entry.layerId);
         if(layer){ layer.pixelData=cloneGrid(entry.before); layer.redrawFromData(); }
@@ -3548,7 +3548,7 @@ function redo(nodeOverride) {
         entry=redoStack.pop();
     }
     if(!entry) return;
-    if(entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex,true);
+    if(entry.frameIndex != null && entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex,true);
     if(entry.type==='pixels'){
         const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ layer.pixelData=cloneGrid(entry.after); layer.redrawFromData(); }
     } else if(entry.type==='selection'){
@@ -3675,7 +3675,14 @@ function sameSelectionSnapshot(a,b) {
 }
 function recordSelectionUndo(before, after) {
     if (!before || !after || sameSelectionSnapshot(before, after)) return;
-    pushUndo({type:'selection', beforeMask:before.mask, beforeCount:before.count, beforeRect:before.rect,
+    // Selection history is frame-scoped just like pixel/tree history. The
+    // frame index MUST be stored here: undo()/redo() use it to restore the
+    // correct document frame before applying the selection snapshot. Without
+    // it, an undefined frameIndex could make undo attempt an invalid frame
+    // switch, detach the layer canvases, and leave the visible document out
+    // of sync until the hub/project view rebuilds it.
+    pushUndo({type:'selection', frameIndex:activeFrameIndex,
+        beforeMask:before.mask, beforeCount:before.count, beforeRect:before.rect,
         afterMask:after.mask, afterCount:after.count, afterRect:after.rect});
 }
 function setSelectionRaw(mask, count, rect) {
