@@ -84,19 +84,43 @@
             background: rgba(0, 0, 0, 0.25);
         }
 
+        /* Bottom navigation is intentionally horizontally scrollable.
+           Touch screens get six fixed-width touch targets across the viewport;
+           wider desktop screens use a comfortable fixed button width so more
+           panels can appear without shrinking the controls into tiny targets. */
         #floatingBar {
             position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
-            display: flex; gap: 3px; padding: 6px;
+            display: flex; gap: 6px; padding: 6px;
             padding-bottom: max(6px, env(safe-area-inset-bottom));
             background: rgba(28,28,28,0.92); border-top: 1px solid #333;
+            overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+            -webkit-overflow-scrolling: touch; box-sizing: border-box;
         }
+        #floatingBar::-webkit-scrollbar { display: none; }
         .fbtn {
-            flex: 1; height: 42px; background: #2a2a2a; border: 1px solid #444;
+            flex: 0 0 calc((100vw - 42px) / 6); min-width: 0; height: 42px;
+            background: #2a2a2a; border: 1px solid #444;
             color: #fff; font-size: 9px; font-weight: bold; cursor: pointer;
             border-radius: 8px; text-transform: uppercase;
             display: flex; align-items: center; justify-content: center;
+            white-space: nowrap;
+        }
+        @media (min-width: 760px) {
+            .fbtn { flex-basis: 118px; }
         }
         .fbtn.active { background: #0078d4; border-color: #fff; }
+
+        #panel-panel { max-width: 390px; }
+        .panel-manager-row { display:flex; align-items:center; gap:10px; min-height:42px; }
+        .panel-manager-row label { flex:1; font-size:11px; font-weight:700; color:#fff; }
+        .panel-manager-row input { width:22px; height:22px; accent-color:#0078d4; }
+        #historyList { display:flex; flex-direction:column; gap:3px; overflow-y:auto; }
+        .history-entry { min-height:36px; width:100%; border:1px solid #3b3b3b; background:#292929; color:#fff; border-radius:7px; padding:6px 9px; box-sizing:border-box; text-align:left; font-size:10px; font-weight:700; }
+        .history-entry.current { background:#0078d4; border-color:#fff; }
+        .history-entry.redo { color:#777; background:#1d1d1d; border-color:#2a2a2a; }
+        .history-entry:disabled { opacity:1; cursor:default; }
+        .history-empty { color:#777; font-size:10px; text-align:center; padding:12px; }
+        .history-divider { height:1px; background:#555; margin:3px 0; }
 
         /* ── Gallery Screen ── */
         #gallery-screen {
@@ -728,6 +752,22 @@
             <input type="file" id="refInput" accept="image/*" style="display:none">
         </div>
 
+        <div class="floating-panel" id="panel-panel">
+            <div class="panel-title">Panel</div>
+            <div style="font-size:10px;color:#777;text-align:center;">Choose which editor panels appear in the bottom bar.</div>
+            <div id="panelManagerList"></div>
+            <div class="row">
+                <button class="btn" onclick="uiAction(() => setAllPanelTabsVisible(true))">SHOW ALL</button>
+                <button class="btn" onclick="uiAction(() => setAllPanelTabsVisible(false))">HIDE OPTIONAL</button>
+            </div>
+        </div>
+
+        <div class="floating-panel" id="panel-history">
+            <div class="panel-title">Undo History</div>
+            <div style="font-size:10px;color:#777;text-align:center;">Tap an earlier step to undo back to it. Grey steps can be restored with redo.</div>
+            <div id="historyList"></div>
+        </div>
+
         <div class="floating-panel" id="panel-file">
             <div class="panel-title">File</div>
             <div class="row">
@@ -776,12 +816,14 @@
         </div>
 
         <div id="floatingBar">
-            <button class="fbtn" id="tab-tools" onclick="toggleDrawer('tools')">🛠️ TOOLS</button>
-            <button class="fbtn" id="tab-view" onclick="togglePanel('view')">🔍 VIEW</button>
-            <button class="fbtn" id="tab-colors" onclick="togglePanel('colors')">🎨 COLOUR</button>
-            <button class="fbtn" id="tab-layers" onclick="togglePanel('layers')">📚 LAYERS</button>
-            <button class="fbtn" id="tab-file" onclick="togglePanel('file')">📁 FILE</button>
-            <button class="fbtn" id="tab-debug" onclick="toggleDrawer('debug')">⚙️ DEBUG</button>
+            <button class="fbtn" id="tab-tools" data-panel-tab="tools" onclick="toggleDrawer('tools')">🛠️ TOOLS</button>
+            <button class="fbtn" id="tab-view" data-panel-tab="view" onclick="togglePanel('view')">🔍 VIEW</button>
+            <button class="fbtn" id="tab-colors" data-panel-tab="colors" onclick="togglePanel('colors')">🎨 COLOUR</button>
+            <button class="fbtn" id="tab-layers" data-panel-tab="layers" onclick="togglePanel('layers')">📚 LAYERS</button>
+            <button class="fbtn" id="tab-file" data-panel-tab="file" onclick="togglePanel('file')">📁 FILE</button>
+            <button class="fbtn" id="tab-panel" data-panel-tab="panel" onclick="togglePanel('panel')">▦ PANEL</button>
+            <button class="fbtn" id="tab-history" data-panel-tab="history" data-optional-panel="history" onclick="togglePanel('history')">↩️ HISTORY</button>
+            <button class="fbtn" id="tab-debug" data-panel-tab="debug" onclick="toggleDrawer('debug')">⚙️ DEBUG</button>
         </div>
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
@@ -1638,6 +1680,102 @@ function setDigitGroup(id, val) {
 /* ============================================================
    FLOATING PANELS (bottom-sheet, closeable menus: View/Colour/Layers/File)
    ============================================================ */
+/* ============================================================
+   PANEL MANAGEMENT + UNDO HISTORY
+   The Panel menu controls optional bottom-bar tabs. The Panel tab
+   itself is always available so hidden tabs can be restored.
+   ============================================================ */
+const panelTabDefinitions = [
+    { name:'tools', label:'Tools', fixed:true },
+    { name:'view', label:'View', fixed:false },
+    { name:'colors', label:'Colour', fixed:false },
+    { name:'layers', label:'Layers', fixed:false },
+    { name:'file', label:'File', fixed:false },
+    { name:'history', label:'Undo History', fixed:false },
+    { name:'debug', label:'Debug', fixed:false }
+];
+let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:true, history:false, debug:true };
+try { const saved=JSON.parse(localStorage.getItem('pixelAppPanelVisibility')||'null'); if(saved && typeof saved==='object') panelVisibility={...panelVisibility,...saved}; } catch(e) {}
+function savePanelVisibility(){ try{ localStorage.setItem('pixelAppPanelVisibility', JSON.stringify(panelVisibility)); }catch(e){} }
+
+function renderPanelManager() {
+    const list = document.getElementById('panelManagerList');
+    if (!list) return;
+    list.innerHTML = '';
+    panelTabDefinitions.forEach(def => {
+        const row = document.createElement('div'); row.className = 'panel-manager-row';
+        const label = document.createElement('label'); label.textContent = def.label;
+        const cb = document.createElement('input'); cb.type='checkbox'; cb.checked=!!panelVisibility[def.name]; cb.disabled=!!def.fixed;
+        cb.onchange = () => setPanelTabVisible(def.name, cb.checked);
+        row.append(label, cb); list.appendChild(row);
+    });
+}
+function setPanelTabVisible(name, visible) {
+    panelVisibility[name] = !!visible;
+    savePanelVisibility();
+    const tab = document.getElementById('tab-' + name);
+    if (tab && name !== 'panel') tab.style.display = panelVisibility[name] ? 'flex' : 'none';
+    if (!visible) {
+        if (openPanelName === name) closePanel();
+        if (drawerOpenName === name) closeDrawer();
+    }
+    renderPanelManager();
+}
+function setAllPanelTabsVisible(visible) {
+    panelTabDefinitions.forEach(def => { if (!def.fixed) panelVisibility[def.name] = !!visible; });
+    panelVisibility.tools = true; panelVisibility.panel = true;
+    savePanelVisibility();
+    panelTabDefinitions.forEach(def => {
+        const tab=document.getElementById('tab-'+def.name);
+        if(tab) tab.style.display=panelVisibility[def.name]?'flex':'none';
+    });
+    renderPanelManager();
+}
+function applyPanelVisibility() {
+    panelTabDefinitions.forEach(def => {
+        const tab=document.getElementById('tab-'+def.name);
+        if(tab) tab.style.display=panelVisibility[def.name]?'flex':'none';
+    });
+}
+function historyEntryLabel(entry, index) {
+    if (entry.label) return entry.label;
+    const names = {pixels:'Draw / edit pixels', selection:'Selection change', tree:'Layer / group change', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
+    let label = names[entry.type] || 'Edit';
+    if (entry.layer && entry.layer.name) label += ': ' + entry.layer.name;
+    if (entry.layerId) { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer) label += ': ' + layer.name; }
+    return label + ' #' + (index + 1);
+}
+function renderUndoHistory() {
+    const list=document.getElementById('historyList'); if(!list) return;
+    list.innerHTML='';
+    const applied=undoStack.slice();
+    const future=redoStack.slice().reverse();
+    if (!applied.length && !future.length) { const e=document.createElement('div'); e.className='history-empty'; e.textContent='No undo history'; list.appendChild(e); return; }
+    const initial=document.createElement('button'); initial.className='history-entry' + (!applied.length ? ' current' : '');
+    initial.textContent=(!applied.length ? '✓ ' : '') + 'Initial state';
+    initial.onclick=()=>jumpToHistoryCount(0); list.appendChild(initial);
+    applied.forEach((entry,i)=>{
+        const b=document.createElement('button'); b.className='history-entry' + (i===applied.length-1?' current':'');
+        b.textContent=(i===applied.length-1?'✓ ':'')+historyEntryLabel(entry,i);
+        b.onclick=()=>jumpToHistoryCount(i+1); list.appendChild(b);
+    });
+    if (future.length) {
+        const d=document.createElement('div'); d.className='history-divider'; list.appendChild(d);
+        future.forEach((entry,j)=>{
+            const target=applied.length+j+1;
+            const b=document.createElement('button'); b.className='history-entry redo'; b.disabled=false;
+            b.textContent='↪ '+historyEntryLabel(entry, target-1); b.onclick=()=>jumpToHistoryCount(target); list.appendChild(b);
+        });
+    }
+}
+function jumpToHistoryCount(targetCount) {
+    const target=Math.max(0,Math.min(MAX_UNDO,targetCount|0));
+    let guard=0;
+    while(undoStack.length>target && undoStack.length && guard++<MAX_UNDO+2) undo();
+    while(undoStack.length<target && redoStack.length && guard++<MAX_UNDO+2) redo();
+    if (openPanelName==='history') renderUndoHistory();
+}
+
 function togglePanel(name) {
     traceLog('togglePanel(' + name + ') called, currently open: ' + openPanelName);
     if (openPanelName === name) { closePanel(); return; }
@@ -1659,6 +1797,8 @@ function openPanel(name) {
             document.getElementById('resizeH').value = gridH;
         }
         if (name === 'layers') { renderLayersPanel(); renderFramesPanel(); }
+        if (name === 'panel') renderPanelManager();
+        if (name === 'history') renderUndoHistory();
     } catch (err) {
         console.error('openPanel(' + name + ') content failed:', err && err.message);
     }
@@ -3295,6 +3435,7 @@ function undo() {
     redoStack.push(entry);
     if (openPanelName === 'layers') renderLayersPanel();
     updateUndoRedoFabs();
+    if (openPanelName === 'history') renderUndoHistory();
     updateVectorHandles();
     refreshHookedComposites();
 }
@@ -3333,6 +3474,7 @@ function redo() {
     undoStack.push(entry);
     if (openPanelName === 'layers') renderLayersPanel();
     updateUndoRedoFabs();
+    if (openPanelName === 'history') renderUndoHistory();
     updateVectorHandles();
     refreshHookedComposites();
 }
@@ -5666,6 +5808,8 @@ const _origSetupImportImageInput = setupImportImageInput;
 /* ============================================================
    BOOT
    ============================================================ */
+applyPanelVisibility();
+
 const panelBackdrop = document.getElementById('panelBackdrop');
 panelBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closePanel(); }, {passive: false});
 panelBackdrop.addEventListener('mousedown', () => closePanel());
