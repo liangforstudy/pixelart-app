@@ -508,6 +508,7 @@
                     <canvas id="shapePreview" class="layer-canvas" style="z-index:160; display:none; opacity:0.85;"></canvas>
                     <div id="gridOverlay" style="position:absolute; top:0; left:0; pointer-events:none; z-index:170; display:none;"></div>
                     <canvas id="vectorHandlesOverlay" class="layer-canvas reference-canvas" style="z-index:175; display:none;"></canvas>
+                    <canvas id="selectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:177;display:none;"></canvas>
                     <div id="selectionBox"></div>
                     <canvas id="wandSelectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:176;display:none;"></canvas>
                     <div id="canvas-safety-overlay" onclick="cancelClear()"></div>
@@ -526,7 +527,7 @@
                 <button class="btn" id="gridToggleBtn" onclick="uiAction(toggleGridLines)">▦ GRID LINES: OFF</button>
             </div>
             <div class="row">
-                <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 DROPPER</button>
+                <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
@@ -537,6 +538,14 @@
                 <div class="row">
                     <button class="btn tool-btn" data-tool="wand" onclick="uiAction(() => handleToolBtn('wand'))">🪄 WAND</button>
                     <button class="btn tool-btn" data-tool="lasso" onclick="uiAction(() => handleToolBtn('lasso'))">〰️ LASSO</button>
+                </div>
+                <div id="bucketControls" style="display:none;">
+                    <div class="panel-subtitle">FILL TOLERANCE</div>
+                    <div class="row" style="align-items:center;">
+                        <button class="btn active" id="bucketMatchBtn" onclick="uiAction(toggleBucketMatch)">EXACT</button>
+                        <input type="range" id="bucketTolerance" min="0" max="100" step="1" value="10" oninput="uiAction(() => setBucketTolerance(this.value))" style="flex:1;">
+                        <span id="bucketToleranceLabel" style="font-size:10px;color:#ccc;width:28px;text-align:right;">10</span>
+                    </div>
                 </div>
                 <div id="wandControls" style="display:none;">
                     <div class="panel-subtitle">Wand Selection</div>
@@ -595,8 +604,8 @@
             </div>
             <div class="panel-subtitle">History</div>
             <div class="row">
-                <button class="btn" onclick="uiAction(undo)">↩️ UNDO</button>
-                <button class="btn" onclick="uiAction(redo)">↪️ REDO</button>
+                <button class="btn" id="toolbarUndoBtn" onclick="uiAction(undo)">↩️ UNDO</button>
+                <button class="btn" id="toolbarRedoBtn" onclick="uiAction(redo)">↪️ REDO</button>
                 <button id="clearBtn" class="btn btn-clear" onclick="handleClearClick()">🗑️ CLEAR</button>
             </div>
         </div>
@@ -692,13 +701,16 @@
                 <button class="btn" onclick="uiAction(addEmptyGroup)">➕ 🗂️ GROUP</button>
             </div>
             <div class="row">
+                <button class="btn" onclick="uiAction(openPixelLayerImport)">🖼️ IMPORT IMAGE AS NEW PIXEL LAYER</button>
+            </div>
+            <div class="row">
                 <button class="btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })">🌄 REFERENCE</button>
             </div>
             <div class="row">
                 <button class="btn" onclick="uiAction(addMaskLayer)">➕ 🎭 MASK</button>
                 <button class="btn" onclick="uiAction(addClipLayer)">➕ ✂️ CLIP</button>
             </div>
-            <div style="font-size:9px; color:#666; text-align:center;">Mask/Clip attach to the pixel layer directly below them when created -- select a pixel layer first. Their effect shows correctly in PNG export, but not yet live on the canvas while editing.</div>
+            <div style="font-size:9px; color:#666; text-align:center;">Mask/Clip attach to the pixel layer directly below them when created -- select a pixel layer first. Their effect is applied live to the canvas; the mask/clip pixels themselves are not drawn as visible artwork.</div>
             <input type="file" id="refInput" accept="image/*" style="display:none">
         </div>
 
@@ -1255,6 +1267,8 @@ let wandSelectionCount = 0;
 let wandFuzzy = false;
 let wandTolerance = 10;
 let wandGlobal = false;         // false = contiguous flood fill, true = global matching
+let bucketFuzzy = false;
+let bucketTolerance = 10;
 let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
 let pendingImportKind = 'pixel';
 
@@ -1628,6 +1642,14 @@ class Layer {
         this.ctx = this.el.getContext('2d');
     }
     applyVisualState() {
+        // Mask/clip layers are control data, not visible artwork. Their
+        // pixels are consumed by refreshHookedComposites() instead of being
+        // drawn directly over the layer they affect.
+        if (this.type === 'mask' || this.type === 'clip') {
+            this.el.style.display = 'none';
+            this.el.style.opacity = '0';
+            return;
+        }
         this.el.style.display = (this.visible && this._groupVisible !== false) ? 'block' : 'none';
         this.el.style.opacity = this.opacity * (this._groupOpacity == null ? 1 : this._groupOpacity);
     }
@@ -2248,9 +2270,12 @@ function updateRotationFab() {
 function updateUndoRedoFabs() {
     const u = document.getElementById('undoFab');
     const r = document.getElementById('redoFab');
-    if (!u || !r) return;
-    u.style.opacity = undoStack.length ? '1' : '0.3';
-    r.style.opacity = redoStack.length ? '1' : '0.3';
+    const tu = document.getElementById('toolbarUndoBtn');
+    const tr = document.getElementById('toolbarRedoBtn');
+    if (u) { u.style.opacity = undoStack.length ? '1' : '0.3'; u.disabled = !undoStack.length; }
+    if (r) { r.style.opacity = redoStack.length ? '1' : '0.3'; r.disabled = !redoStack.length; }
+    if (tu) tu.disabled = !undoStack.length;
+    if (tr) tr.disabled = !redoStack.length;
 }
 
 // Sets the canvas view rotation back to 0 degrees.
@@ -2349,7 +2374,7 @@ function reindexDom() {
 
 // Changes which layer tools act on. Also turns off reference-layer TRANSFORM mode and clears any selection, since both are scoped to whichever layer was previously active.
 function setActiveLayer(idx) {
-    if (idx !== activeLayerIndex) { transformMode = false; deselect(); }
+    if (idx !== activeLayerIndex) { transformMode = false; updateSelectionOverlay(); }
     activeLayerIndex = idx;
     activeLayerId = (layers[idx] && layers[idx].id != null) ? layers[idx].id : null;
     activeGroupId = null;
@@ -2373,9 +2398,10 @@ function updateToolVisibility() {
     show('pixelToolsSection', type === 'pixel' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
     show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
-    const wc = document.getElementById('wandControls'); if (wc) wc.style.display = (currentTool === 'wand' && isPixelLike(layer)) ? '' : 'none';
+    const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
+    const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
 
-    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'select', 'line', 'rect', 'ellipse'];
+    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
     // Prefer switching to the analogous drawing tool over falling back to
     // the eyedropper: brush<->pen mirror each other as each type's default
@@ -2690,7 +2716,7 @@ function renderGlobalCommandResults(query){const box=document.getElementById('gl
 function registerBuiltInCommands(){
     if(commandRegistry.length)return;
     registerCommand('tool.brush','Brush',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
-    registerCommand('tool.eyedrop','Colour Picker',['eyedropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
+    registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
     registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
     registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
     registerCommand('tool.line','Line',['straight line'],()=>handleToolBtn('line'),'Tools');
@@ -2782,7 +2808,7 @@ function renderLayersPanel() {
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
         row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); list.appendChild(row);
-        if(!layerSelectionMode && i===activeLayerIndex){const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
+        if(!layerSelectionMode && i===activeLayerIndex){const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
     };
     const renderGroupRow=(node,depth)=>{
         const row=document.createElement('div'); row.className='layer-row group-row'+(activeGroupId===node.id?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.touchAction='none'; row.style.paddingLeft=(depth*18)+'px';
@@ -2798,7 +2824,7 @@ function renderLayersPanel() {
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteGroup(node);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=e=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(e.target===exp||e.target===sel||e.target===vis||e.target===name)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();}};
         row.append(colorTag,exp,sel,vis,icon,name,up,down,del); list.appendChild(row);
-        if(!layerSelectionMode && activeGroupId===node.id){ const op=document.createElement('div'); op.className='layer-opacity-row'; const sl=document.createElement('input'); sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(node.opacity*100); const lab=document.createElement('span');lab.innerText=sl.value+'%'; sl.oninput=()=>{node.opacity=sl.value/100;lab.innerText=sl.value+'%';applyGroupVisualState(node);}; op.append(sl,lab); const bm=document.createElement('select'); bm.className='num-input'; ['source-over','multiply','screen','overlay','darken','lighten'].forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
+        if(!layerSelectionMode && activeGroupId===node.id){ const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel); const op=document.createElement('div'); op.className='layer-opacity-row'; const sl=document.createElement('input'); sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(node.opacity*100); const lab=document.createElement('span');lab.innerText=sl.value+'%'; sl.oninput=()=>{node.opacity=sl.value/100;lab.innerText=sl.value+'%';applyGroupVisualState(node);}; op.append(sl,lab); const bm=document.createElement('select'); bm.className='num-input'; ['source-over','multiply','screen','overlay','darken','lighten'].forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
         if(!node.collapsed)renderNodes(node.children,depth+1);
     };
     renderNodes(f.layerTree,0);
@@ -3107,6 +3133,8 @@ function undo() {
     if (entry.type === 'pixels') {
         const layer = findLayerById(entry.frameIndex, entry.layerId);
         if (layer) { layer.pixelData = cloneGrid(entry.before); layer.redrawFromData(); }
+    } else if (entry.type === 'selection') {
+        setSelectionRaw(entry.beforeMask ? entry.beforeMask.slice() : null, entry.beforeCount || 0, entry.beforeRect ? {...entry.beforeRect} : null);
     } else if (entry.type === 'tree') {
         restoreTreeState(entry.before);
         traceLog('Undo tree operation: ' + entry.label);
@@ -3150,6 +3178,8 @@ function redo() {
     if (entry.type === 'pixels') {
         const layer = findLayerById(entry.frameIndex, entry.layerId);
         if (layer) { layer.pixelData = cloneGrid(entry.after); layer.redrawFromData(); }
+    } else if (entry.type === 'selection') {
+        setSelectionRaw(entry.afterMask ? entry.afterMask.slice() : null, entry.afterCount || 0, entry.afterRect ? {...entry.afterRect} : null);
     } else if (entry.type === 'deleteLayer') {
         const idx = layers.indexOf(entry.layer);
         if (idx !== -1) { layers[idx].el.remove(); layers.splice(idx, 1); }
@@ -3244,6 +3274,10 @@ function wandMatches(c,target){
     return wandColourDistance(c,target) <= (wandTolerance/100)*maxDist;
 }
 let wandOverlayCanvasW = 0, wandOverlayCanvasH = 0;
+let selectionBoundary = null; // [{x,y}, ...] boundary cells only; kept compact for animated ants.
+let selectionAntOffset = 0;
+let selectionAnimFrame = null;
+
 function ensureWandSelectionMask(){
     const size = gridW * gridH;
     if (!wandSelection || wandSelection.length !== size) {
@@ -3257,42 +3291,100 @@ function setWandPixel(mask, x, y){
     const i = y * gridW + x;
     if (!mask[i]) { mask[i] = 1; wandSelectionCount++; }
 }
-function renderWandSelection(){
-    const ov=document.getElementById('wandSelectionOverlay');
-    if(!ov) return;
-    if(!hasWandSelection()){
-        ov.style.display='none';
-        const c=document.getElementById('wandSelectionCount'); if(c)c.textContent='No wand selection';
-        wandOverlayCanvasW = wandOverlayCanvasH = 0;
-        return;
+
+function selectionSnapshot() {
+    return {
+        mask: wandSelection ? wandSelection.slice() : null,
+        count: wandSelectionCount || 0,
+        rect: selection ? {...selection} : null
+    };
+}
+function sameSelectionSnapshot(a,b) {
+    if (!!a.mask !== !!b.mask || a.count !== b.count) return false;
+    if (!!a.rect !== !!b.rect) return false;
+    if (a.rect && JSON.stringify(a.rect) !== JSON.stringify(b.rect)) return false;
+    if (a.mask) {
+        if (a.mask.length !== b.mask.length) return false;
+        for (let i=0;i<a.mask.length;i++) if(a.mask[i]!==b.mask[i]) return false;
     }
-    // Keep the overlay at native grid resolution and build it in one ImageData
-    // operation. The selection itself is a compact typed-array mask, rather than
-    // a Set containing one string/object for every selected pixel.
-    if (ov.width !== gridW || ov.height !== gridH) {
-        ov.width = gridW; ov.height = gridH;
-        wandOverlayCanvasW = gridW; wandOverlayCanvasH = gridH;
-    }
-    ov.style.width=(gridW*scale)+'px';
-    ov.style.height=(gridH*scale)+'px';
-    ov.style.display='block';
-    const ctx=ov.getContext('2d', {willReadFrequently:false});
-    const image=ctx.createImageData(gridW, gridH);
-    const data=image.data;
-    const mask=wandSelection;
-    // RGBA overlay colour: semi-transparent blue.
-    for(let p=0, i=0; p<mask.length; p++, i+=4){
-        if(mask[p]){
-            data[i]=0; data[i+1]=120; data[i+2]=212; data[i+3]=72;
+    return true;
+}
+function recordSelectionUndo(before, after) {
+    if (!before || !after || sameSelectionSnapshot(before, after)) return;
+    pushUndo({type:'selection', beforeMask:before.mask, beforeCount:before.count, beforeRect:before.rect,
+        afterMask:after.mask, afterCount:after.count, afterRect:after.rect});
+}
+function setSelectionRaw(mask, count, rect) {
+    wandSelection = mask;
+    wandSelectionCount = count || 0;
+    selection = rect || null;
+    updateSelectionOverlay();
+}
+function selectionBoundsFromMask(mask) {
+    if (!mask) return null;
+    let x0=gridW, y0=gridH, x1=-1, y1=-1, count=0;
+    for(let y=0;y<gridH;y++) for(let x=0;x<gridW;x++){
+        if(mask[y*gridW+x]){
+            count++; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
         }
     }
-    ctx.putImageData(image, 0, 0);
+    return count ? {x0,y0,x1,y1} : null;
+}
+function buildSelectionBoundary(mask) {
+    if(!mask) return null;
+    const boundary = [];
+    for(let y=0;y<gridH;y++) for(let x=0;x<gridW;x++){
+        const i=y*gridW+x; if(!mask[i]) continue;
+        if(x===0||!mask[i-1]||x===gridW-1||!mask[i+1]||y===0||!mask[i-gridW]||y===gridH-1||!mask[i+gridW]) boundary.push([x,y]);
+    }
+    return boundary;
+}
+function updateSelectionOverlay(){
+    const ov=document.getElementById('selectionOverlay');
+    const box=document.getElementById('selectionBox');
+    if(!ov) return;
+    if(!hasWandSelection()){
+        ov.style.display='none'; if(box)box.style.display='none'; selectionBoundary=null; return;
+    }
+    if(ov.width!==gridW||ov.height!==gridH){ov.width=gridW;ov.height=gridH;}
+    ov.style.width=(gridW*scale)+'px'; ov.style.height=(gridH*scale)+'px'; ov.style.display='block';
+    const ctx=ov.getContext('2d');
+    const image=ctx.createImageData(gridW,gridH), data=image.data, mask=wandSelection;
+    for(let p=0,i=0;p<mask.length;p++,i+=4) if(mask[p]){data[i]=0;data[i+1]=120;data[i+2]=212;data[i+3]=72;}
+    ctx.putImageData(image,0,0);
+    selectionBoundary=buildSelectionBoundary(mask);
+    drawSelectionAnts();
+    if(box && selection){ box.style.display='block'; box.style.left=(selection.x0*scale)+'px'; box.style.top=(selection.y0*scale)+'px'; box.style.width=((selection.x1-selection.x0+1)*scale)+'px'; box.style.height=((selection.y1-selection.y0+1)*scale)+'px'; }
     const c=document.getElementById('wandSelectionCount'); if(c)c.textContent=wandSelectionCount.toLocaleString()+' pixels selected';
 }
-function clearWandSelection(){ wandSelection=null; wandSelectionCount=0; renderWandSelection(); }
+function drawSelectionAnts(){
+    const ov=document.getElementById('selectionOverlay'); if(!ov||!selectionBoundary)return;
+    const ctx=ov.getContext('2d');
+    // Repaint only the 1px boundary on top of the blue selection. The dash
+    // pattern is animated by offsetting a simple black/white checker along
+    // the boundary; this is the marching-ants effect without per-frame
+    // regeneration of the full selection mask.
+    for(const [x,y] of selectionBoundary){
+        const on=((x+y+selectionAntOffset)>>1)&1;
+        ctx.fillStyle=on?'#fff':'#111';
+        ctx.fillRect(x,y,1,1);
+    }
+}
+function animateSelectionAnts(){
+    selectionAntOffset=(selectionAntOffset+1)&7;
+    drawSelectionAnts();
+    selectionAnimFrame=requestAnimationFrame(animateSelectionAnts);
+}
+if(!selectionAnimFrame) selectionAnimFrame=requestAnimationFrame(animateSelectionAnts);
+
+function renderWandSelection(){ updateSelectionOverlay(); }
+function clearWandSelection(){ wandSelection=null; wandSelectionCount=0; selection=null; updateSelectionOverlay(); }
 function setWandTolerance(v){ wandTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('wandToleranceLabel'); if(l)l.textContent=wandTolerance; }
 function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementById('wandMatchBtn'); if(b)b.textContent=wandFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('wandTolerance'); if(r)r.disabled=!wandFuzzy; }
 function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementById('wandScopeBtn'); if(b){b.textContent=wandGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!wandGlobal);} }
+function setBucketTolerance(v){ bucketTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('bucketToleranceLabel'); if(l)l.textContent=bucketTolerance; }
+function toggleBucketMatch(){ bucketFuzzy=!bucketFuzzy; const b=document.getElementById('bucketMatchBtn'); if(b)b.textContent=bucketFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('bucketTolerance'); if(r)r.disabled=!bucketFuzzy; }
+
 function performWandSelection(x,y){
     const layer=activeLayer(); if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
     const target=layer.pixelData[x][y];
@@ -3305,7 +3397,9 @@ function performWandSelection(x,y){
         const stack=[[x,y]], seen=new Set();
         while(stack.length){const [cx,cy]=stack.pop();const k=wandKey(cx,cy);if(seen.has(k)||cx<0||cy<0||cx>=gridW||cy>=gridH)continue;seen.add(k);if(!wandMatches(layer.pixelData[cx][cy],target))continue;mark(cx,cy);stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);}
     }
+    const before=selectionSnapshot();
     applySelectionMask(out,pixelSelectionMode);
+    recordSelectionUndo(before,selectionSnapshot());
 }
 function applySelectionMask(incoming, mode){
     const size=gridW*gridH;
@@ -3313,8 +3407,9 @@ function applySelectionMask(incoming, mode){
     for(let i=0;i<size;i++){
         if(mode==='add'){ if(incoming[i]&&!wandSelection[i]){wandSelection[i]=1;wandSelectionCount++;} }
         else if(mode==='subtract'){ if(incoming[i]&&wandSelection[i]){wandSelection[i]=0;wandSelectionCount--;} }
-        else if(incoming[i]){wandSelection[i]=1;wandSelectionCount++;}
+        else if(incoming[i]&&!wandSelection[i]){wandSelection[i]=1;wandSelectionCount++;}
     }
+    selection=selectionBoundsFromMask(wandSelection);
     renderWandSelection();
 }
 function setPixelSelectionMode(mode){
@@ -3335,9 +3430,10 @@ function performLassoSelection(points){
     let minX=gridW-1,maxX=0,minY=gridH-1,maxY=0;
     points.forEach(p=>{minX=Math.max(0,Math.min(minX,Math.floor(p.x)));maxX=Math.min(gridW-1,Math.max(maxX,Math.ceil(p.x)));minY=Math.max(0,Math.min(minY,Math.floor(p.y)));maxY=Math.min(gridH-1,Math.max(maxY,Math.ceil(p.y)));});
     for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++)if(pointInPolygon(x+.5,y+.5,points))out[y*gridW+x]=1;
+    const before=selectionSnapshot();
     applySelectionMask(out,pixelSelectionMode);
+    recordSelectionUndo(before,selectionSnapshot());
 }
-
 function confirmWandDelete(){
     if(!hasWandSelection())return;
     const layer=activeLayer(); if(!isPixelLike(layer))return;
@@ -3873,14 +3969,14 @@ function setupDrawingEvents() {
                         const localY = Math.min(activeL.el.height - 1, Math.max(0, Math.floor(localGY / activeL.gh * activeL.el.height)));
                         const d = activeL.ctx.getImageData(localX, localY, 1, 1).data;
                         selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
-                        updateUI();
+                        if (selectedColor) createSwatch(selectedColor); else updateUI();
                     } catch (err) { console.error('reference layer eyedrop failed:', err && err.message); }
                 }
             } else if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
                 const comp = flattenToCanvas();
                 const d = comp.getContext('2d').getImageData(x, y, 1, 1).data;
                 selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
-                updateUI();
+                if (selectedColor) createSwatch(selectedColor); else updateUI();
             }
             // Reference layers only have the dropper -- it should stay
             // selected there rather than bouncing back to whatever tool
@@ -3905,20 +4001,50 @@ function setupDrawingEvents() {
         }
         if (currentTool === 'bucket') {
             const target = layer.pixelData[x] ? layer.pixelData[x][y] : undefined;
-            if (target !== undefined && target !== selectedColor) {
+            const matches = c => {
+                if (!bucketFuzzy) return c === target;
+                if (c == null || target == null) return c === target;
+                const maxDist=Math.sqrt(255*255*3);
+                return wandColourDistance(c,target) <= (bucketTolerance/100)*maxDist;
+            };
+            if (target !== undefined && !matches(selectedColor)) {
                 const stack = [[x, y]];
+                const seen = new Uint8Array(gridW * gridH);
                 while (stack.length) {
                     const [nx, ny] = stack.pop();
-                    if (nx >= 0 && nx < gridW && ny >= 0 && ny < gridH && layer.pixelData[nx][ny] === target) {
-                        plot(nx, ny); stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
-                    }
+                    if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
+                    const idx=ny*gridW+nx;
+                    if(seen[idx] || !matches(layer.pixelData[nx][ny])) continue;
+                    seen[idx]=1;
+                    plot(nx, ny);
+                    stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
                 }
             }
         } else plot(x, y);
     };
 
     // -- Select tool: draw a new rectangle, or drag the existing one ---
+    const setRectSelectionPreview = (sel) => {
+        selection = sel;
+        const box=document.getElementById('selectionBox');
+        if(box){
+            if(!sel){box.style.display='none';}
+            else{
+                box.style.display='block';
+                box.style.background='rgba(0,120,212,0.28)';
+                box.style.left=(sel.x0*scale)+'px'; box.style.top=(sel.y0*scale)+'px';
+                box.style.width=((sel.x1-sel.x0+1)*scale)+'px'; box.style.height=((sel.y1-sel.y0+1)*scale)+'px';
+            }
+        }
+    };
+    const commitRectSelection = (sel) => {
+        const mask=new Uint8Array(gridW*gridH);
+        let count=0;
+        if(sel) for(let yy=sel.y0;yy<=sel.y1;yy++) for(let xx=sel.x0;xx<=sel.x1;xx++){mask[yy*gridW+xx]=1;count++;}
+        setSelectionRaw(mask,count,sel);
+    };
     const startSelectionDrag = (x, y) => {
+        g.selectionBefore = selectionSnapshot();
         if (movingSelection && withinSelection(x, y)) {
             const layer = activeLayer();
             if (!isPixelLike(layer)) { movingSelection = false; return; }
@@ -3932,20 +4058,20 @@ function setupDrawingEvents() {
             movingSelection = false;
             g.selDragOrigin = { x, y, drawing: true };
             selection = normalizeSel(x, y, x, y);
-            updateSelectionBox();
+            setRectSelectionPreview(selection);
         }
     };
     const updateSelectionDrag = (x, y) => {
         if (!g.selDragOrigin) return;
         if (g.selDragOrigin.drawing) {
             selection = normalizeSel(g.selDragOrigin.x, g.selDragOrigin.y, x, y);
-            updateSelectionBox();
+            setRectSelectionPreview(selection);
         } else if (g.moveBuffer) {
             const dx = x - g.selDragOrigin.x, dy = y - g.selDragOrigin.y;
             const w = g.moveBuffer.length, h = g.moveBuffer[0] ? g.moveBuffer[0].length : 0;
             positionFloatingBuffer(g.selDragOrigin.sel.x0 + dx, g.selDragOrigin.sel.y0 + dy, w, h);
             selection = { x0: g.selDragOrigin.sel.x0 + dx, y0: g.selDragOrigin.sel.y0 + dy, x1: g.selDragOrigin.sel.x1 + dx, y1: g.selDragOrigin.sel.y1 + dy };
-            updateSelectionBox();
+            setRectSelectionPreview(selection);
         }
     };
     const endSelectionDrag = () => {
@@ -3956,6 +4082,10 @@ function setupDrawingEvents() {
             g.moveBuffer = null;
             if (g.currentEditSnapshot) { commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null; }
         }
+        // The rectangle preview is cheap during dragging; commit its compact
+        // pixel mask only once on release so a large canvas is never rebuilt
+        // on every touchmove.
+        if (selection) commitRectSelection(selection);
         g.selDragOrigin = null;
     };
 
@@ -4176,7 +4306,7 @@ function setupDrawingEvents() {
 
         updateCursor(e);
         if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
-        if (isDrawing && !g.suppressStroke) {
+        if (isDrawing && (!g.suppressStroke || currentTool === 'lasso')) {
             const [x, y] = getPos(e);
             if (currentTool === 'brush') {
                 // A fast drag can jump several grid cells between two
@@ -4220,6 +4350,7 @@ function setupDrawingEvents() {
             const [ex, ey] = ct ? getPosFromClient(ct.clientX, ct.clientY) : getPosFromClient(e.clientX || 0, e.clientY || 0);
             if (currentTool === 'select') {
                 endSelectionDrag();
+                if (g.selectionBefore) { recordSelectionUndo(g.selectionBefore, selectionSnapshot()); g.selectionBefore=null; }
                 if (openPanelName === 'layers') renderLayersPanel();
             } else if (currentTool === 'lasso') {
                 if(g.lasso){ performLassoSelection(g.lasso); g.lasso=null; }
@@ -4507,6 +4638,26 @@ function pixelLayerFromImage(name, img, w, h) {
 }
 
 // Wires up the hidden image-import file input: reads the chosen image, sizes a fresh canvas to match it (capped and scaled down if oversized), and places it on a new pixel layer.
+function openPixelLayerImport(){
+    pendingImportKind='pixel-layer';
+    document.getElementById('hubImageInput').click();
+}
+function pixelLayerFromImagePreserveCanvas(name, img) {
+    const l = new PixelLayer(name, gridW, gridH);
+    const tmp=document.createElement('canvas'); tmp.width=gridW; tmp.height=gridH;
+    const ctx=tmp.getContext('2d');
+    const fit=Math.min(1, gridW/img.naturalWidth, gridH/img.naturalHeight);
+    const w=Math.max(1,Math.round(img.naturalWidth*fit)), h=Math.max(1,Math.round(img.naturalHeight*fit));
+    const dx=Math.floor((gridW-w)/2), dy=Math.floor((gridH-h)/2);
+    ctx.drawImage(img,dx,dy,w,h);
+    const data=ctx.getImageData(0,0,gridW,gridH).data;
+    for(let y=0;y<gridH;y++) for(let x=0;x<gridW;x++){
+        const i=(y*gridW+x)*4; l.pixelData[x][y]=data[i+3]===0?null:rgbToHexBytes(data[i],data[i+1],data[i+2]);
+    }
+    l.redrawFromData();
+    return l;
+}
+
 function setupImportImageInput() {
     document.getElementById('hubImageInput').onchange = (e) => {
         const file = e.target.files[0];
@@ -4520,6 +4671,18 @@ function setupImportImageInput() {
         const img = new Image();
         const proceed = () => {
             try {
+                if (pendingImportKind === 'pixel-layer') {
+                    const layerName = file.name.replace(/\.[^.]+$/, '') || 'Imported Image';
+                    const imported = pixelLayerFromImagePreserveCanvas(layerName, img);
+                    addLayer(imported);
+                    reindexDom();
+                    setActiveLayer(layers.indexOf(imported));
+                    pushUndo({type:'addLayer', frameIndex:activeFrameIndex, index:layers.indexOf(imported), layer:imported});
+                    pendingImportKind='pixel';
+                    closeNewCanvasModal();
+                    if (openPanelName === 'layers') renderLayersPanel();
+                    return;
+                }
                 let w = img.naturalWidth, h = img.naturalHeight;
                 const MAX = 2000;
                 if (w > MAX || h > MAX) {
