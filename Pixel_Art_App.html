@@ -110,7 +110,7 @@
             margin: 0; font-size: 22px; font-weight: 800; color: #fff; letter-spacing: 0.3px;
         }
         #gallery-grid {
-            flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
             padding: 14px 12px;
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -148,8 +148,9 @@
             overflow: hidden; display: flex; align-items: center; justify-content: center;
         }
         .gallery-card .thumb-wrap canvas, .gallery-card .thumb-wrap img {
-            width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated;
+            width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; transition: filter 0.15s ease;
         }
+        .gallery-card .thumb-wrap img.low-zoom-thumb { image-rendering: auto; }
         .gallery-card .card-info {
             padding: 8px 10px 9px;
         }
@@ -346,8 +347,29 @@
         #colorPicker { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 
         #layersList { display: flex; flex-direction: column; gap: 4px; }
-        .layer-row { display: flex; align-items: center; gap: 6px; background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 6px; }
+        .layer-row.dragging { opacity: .45; outline: 2px dashed #4da3ff; }
+        .layer-row.drop-before { box-shadow: inset 0 3px 0 #4da3ff; }
+        .layer-row.drop-after { box-shadow: inset 0 -3px 0 #4da3ff; }
+        .layer-row.drop-inside { box-shadow: inset 0 0 0 3px #4da3ff; }
+        .layer-search-results { display:flex; flex-direction:column; gap:4px; margin-top:4px; max-height:260px; overflow:auto; }
+        /* Search is intentionally collapsed by default. Touch devices reveal it and use the app
+           custom on-screen keyboard; desktop users can reveal it and use the native keyboard. */
+        .layer-search-shell { display:flex; align-items:center; gap:6px; }
+        .layer-search-shell.collapsed #layerSearchInput { display:none; }
+        .layer-search-shell #layerSearchInput { flex:1; min-width:0; }
+        .layer-search-open-btn { flex:1; min-width:0; }
+        .layer-search-shell:not(.collapsed) .layer-search-open-btn { flex:0 0 auto; min-width:70px; }
+
+        .layer-search-result { padding:10px 12px; border:1px solid #444; border-radius:9px; background:#242424; color:#eee; text-align:left; font-size:13px; }
+        .layer-search-result small { display:block; color:#999; margin-top:2px; }
+        .layer-search-result:active { background:#333; }
+        .selection-count { font-size:10px; color:#aaa; text-align:center; width:100%; padding:2px 0; }
+        .layer-row { display: flex; align-items: center; gap: 6px; background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 6px; position: relative; overflow: hidden; }
         .layer-row.active-layer { border-color: #0078d4; background: #22334a; }
+        /* Touch-friendly colour tag shared by ordinary layers and groups. */
+        .layer-color-tag { flex: none; width: 10px; min-width: 10px; height: 38px; margin: -6px 0 -6px -6px; padding: 0; border: 0; border-right: 1px solid rgba(255,255,255,.10); background: transparent; cursor: pointer; }
+        .layer-color-tag:active { filter: brightness(1.25); }
+        .layer-color-tag.no-color { background: transparent !important; }
         .layer-icon-btn { flex: none; width: 26px; height: 26px; background: transparent; border: none; color: #fff; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .layer-icon-btn:disabled { opacity: 0.25; }
         .layer-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
@@ -402,12 +424,12 @@
 <body>
 
     <!-- ══════════ GALLERY SCREEN ══════════ -->
-    <div id="gallery-screen">
+    <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
             <h1>🎨 Pixel Art Hub</h1>
         </div>
         <div id="gallery-grid">
-            <!-- populated by renderGallery() -->
+            <div class="gallery-card new-canvas-card"><div class="nc-icon">+</div><div class="nc-label">Pixel Art Hub</div><div class="nc-hint">Loading gallery…</div></div>
         </div>
     </div>
 
@@ -458,6 +480,7 @@
             <button class="profile-btn" data-profile="sprite" onclick="selectProfile('sprite')">Sprite</button>
         </div>
         <div id="profileHint"></div>
+        <button class="btn-start" id="profileImportImageBtn" style="width:260px; background:#2a6aba; margin:4px 0 8px;" onclick="openImportSheet()">🖼️ Import Image</button>
         <div class="picker-label">Width</div>
         <div class="digit-col" id="w-group"></div>
         <div class="picker-label">Height</div>
@@ -470,7 +493,7 @@
 
         <div class="picker-label" style="margin-top:14px;">Import Image</div>
         <button class="btn-start" id="hubImportImageBtn" style="width:260px; background:#2a2a2a;" onclick="handleImportImageClick()">🖼️ IMPORT AS NEW PROJECT</button>
-        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">Canvas is sized to match the image (capped at 999px per side, scaled down proportionally if larger) and it's placed on a new pixel layer.</div>
+        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">Canvas is sized to match the image (capped at 2000px per side, scaled down proportionally if larger) and it's placed on a new pixel layer.</div>
         <input type="file" id="hubImageInput" accept="image/*" style="display:none">
 
         <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:10px;">No persistent storage yet -- projects only exist as files you save/load yourself.</div>
@@ -486,6 +509,7 @@
                     <div id="gridOverlay" style="position:absolute; top:0; left:0; pointer-events:none; z-index:170; display:none;"></div>
                     <canvas id="vectorHandlesOverlay" class="layer-canvas reference-canvas" style="z-index:175; display:none;"></canvas>
                     <div id="selectionBox"></div>
+                    <canvas id="wandSelectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:176;display:none;"></canvas>
                     <div id="canvas-safety-overlay" onclick="cancelClear()"></div>
                 </div>
             </div>
@@ -503,11 +527,38 @@
             </div>
             <div class="row">
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 DROPPER</button>
+                <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
                 <div class="row">
                     <button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH</button>
                     <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
+                </div>
+                <div class="row">
+                    <button class="btn tool-btn" data-tool="wand" onclick="uiAction(() => handleToolBtn('wand'))">🪄 WAND</button>
+                    <button class="btn tool-btn" data-tool="lasso" onclick="uiAction(() => handleToolBtn('lasso'))">〰️ LASSO</button>
+                </div>
+                <div id="wandControls" style="display:none;">
+                    <div class="panel-subtitle">Wand Selection</div>
+                    <div class="row" style="align-items:center; gap:6px;">
+                        <button class="btn" id="wandMatchBtn" onclick="uiAction(toggleWandMatch)">EXACT</button>
+                        <span style="font-size:10px;color:#888;">Match</span>
+                        <input type="range" id="wandTolerance" min="0" max="100" step="1" value="10" oninput="uiAction(() => setWandTolerance(this.value))" style="flex:1;">
+                        <span id="wandToleranceLabel" style="font-size:10px;color:#ccc;width:28px;text-align:right;">10</span>
+                    </div>
+                    <div class="row">
+                        <button class="btn active" id="wandScopeBtn" onclick="uiAction(toggleWandScope)">CONTIGUOUS</button>
+                    </div>
+                    <div class="row" style="gap:4px;">
+                        <button class="btn active" id="wandSelModeReplace" onclick="uiAction(() => setPixelSelectionMode('replace'))">REPLACE</button>
+                        <button class="btn" id="wandSelModeAdd" onclick="uiAction(() => setPixelSelectionMode('add'))">＋ ADD</button>
+                        <button class="btn" id="wandSelModeSubtract" onclick="uiAction(() => setPixelSelectionMode('subtract'))">− SUB</button>
+                    </div>
+                    <div class="row">
+                        <button class="btn" onclick="uiAction(confirmWandDelete)">🧽 CONFIRM DELETE</button>
+                        <button class="btn" onclick="uiAction(clearWandSelection)">❌ CLEAR</button>
+                    </div>
+                    <div id="wandSelectionCount" style="font-size:10px;color:#aaa;text-align:center;">No wand selection</div>
                 </div>
                 <div class="row">
                     <button class="btn tool-btn" data-tool="select" onclick="uiAction(() => handleToolBtn('select'))">🔲 SELECT</button>
@@ -558,9 +609,9 @@
                 <button class="btn btn-small" onclick="uiAction(zoomIn)">+</button>
             </div>
             <div class="row">
-                <input type="number" class="num-input" id="resizeW" min="1" max="999">
+                <input type="number" class="num-input" id="resizeW" min="1" max="2000">
                 <div class="x-sep">×</div>
-                <input type="number" class="num-input" id="resizeH" min="1" max="999">
+                <input type="number" class="num-input" id="resizeH" min="1" max="2000">
             </div>
             <div class="row">
                 <button class="btn" onclick="uiAction(applyResize)">📐 APPLY SIZE</button>
@@ -612,10 +663,33 @@
             <div class="row">
                 <button class="btn" id="thumbSizeToggleBtn" onclick="uiAction(toggleLayerThumbSize)">🔍 LARGER THUMBNAILS</button>
             </div>
+            <div class="row" id="layerSelectionToolbar">
+                <button class="btn" id="layerSelectBtn" onclick="uiAction(toggleLayerSelectionMode)">☑️ SELECT</button>
+                <button class="btn" id="groupSelectedBtn" onclick="uiAction(createGroupFromSelected)">🗂️ ADD SELECTED LAYERS TO A NEW GROUP</button>
+            </div>
+            <div class="row" id="layerSelectionActions" style="display:none; flex-wrap:wrap;"><div id="selectionCount" class="selection-count">0 selected</div>
+                <button class="btn" onclick="uiAction(selectAllTreeNodes)">SELECT ALL</button>
+                <button class="btn" onclick="uiAction(clearTreeSelection)">CLEAR</button><button class="btn" onclick="uiAction(toggleSelectedVisibility)">👁 VISIBILITY</button>
+                <button class="btn" id="groupSelectedActionBtn" onclick="uiAction(createGroupFromSelected)">🗂️ ADD SELECTED LAYERS TO A NEW GROUP</button>
+                <button class="btn" onclick="uiAction(() => moveSelectedBlock(1))">⬆️ MOVE UP</button>
+                <button class="btn" onclick="uiAction(() => moveSelectedBlock(-1))">⬇️ MOVE DOWN</button>
+                <button class="btn" onclick="uiAction(duplicateSelectedItems)">📋 DUPLICATE</button>
+                <button class="btn" onclick="uiAction(deleteSelectedItems)">🗑️ DELETE</button>
+                <button class="btn" onclick="uiAction(ungroupSelected)">↪️ UNGROUP</button>
+                <button class="btn" onclick="uiAction(mergeSelectedGroups)">🗂️ MERGE GROUPS</button>
+                <button class="btn" onclick="uiAction(toggleLayerSelectionMode)">DONE</button>
+            </div>
+            <div id="layerSearchShell" class="layer-search-shell collapsed">
+                <button id="layerSearchOpenBtn" class="btn layer-search-open-btn" onclick="uiAction(toggleLayerSearch)">🔍 SEARCH</button>
+                <input id="layerSearchInput" class="num-input" style="height:42px; text-align:left; padding:0 12px;" placeholder="Search layers, groups, tools…" autocomplete="off" readonly onclick="uiAction(focusLayerSearch)">
+                <button id="globalSearchBtn" class="btn" style="min-width:70px;" onclick="uiAction(openGlobalCommandPalette)">⌘ SEARCH</button>
+            </div>
+            <div id="layerSearchResults" class="layer-search-results"></div>
             <div id="layersList"></div>
             <div class="row">
                 <button class="btn" onclick="uiAction(addPixelLayer)">➕ PIXEL LAYER</button>
                 <button class="btn" onclick="uiAction(addVectorLayer)">➕ 🖊️ VECTOR</button>
+                <button class="btn" onclick="uiAction(addEmptyGroup)">➕ 🗂️ GROUP</button>
             </div>
             <div class="row">
                 <button class="btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })">🌄 REFERENCE</button>
@@ -868,9 +942,18 @@ let currentTool = 'brush', isDrawing = false, isEditing = false;
 let isConfirmingClear = false, selectedColor = "#000000";
 let holdTimer, dragTarget = null, cursorTimer;
 
-let layers = [];                // alias into frames[activeFrameIndex].layers
-let activeLayerIndex = -1;
+let layers = [];                // compatibility alias: flattened leaves of the active frame's layerTree
+let activeLayerIndex = -1;      // compatibility index; activeLayerId is the stable identity
+let activeLayerId = null;
+let activeGroupId = null;
 let nextLayerId = 1;
+let nextGroupId = 1;
+let layerSelectionMode = false;
+let selectedNodeIds = new Set();
+let treeDragState = null;
+let suppressNextTreeClick = false;
+let globalPaletteOpen = false;
+const commandRegistry = [];
 let openPanelName = null;
 let transformMode = false;
 
@@ -878,12 +961,303 @@ let selectedProfile = 'standard'; // 'standard' | 'portrait' | 'sprite'
 let lastEnteredProfile = null;    // profile the current work (if any) was created/resumed under
 const PORTRAIT_PALETTE_LIMIT = 15;
 
-let frames = [];                // [{ name, layers: [Layer,...] }]
+let frames = [];                // [{ name, layerTree: [node,...], layers: [Layer,...] }]
+
+/* ============================================================
+   LAYER TREE FOUNDATION
+   The editor historically used a flat layers[] array. The tree is now
+   the structural representation; layers[] remains a flattened compatibility
+   view for the existing drawing/compositing code while groups are being
+   introduced. Layer identity is carried by stable ids, not array indices.
+   ============================================================ */
+function makeLayerNode(layer) { return { kind: 'layer', id: layer && layer.id != null ? 'layer-' + layer.id : null, layer }; }
+function makeGroupNode(name) {
+    return { kind: 'group', id: 'group-' + (nextGroupId++), name: name || 'Group', color: null, visible: true, opacity: 1, collapsed: false, blendMode: 'source-over', children: [] };
+}
+function flattenLayerTree(nodes, out) {
+    out = out || [];
+    (nodes || []).forEach(node => {
+        if (!node) return;
+        if (node.kind === 'group') flattenLayerTree(node.children, out);
+        else if (node.kind === 'layer' && node.layer) out.push(node.layer);
+    });
+    return out;
+}
+function ensureFrameLayerTree(frame) {
+    if (!frame) return [];
+    if (!Array.isArray(frame.layerTree)) frame.layerTree = (frame.layers || []).map(makeLayerNode);
+    return frame.layerTree;
+}
+function syncActiveLayersFromTree() {
+    const f = frames[activeFrameIndex];
+    if (!f) return;
+    ensureFrameLayerTree(f);
+    f.layers = flattenLayerTree(f.layerTree);
+    layers = f.layers;
+    if (activeLayerId != null) {
+        const idx = layers.findIndex(l => l.id === activeLayerId);
+        if (idx !== -1) activeLayerIndex = idx;
+    }
+    if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
+}
+function syncAllFrameTrees() { frames.forEach(ensureFrameLayerTree); syncActiveLayersFromTree(); }
+function findNode(nodes, id, parent) {
+    for (let i = 0; i < (nodes || []).length; i++) {
+        const n = nodes[i];
+        if (n.id === id || (n.kind === 'layer' && n.layer && ('layer-' + n.layer.id) === id)) return { node:n, parent:parent||null, index:i };
+        if (n.kind === 'group') { const found=findNode(n.children,id,n); if(found) return found; }
+    }
+    return null;
+}
+function findLayerNode(nodes, layerId, parent) { return findNode(nodes, 'layer-' + layerId, parent); }
+function findGroupNode(nodes, groupId, parent) { return findNode(nodes, groupId, parent); }
+function nodeId(node) { return node && node.kind === 'layer' ? 'layer-' + node.layer.id : node && node.id; }
+function nodeChildren(node) { return node && node.kind === 'group' ? node.children : null; }
+function collectNodeIds(node, out) {
+    out = out || [];
+    if (!node) return out;
+    out.push(nodeId(node));
+    if (node.kind === 'group') (node.children || []).forEach(ch => collectNodeIds(ch,out));
+    return out;
+}
+function isDescendantNode(root, targetId) {
+    if (!root || root.kind !== 'group') return false;
+    return collectNodeIds(root, []).includes(targetId);
+}
+function selectionContainsDescendantOfSelected(node) {
+    const id=nodeId(node);
+    const f=frames[activeFrameIndex]; if(!f) return false;
+    let cur=findNode(f.layerTree,id); if(!cur) return false;
+    let p=cur.parent;
+    while(p){ if(selectedNodeIds.has(nodeId(p))) return true; p=p.kind==='group' ? findNode(f.layerTree,nodeId(p)).parent : null; }
+    return false;
+}
+function clearLayerTreeSelection(){ selectedNodeIds.clear(); }
+function selectTreeNode(node, on=true) {
+    if (!node) return;
+    const id=nodeId(node);
+    // A child of an already-selected group is an invalid independent selection.
+    // The parent selection owns the whole subtree.
+    if (on && selectionContainsDescendantOfSelected(node)) return;
+    if (on) collectNodeIds(node).forEach(x=>selectedNodeIds.add(x));
+    else {
+        // A child cannot be individually deselected while its parent is selected.
+        if (selectionContainsDescendantOfSelected(node)) return;
+        collectNodeIds(node).forEach(x=>selectedNodeIds.delete(x));
+    }
+}
+function isNodeSelected(node){ return !!node && selectedNodeIds.has(nodeId(node)); }
+function parentOfNode(node){ const f=frames[activeFrameIndex]; if(!f||!node)return null; const found=findNode(f.layerTree,nodeId(node)); return found ? found.parent : null; }
+function getNodeById(id){ const f=frames[activeFrameIndex]; return f ? (findNode(f.layerTree,id)||{}).node : null; }
+function getActiveParentGroup(){
+    const f=frames[activeFrameIndex]; if(!f) return null;
+    if(activeGroupId){ const g=findGroupNode(f.layerTree,activeGroupId); if(g) return g.node; }
+    if(activeLayerId){ const l=findLayerNode(f.layerTree,activeLayerId); return l ? l.parent : null; }
+    return null;
+}
+function insertNodeForActive(node){
+    const f=frames[activeFrameIndex]; if(!f)return;
+    const parent=getActiveParentGroup();
+    const arr=parent ? parent.children : f.layerTree;
+    let at=arr.length;
+    if(activeLayerId){ const found=findLayerNode(f.layerTree,activeLayerId); if(found && found.parent===parent) at=found.index+1; }
+    arr.splice(at,0,node); syncActiveLayersFromTree();
+}
+function getNodeStack(nodes, targetId, path){
+    path=path||[];
+    for(const n of (nodes||[])){
+        if(nodeId(n)===targetId) return path.concat(n);
+        if(n.kind==='group'){ const r=getNodeStack(n.children,targetId,path.concat(n)); if(r)return r; }
+    }
+    return null;
+}
+function captureTreeState(){
+    const f=frames[activeFrameIndex];
+    if(!f) return null;
+    const cloneNodes=nodes=>(nodes||[]).map(n=>n.kind==='group'
+        ? {ref:n, children:cloneNodes(n.children)}
+        : {ref:n});
+    return {frameIndex:activeFrameIndex, tree:cloneNodes(f.layerTree), activeLayerId, activeGroupId, activeLayerIndex};
+}
+function restoreTreeState(state){
+    if(!state) return;
+    const f=frames[state.frameIndex]; if(!f) return;
+    frames.forEach(fr=>(fr.layers||[]).forEach(l=>l.el.remove()));
+    const rebuild=items=>(items||[]).map(x=>{ if(x.ref.kind==='group'){x.ref.children=rebuild(x.children);return x.ref;} return x.ref; });
+    f.layerTree=rebuild(state.tree);
+    activeFrameIndex=state.frameIndex;
+    activeLayerId=state.activeLayerId; activeGroupId=state.activeGroupId; activeLayerIndex=state.activeLayerIndex;
+    syncActiveLayersFromTree();
+    layers.forEach(l=>l.el.remove());
+    layers.forEach(l=>container.appendChild(l.el));
+    reindexDom();
+    refreshHookedComposites();
+    renderLayersPanel();
+}
+function pushTreeOperation(label,before){
+    const after=captureTreeState();
+    pushUndo({type:'tree',label,before,after});
+}
+function getRootSelectedNodes(){
+    const f=frames[activeFrameIndex]; if(!f)return [];
+    const out=[];
+    (function walk(nodes,parent){(nodes||[]).forEach(n=>{
+        if(isNodeSelected(n)){ out.push({node:n,parent:parent||null}); }
+        else if(n.kind==='group') walk(n.children,n);
+    });})(f.layerTree,null);
+    return out;
+}
+function canMoveNode(node,direction){
+    const f=frames[activeFrameIndex]; if(!f)return false;
+    const found=findNode(f.layerTree,nodeId(node)); if(!found)return false;
+    const arr=found.parent?found.parent.children:f.layerTree;
+    const pos=found.index;
+    const adjacent=direction>0 ? arr[pos+1] : arr[pos-1];
+    if(!adjacent)return false;
+    // Adjacent group is always a valid destination for a layer: Up/Down can enter it.
+    return true;
+}
+// A layer immediately next to a group can enter that group instead of
+// merely swapping places with it. The Layers panel is rendered in
+// reverse tree order, so +1 (Up) means the group is the next item above
+// the layer visually, while -1 (Down) means the group is below it.
+// Entering from below places the layer at the group's visual bottom;
+// entering from above places the layer at the group's visual top.
+function moveTreeNode(node, direction){
+    const f=frames[activeFrameIndex]; if(!f)return;
+    const found=findNode(f.layerTree,nodeId(node)); if(!found)return;
+    const before=captureTreeState();
+    const arr=found.parent?found.parent.children:f.layerTree;
+    const from=found.index, to=from+direction;
+    if(to<0||to>=arr.length)return;
+    const adjacent=arr[to];
+    if(node.kind==='layer' && adjacent && adjacent.kind==='group'){
+        arr.splice(from,1); adjacent.collapsed=false;
+        if(direction>0) adjacent.children.push(node); else adjacent.children.unshift(node);
+    } else {
+        const [item]=arr.splice(from,1); arr.splice(to,0,item);
+    }
+    syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites();
+    pushTreeOperation('Move item',before);
+    renderLayersPanel();
+}
+// Preserve tree order and only operate on top-level selected nodes.
+// Only sibling nodes can be grouped together in one operation.
+function createGroupFromSelected(){
+    const f=frames[activeFrameIndex]; if(!f)return;
+    let entries=getRootSelectedNodes();
+    if(!entries.length && activeLayerId){ const n=getNodeById('layer-'+activeLayerId); if(n) entries=[{node:n,parent:parentOfNode(n)}]; }
+    if(!entries.length)return;
+    const parent=entries[0].parent;
+    if(entries.some(e=>e.parent!==parent)){ alert('Selected items must be in the same group to be grouped together.'); return; }
+    const before=captureTreeState();
+    const arr=parent?parent.children:f.layerTree;
+    const indices=entries.map(e=>arr.indexOf(e.node)).filter(i=>i>=0).sort((a,b)=>a-b);
+    if(!indices.length)return;
+    const moving=indices.map(i=>arr[i]);
+    for(let i=indices.length-1;i>=0;i--)arr.splice(indices[i],1);
+    const group=makeGroupNode('Group'); group.children=moving; group.collapsed=false;
+    arr.splice(indices[0],0,group);
+    activeGroupId=group.id; activeLayerId=null; activeLayerIndex=-1;
+    clearLayerTreeSelection(); selectTreeNode(group,true);
+    syncActiveLayersFromTree(); pushTreeOperation('Create group',before); renderLayersPanel();
+}
+function addEmptyGroup(){
+    const f=frames[activeFrameIndex]; if(!f)return;
+    const before=captureTreeState();
+    const g=makeGroupNode('Group'); insertNodeForActive(g);
+    activeGroupId=g.id; activeLayerId=null; activeLayerIndex=-1;
+    pushTreeOperation('Create empty group',before); renderLayersPanel();
+}
+function removeNodeFromTree(node){
+    const f=frames[activeFrameIndex], found=findNode(f.layerTree,nodeId(node));
+    if(!found)return false;
+    const arr=found.parent?found.parent.children:f.layerTree; arr.splice(found.index,1); return true;
+}
+function collectSelectedRootsSorted(){
+    const entries=getRootSelectedNodes();
+    const f=frames[activeFrameIndex];
+    entries.sort((a,b)=>{
+        const aa=a.parent?a.parent.children:f.layerTree, bb=b.parent?b.parent.children:f.layerTree;
+        if(aa!==bb)return 0; return aa.indexOf(a.node)-bb.indexOf(b.node);
+    });
+    return entries;
+}
+function duplicateTreeWithRemap(node,map){
+    if(node.kind==='group'){
+        const g=makeGroupNode(node.name+' copy'); g.color=node.color||null; g.visible=node.visible; g.opacity=node.opacity; g.collapsed=node.collapsed; g.blendMode=node.blendMode||'source-over'; map.set(nodeId(node),nodeId(g));
+        g.children=(node.children||[]).map(ch=>duplicateTreeWithRemap(ch,map)); return g;
+    }
+    const nl=cloneLayer(node.layer); nl.name=node.layer.name+' copy'; const nn=makeLayerNode(nl); map.set(nodeId(node),nodeId(nn)); return nn;
+}
+function remapDuplicatedHooks(node,map){
+    if(node.kind==='group'){(node.children||[]).forEach(ch=>remapDuplicatedHooks(ch,map));return;}
+    const oldHook=node.layer.hookedTo; if(oldHook==null)return; const mapped=map.get('layer-'+oldHook); if(mapped){const target=getNodeById(mapped);if(target&&target.kind==='layer')node.layer.hookedTo=target.layer.id;}
+}
+function duplicateSelectedItems(){
+    const f=frames[activeFrameIndex]; if(!f)return; const entries=collectSelectedRootsSorted(); if(!entries.length)return;
+    const before=captureTreeState(); const created=[]; const maps=[];
+    const byParent=new Map(); entries.forEach(e=>{const key=e.parent?e.parent.id:'__root__';if(!byParent.has(key))byParent.set(key,[]);byParent.get(key).push(e);});
+    byParent.forEach(es=>{const parent=es[0].parent,arr=parent?parent.children:f.layerTree; const copies=es.map(e=>{const map=new Map();const c=duplicateTreeWithRemap(e.node,map);maps.push(map);created.push(c);return c;}); const first=Math.min(...es.map(e=>arr.indexOf(e.node))); arr.splice(first+es.length,0,...copies);});
+    created.forEach((n,i)=>remapDuplicatedHooks(n,maps[i]));
+    syncActiveLayersFromTree(); layers.forEach(l=>{if(!l.el.parentNode)container.appendChild(l.el);l.applyVisualState();}); reindexDom(); refreshHookedComposites();
+    clearLayerTreeSelection(); created.forEach(n=>selectTreeNode(n,true)); pushTreeOperation('Duplicate selected items',before); renderLayersPanel();
+}
+function collectTreeNodes(nodes,out){out=out||[];(nodes||[]).forEach(n=>{out.push(n);if(n.kind==='group')collectTreeNodes(n.children,out);});return out;}
+function deleteSelectedItems(){
+    const f=frames[activeFrameIndex]; if(!f)return; const entries=collectSelectedRootsSorted(); if(!entries.length)return;
+    const count=entries.length; if(!confirm('Delete '+count+' selected '+(count===1?'item':'items')+'?'))return;
+    const before=captureTreeState();
+    const removedLayers=[]; entries.forEach(e=>collectTreeNodes([e.node]).forEach(n=>{if(n.kind==='layer')removedLayers.push(n.layer);}));
+    entries.forEach(e=>removeNodeFromTree(e.node));
+    removedLayers.forEach(l=>l.el.remove());
+    if(entries.some(e=>e.node.kind==='group'&&e.node.id===activeGroupId))activeGroupId=null;
+    if(entries.some(e=>e.node.kind==='layer'&&nodeId(e.node)===activeLayerId)){activeLayerId=null;activeLayerIndex=-1;}
+    syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites(); pushTreeOperation('Delete selected items',before); clearLayerTreeSelection(); renderLayersPanel();
+}
+function toggleSelectedVisibility(){
+    const f=frames[activeFrameIndex]; if(!f)return; const entries=collectSelectedRootsSorted(); if(!entries.length)return; const before=captureTreeState();
+    const allVisible=entries.every(e=>e.node.kind==='group'?e.node.visible:e.node.layer.visible);
+    entries.forEach(e=>{if(e.node.kind==='group'){e.node.visible=!allVisible;applyGroupVisualState(e.node);}else{e.node.layer.visible=!allVisible;e.node.layer.applyVisualState();}});
+    pushTreeOperation('Toggle selected visibility',before); renderLayersPanel();
+}
+function ungroupSelected(){
+    const f=frames[activeFrameIndex]; if(!f)return; const groups=collectSelectedRootsSorted().filter(e=>e.node.kind==='group'); if(!groups.length)return;
+    const before=captureTreeState();
+    // Process deepest groups first only when they are independent roots in the selection.
+    groups.forEach(e=>{const found=findNode(f.layerTree,e.node.id);if(!found)return;const arr=found.parent?found.parent.children:f.layerTree;arr.splice(found.index,1,...e.node.children);});
+    syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites(); pushTreeOperation('Ungroup',before); clearLayerTreeSelection(); renderLayersPanel();
+}
+function mergeSelectedGroups(){
+    const f=frames[activeFrameIndex]; if(!f)return; const entries=collectSelectedRootsSorted().filter(e=>e.node.kind==='group'); if(entries.length<2)return;
+    const parent=entries[0].parent; if(entries.some(e=>e.parent!==parent)){alert('Selected groups must share the same parent to merge.');return;}
+    const before=captureTreeState(); const arr=parent?parent.children:f.layerTree; const indices=entries.map(e=>arr.indexOf(e.node)).sort((a,b)=>a-b); const moving=indices.map(i=>arr[i]);
+    for(let i=indices.length-1;i>=0;i--)arr.splice(indices[i],1);
+    const g=makeGroupNode('Merged Group'); g.children=[]; moving.forEach(m=>g.children.push(...m.children)); arr.splice(indices[0],0,g);
+    activeGroupId=g.id; clearLayerTreeSelection(); selectTreeNode(g,true); syncActiveLayersFromTree(); pushTreeOperation('Merge groups',before); renderLayersPanel();
+}
+
+function addEmptyGroup(){
+    const f=frames[activeFrameIndex]; if(!f)return;
+    const g=makeGroupNode('Group');
+    insertNodeForActive(g);
+    activeGroupId=g.id; activeLayerId=null; activeLayerIndex=-1;
+    renderLayersPanel();
+}
+
 let activeFrameIndex = 0;
 let playing = false, fps = 6, playTimer = null;
 
 let selection = null;           // {x0,y0,x1,y1} inclusive grid cells
 let movingSelection = false;
+let wandSelection = null;       // Uint8Array pixel mask: 1 = selected, 0 = unselected
+let wandSelectionCount = 0;
+let wandFuzzy = false;
+let wandTolerance = 10;
+let wandGlobal = false;         // false = contiguous flood fill, true = global matching
+let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
+let pendingImportKind = 'pixel';
+
 
 let undoStack = [], redoStack = [];
 const MAX_UNDO = 40;
@@ -906,7 +1280,7 @@ function updateHubState() {
    works the same way everywhere regardless of how reliably a given
    browser/webview triggers its own on-screen keyboard on focus.
    ============================================================ */
-let customKeyboardState = null; // {value, shift, onCommit}
+let customKeyboardState = null; // {value, shift, onCommit, onChange}
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
 
 // Builds one keyboard key button. Mirrors mkLayerIconBtn's pattern.
@@ -1041,6 +1415,7 @@ function kbInsertText(text) {
     customKeyboardState.value = value.slice(0, cursorPos) + text + value.slice(cursorPos);
     customKeyboardState.cursorPos = cursorPos + text.length;
     renderCustomKeyboardPreview();
+    if (customKeyboardState.onChange) customKeyboardState.onChange(customKeyboardState.value);
 }
 // Inserts one tapped character at the cursor, applying shift-case in letters mode.
 function kbTapKey(ch) {
@@ -1054,6 +1429,7 @@ function kbBackspace() {
     customKeyboardState.value = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
     customKeyboardState.cursorPos = cursorPos - 1;
     renderCustomKeyboardPreview();
+    if (customKeyboardState.onChange) customKeyboardState.onChange(customKeyboardState.value);
 }
 // Moves the caret left/right (delta = -1 or 1), clamped to the text bounds.
 function kbMoveCursor(delta) {
@@ -1083,10 +1459,10 @@ function renderCustomKeyboardPreview() {
 // runs when Done is tapped or the backdrop is tapped (tapping outside
 // commits rather than discards, so an accidental outside-tap can't lose
 // what was typed).
-function openCustomKeyboard(initialValue, onCommit) {
+function openCustomKeyboard(initialValue, onCommit, onChange) {
     buildCustomKeyboard();
     const v = initialValue || '';
-    customKeyboardState = { value: v, cursorPos: v.length, shift: false, onCommit };
+    customKeyboardState = { value: v, cursorPos: v.length, shift: false, onCommit, onChange };
     renderCustomKeyboardPreview();
     kbMode = 'letters';
     renderKeyboardKeys();
@@ -1141,9 +1517,9 @@ function selectProfile(p) {
     else if (p === 'sprite') hint.innerText = 'Adds a Frames strip to the Layers panel for simple flipbook animation.';
     else hint.innerText = '';
 }
-// Sets the three digit <select> pickers (e.g. width or height) to a given number, zero-padded to 3 digits.
+// Sets the four digit <select> pickers (e.g. width or height) to a given number, zero-padded to 4 digits.
 function setDigitGroup(id, val) {
-    const digits = String(val).padStart(3, '0').split('');
+    const digits = String(val).padStart(4, '0').split('');
     [...document.querySelectorAll(`#${id} select`)].forEach((sel, i) => sel.value = digits[i]);
 }
 
@@ -1242,6 +1618,9 @@ class Layer {
         this.id = nextLayerId++;
         this.type = type;
         this.name = name;
+        // Optional colour tag shown on the left side of the Layers panel row.
+        // This is UI metadata and does not affect the artwork itself.
+        this.color = null;
         this.visible = true;
         this.opacity = 1;
         this.el = document.createElement('canvas');
@@ -1249,8 +1628,8 @@ class Layer {
         this.ctx = this.el.getContext('2d');
     }
     applyVisualState() {
-        this.el.style.display = this.visible ? 'block' : 'none';
-        this.el.style.opacity = this.opacity;
+        this.el.style.display = (this.visible && this._groupVisible !== false) ? 'block' : 'none';
+        this.el.style.opacity = this.opacity * (this._groupOpacity == null ? 1 : this._groupOpacity);
     }
 }
 
@@ -1605,7 +1984,7 @@ function cloneLayer(l) {
                  : l.type === 'clip' ? new ClipLayer(l.name, l.gridW, l.gridH)
                  : new PixelLayer(l.name, l.gridW, l.gridH);
         nl.pixelData = l.pixelData.map(col => col.slice());
-        nl.visible = l.visible; nl.opacity = l.opacity;
+        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
         if (l.hookedTo != null) nl.hookedTo = l.hookedTo;
         nl.redrawFromData();
         return nl;
@@ -1613,7 +1992,7 @@ function cloneLayer(l) {
     if (l.type === 'vector') {
         const nl = new VectorLayer(l.name);
         nl.splines = l.splines.map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }));
-        nl.visible = l.visible; nl.opacity = l.opacity;
+        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
         return nl;
     }
     const nl = new ReferenceLayer(l.name, l.image);
@@ -1630,13 +2009,13 @@ function setupPickers() {
     ['w-group', 'h-group'].forEach(id => {
         const c = document.getElementById(id);
         c.innerHTML = '';
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
             const sel = document.createElement('select');
             for (let d = 0; d <= 9; d++) {
                 const opt = document.createElement('option');
                 opt.value = d; opt.innerText = d;
-                if (i === 1 && d === 3) opt.selected = true;
-                if (i === 2 && d === 2) opt.selected = true;
+                if (i === 2 && d === 3) opt.selected = true;
+                if (i === 3 && d === 2) opt.selected = true;
                 sel.appendChild(opt);
             }
             c.appendChild(sel);
@@ -1644,7 +2023,7 @@ function setupPickers() {
     });
 }
 
-// Reads a three-digit picker group (e.g. #w-group) back into a single number.
+// Reads a four-digit picker group (e.g. #w-group) back into a single number.
 function readDigitGroup(id) {
     const val = parseInt([...document.querySelectorAll(`#${id} select`)].map(s => s.value).join(''), 10);
     return Math.max(1, val || 1);
@@ -1666,6 +2045,8 @@ function revealMainApp() {
         setupDrawingEvents();
         setupPaletteDragEvents();
         setupKeyboardShortcuts();
+        registerBuiltInCommands();
+prepareSearchInputs();
         eventsInitialized = true;
     }
     updateCanvasWrapPadding();
@@ -1723,7 +2104,7 @@ function initApp() {
     revealMainApp(); // needed now so `container` is assigned before we append the base layer
     const base = new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
-    frames = [{ name: 'Frame 1', layers }];
+    frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
     container.appendChild(base.el);
     setActiveLayer(0);
@@ -1737,8 +2118,8 @@ function initApp() {
 function applyResize() {
     const wField = document.getElementById('resizeW');
     const hField = document.getElementById('resizeH');
-    const nw = Math.max(1, Math.min(999, parseInt(wField.value, 10) || gridW));
-    const nh = Math.max(1, Math.min(999, parseInt(hField.value, 10) || gridH));
+    const nw = Math.max(1, Math.min(2000, parseInt(wField.value, 10) || gridW));
+    const nh = Math.max(1, Math.min(2000, parseInt(hField.value, 10) || gridH));
     gridW = nw; gridH = nh;
     frames.forEach(f => f.layers.forEach(l => { if (l instanceof PixelLayer) l.resizeToCanvas(nw, nh); }));
     deselect();
@@ -1778,6 +2159,7 @@ function layoutAll() {
     updateZoomLabel();
     updateRotationLabel();
     updateSelectionBox();
+    renderWandSelection();
     updateRotationFab();
     updateUndoRedoFabs();
     updateGridOverlay();
@@ -1947,10 +2329,17 @@ function updateZoomLabel() {
    LAYER MANAGEMENT
    ============================================================ */
 function addLayer(layer) {
-    layers.push(layer);
+    const f = frames[activeFrameIndex];
+    if (f) {
+        ensureFrameLayerTree(f);
+        insertNodeForActive(makeLayerNode(layer));
+    } else {
+        layers.push(layer);
+    }
     container.appendChild(layer.el);
     layer.layoutCSS();
     layer.applyVisualState();
+    const f2=frames[activeFrameIndex]; if(f2 && activeGroupId){ const g=findGroupNode(f2.layerTree,activeGroupId); if(g) applyGroupVisualState(g.node); }
 }
 
 // Re-orders the layer <canvas> elements in the DOM to match the layers array (bottom to top), keeping the cursor/overlay above all of them.
@@ -1962,8 +2351,12 @@ function reindexDom() {
 function setActiveLayer(idx) {
     if (idx !== activeLayerIndex) { transformMode = false; deselect(); }
     activeLayerIndex = idx;
+    activeLayerId = (layers[idx] && layers[idx].id != null) ? layers[idx].id : null;
+    activeGroupId = null;
+    const f=frames[activeFrameIndex]; if(f && activeLayerId){ const found=findLayerNode(f.layerTree,activeLayerId); if(found && found.parent) activeGroupId=found.parent.id; }
     if (openPanelName === 'layers') renderLayersPanel();
     updateToolVisibility();
+    const wr=document.getElementById('wandTolerance'); if(wr) wr.disabled=!wandFuzzy;
     updateVectorHandles();
 }
 
@@ -1980,8 +2373,9 @@ function updateToolVisibility() {
     show('pixelToolsSection', type === 'pixel' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
     show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
+    const wc = document.getElementById('wandControls'); if (wc) wc.style.display = (currentTool === 'wand' && isPixelLike(layer)) ? '' : 'none';
 
-    const pixelOnlyTools = ['brush', 'bucket', 'select', 'line', 'rect', 'ellipse'];
+    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'select', 'line', 'rect', 'ellipse'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
     // Prefer switching to the analogous drawing tool over falling back to
     // the eyedropper: brush<->pen mirror each other as each type's default
@@ -1999,7 +2393,10 @@ function transformActive() {
 }
 
 // Returns the Layer object tools currently act on (or null).
-function activeLayer() { return layers[activeLayerIndex] || null; }
+function activeLayer() {
+    if (activeLayerId != null) { const byId = layers.find(l => l.id === activeLayerId); if (byId) return byId; }
+    return layers[activeLayerIndex] || null;
+}
 
 // Mask/clip layers are fully paintable with every normal pixel tool --
 // only how they're combined with the layer below during compositing
@@ -2011,11 +2408,12 @@ function isPixelLike(layer) { return !!layer && (layer.type === 'pixel' || layer
 // Creates a new empty vector layer for splines.
 function addVectorLayer() {
     try {
+        const before=captureTreeState();
         const l = new VectorLayer('Vector ' + (layers.length + 1));
         addLayer(l);
         reindexDom();
         setActiveLayer(layers.length - 1);
-        pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: layers.length - 1, layer: l });
+        pushTreeOperation('Add vector layer',before);
         renderLayersPanel();
     } catch (err) {
         console.error('addVectorLayer failed:', err && err.message);
@@ -2027,6 +2425,7 @@ function addVectorLayer() {
 // it there -- both require a pixel layer selected first, since that's
 // what they attach to and modify.
 function addHookedLayer(kind) {
+    const before=captureTreeState();
     const target = activeLayer();
     if (!target || target.type !== 'pixel') {
         alert((kind === 'mask' ? 'Mask' : 'Clipping') + ' layers attach to a pixel layer -- select one first.');
@@ -2036,14 +2435,18 @@ function addHookedLayer(kind) {
         const l = kind === 'mask' ? new MaskLayer((kind === 'mask' ? 'Mask' : 'Clip') + ' for ' + target.name, gridW, gridH)
                                    : new ClipLayer('Clip for ' + target.name, gridW, gridH);
         l.hookedTo = target.id;
-        const idx = layers.indexOf(target) + 1;
-        layers.splice(idx, 0, l);
+        const found=findLayerNode(frames[activeFrameIndex].layerTree,target.id);
+        const parent=found && found.parent ? found.parent : null;
+        const arr=parent ? parent.children : frames[activeFrameIndex].layerTree;
+        const idx=found ? found.index+1 : arr.length;
+        arr.splice(idx,0,makeLayerNode(l));
         container.appendChild(l.el);
+        syncActiveLayersFromTree();
         reindexDom();
         l.layoutCSS();
         l.applyVisualState();
-        setActiveLayer(idx);
-        pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: idx, layer: l });
+        setActiveLayer(layers.indexOf(l));
+        pushTreeOperation('Add '+kind+' layer',before);
         refreshHookedComposites();
         renderLayersPanel();
     } catch (err) {
@@ -2060,11 +2463,12 @@ function addClipLayer() { addHookedLayer('clip'); }
 function addPixelLayer() {
     traceLog('addPixelLayer() called, layers before: ' + layers.length);
     try {
+        const before=captureTreeState();
         const l = new PixelLayer('Layer ' + (layers.length + 1), gridW, gridH);
         addLayer(l);
         reindexDom();
         setActiveLayer(layers.length - 1);
-        pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: layers.length - 1, layer: l });
+        pushTreeOperation('Add pixel layer',before);
         renderLayersPanel();
         traceLog('addPixelLayer() done, layers after: ' + layers.length);
     } catch (err) {
@@ -2083,11 +2487,12 @@ function setupLayerFileInputs() {
         const img = new Image();
         const proceed = () => {
             try {
+                const before=captureTreeState();
                 const l = new ReferenceLayer(file.name.replace(/\.[^.]+$/, '') || 'Reference', img);
                 addLayer(l);
                 reindexDom();
                 setActiveLayer(layers.length - 1);
-                pushUndo({ type: 'addLayer', frameIndex: activeFrameIndex, index: layers.length - 1, layer: l });
+                pushTreeOperation('Add reference layer',before);
                 renderLayersPanel();
                 traceLog('Reference layer added: ' + l.name + ' (' + img.naturalWidth + '\u00D7' + img.naturalHeight + ')');
             } catch (err) {
@@ -2183,91 +2588,296 @@ function toggleLayerThumbSize() {
 }
 
 // Rebuilds the entire Layers panel list: one row per layer (thumbnail, visibility, name, reorder, clear, delete), plus the opacity slider and transform UI for whichever layer is active.
+// Layers-panel search is collapsed by default. On touch devices, revealing it also
+// opens the existing custom on-screen keyboard instead of allowing the browser/iOS
+// to summon a native keyboard. Desktop keeps the normal native input behavior.
+function toggleLayerSearch(){
+    const shell=document.getElementById('layerSearchShell');
+    if(!shell)return;
+    const collapsed=shell.classList.toggle('collapsed');
+    const input=document.getElementById('layerSearchInput');
+    if(collapsed){
+        if(input) input.value='';
+        const box=document.getElementById('layerSearchResults'); if(box){box.innerHTML='';box.style.display='none';}
+        return;
+    }
+    focusLayerSearch();
+}
+function focusLayerSearch(){
+    const shell=document.getElementById('layerSearchShell');
+    const input=document.getElementById('layerSearchInput');
+    if(!shell||!input)return;
+    shell.classList.remove('collapsed');
+    if(shouldUseCustomKeyboard()){
+        input.readOnly=true;
+        openCustomKeyboard(input.value,
+            value=>{ input.value=value; renderLayerSearchResults(value); },
+            value=>{ input.value=value; renderLayerSearchResults(value); }
+        );
+    }else{
+        input.readOnly=false;
+        input.focus();
+        input.select();
+    }
+}
+function prepareSearchInputs(){
+    const input=document.getElementById('layerSearchInput');
+    if(input) input.readOnly=shouldUseCustomKeyboard();
+}
+
+function fuzzyScore(query,text){
+    query=(query||'').toLowerCase().trim(); text=(text||'').toLowerCase(); if(!query)return 0;
+    if(text===query)return 1200; if(text.startsWith(query))return 850; if(text.includes(query))return 650;
+    let qi=0,score=0; for(let i=0;i<text.length&&qi<query.length;i++){if(text[i]===query[qi]){score+=20;qi++;}}
+    return qi===query.length ? score : -1;
+}
+function registerCommand(id,name,aliases,action,category){ commandRegistry.push({id,name,aliases:aliases||[],action,category:category||'Command'}); }
+function buildSearchResults(query){
+    const results=[]; const q=(query||'').trim(); if(!q)return results;
+    const f=frames[activeFrameIndex]; if(f){
+        collectTreeNodes(f.layerTree).forEach(n=>{const name=n.kind==='group'?n.name:n.layer.name; const path=getNodePathText(n); const textContent=n.kind==='layer' ? (n.layer.textContent||n.layer.text||'') : ''; const score=Math.max(fuzzyScore(q,name),fuzzyScore(q,path),fuzzyScore(q,textContent)); if(score>=0)results.push({type:n.kind==='group'?'group':'layer',name,path,score,action:()=>jumpToTreeNode(n)});});
+    }
+    commandRegistry.forEach(c=>{const score=Math.max(fuzzyScore(q,c.name),...c.aliases.map(a=>fuzzyScore(q,a)));if(score>=0)results.push({type:'command',name:c.name,path:c.category+' • '+c.aliases.join(', '),score,action:c.action});});
+    return results.sort((a,b)=>b.score-a.score).slice(0,30);
+}
+function getNodePathText(node){
+    const f=frames[activeFrameIndex]; const stack=getNodeStack(f?f.layerTree:[],nodeId(node))||[]; return stack.map(n=>n.kind==='group'?n.name:n.layer.name).join(' / ');
+}
+function renderLayerSearchResults(query){
+    const box=document.getElementById('layerSearchResults'); if(!box)return;
+    const results=buildSearchResults(query); box.innerHTML='';
+    if(!query.trim()){box.style.display='none';return;} box.style.display='flex';
+    results.forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=e=>{e.stopPropagation();r.action();};box.appendChild(b);});
+    if(!results.length){const d=document.createElement('div');d.style.color='#888';d.style.padding='10px';d.innerText='No results';box.appendChild(d);}
+}
+function jumpToTreeNode(node){
+    const f=frames[activeFrameIndex]; if(!f)return;
+    const stack=getNodeStack(f.layerTree,nodeId(node))||[]; stack.filter(n=>n.kind==='group').forEach(g=>g.collapsed=false);
+    clearLayerTreeSelection(); if(layerSelectionMode) selectTreeNode(node,true);
+    if(node.kind==='layer'){const idx=layers.indexOf(node.layer);if(idx>=0)setActiveLayer(idx);}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;}
+    renderLayersPanel();
+    setTimeout(()=>{const safeId=nodeId(node).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); const el=document.querySelector('[data-node-id="'+safeId+'"]');if(el)el.scrollIntoView({block:'nearest',behavior:'smooth'});},0);
+}
+function openGlobalCommandPalette(){
+    let overlay=document.getElementById('globalCommandPalette');
+    if(!overlay){
+        overlay=document.createElement('div');overlay.id='globalCommandPalette';overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px;';
+        const panel=document.createElement('div');panel.style.cssText='width:min(720px,100%);max-height:70vh;overflow:auto;background:#1d1d1d;border:1px solid #555;border-radius:16px;padding:14px;';
+        panel.innerHTML='<div style="font-weight:700;color:#fff;margin-bottom:8px;">COMMAND PALETTE</div><input id="globalCommandInput" class="num-input" style="width:100%;height:44px;text-align:left;padding:0 12px;" placeholder="Search tools, commands, layers, groups…" autocomplete="off"><div id="globalCommandResults" class="layer-search-results"></div>';
+        overlay.appendChild(panel);document.body.appendChild(overlay); overlay.addEventListener('click',e=>{if(e.target===overlay)closeGlobalCommandPalette();});
+        const input=panel.querySelector('#globalCommandInput');
+        input.oninput=()=>renderGlobalCommandResults(input.value);
+        input.onkeydown=e=>{if(e.key==='Escape')closeGlobalCommandPalette();};
+        input.onclick=()=>{ if(shouldUseCustomKeyboard()) openGlobalCommandKeyboard(); };
+    }
+    overlay.style.display='flex';globalPaletteOpen=true;
+    const input=document.getElementById('globalCommandInput');
+    input.value='';
+    if(shouldUseCustomKeyboard()) openGlobalCommandKeyboard();
+    else { input.focus(); renderGlobalCommandResults(''); }
+}
+function openGlobalCommandKeyboard(){
+    const input=document.getElementById('globalCommandInput');
+    if(!input)return;
+    input.readOnly=true;
+    openCustomKeyboard(input.value,
+        value=>{ input.value=value; renderGlobalCommandResults(value); },
+        value=>{ input.value=value; renderGlobalCommandResults(value); }
+    );
+}
+function closeGlobalCommandPalette(){const o=document.getElementById('globalCommandPalette');if(o)o.style.display='none';globalPaletteOpen=false;if(customKeyboardState)closeCustomKeyboard(false);}
+function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.slice(0,20).map(c=>({type:'command',name:c.name,path:c.category,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
+function registerBuiltInCommands(){
+    if(commandRegistry.length)return;
+    registerCommand('tool.brush','Brush',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
+    registerCommand('tool.eyedrop','Colour Picker',['eyedropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
+    registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
+    registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
+    registerCommand('tool.line','Line',['straight line'],()=>handleToolBtn('line'),'Tools');
+    registerCommand('tool.rectangle','Rectangle',['rect','box'],()=>handleToolBtn('rect'),'Tools');
+    registerCommand('tool.ellipse','Ellipse',['circle','oval'],()=>handleToolBtn('ellipse'),'Tools');
+    registerCommand('tool.select','Select Tool',['marquee','selection'],()=>handleToolBtn('select'),'Tools');
+    registerCommand('tool.vectorPen','Vector Pen',['pen','bezier'],()=>handleToolBtn('vpen'),'Tools');
+    registerCommand('tool.vectorShape','Vector Shape',['vector shapes'],()=>handleToolBtn('vshape'),'Tools');
+    registerCommand('tool.vectorEdit','Vector Edit',['edit vectors','nodes'],()=>handleToolBtn('vedit'),'Tools');
+    registerCommand('view.resetRotation','Reset Canvas Rotation',['straighten','reset rotation'],resetCanvasRotation,'View');
+    registerCommand('layers.new','New Pixel Layer',['new layer','pixel layer','paint layer'],addPixelLayer,'Layers');
+    registerCommand('layers.duplicate','Duplicate Selected',['duplicate layer','copy layer'],duplicateSelectedItems,'Layers');
+    registerCommand('layers.delete','Delete Selected',['delete layer','remove layer'],deleteSelectedItems,'Layers');
+    registerCommand('groups.ungroup','Ungroup',['ungroup group','remove group'],ungroupSelected,'Layers');
+    registerCommand('groups.merge','Merge Groups',['combine groups','merge selected groups'],mergeSelectedGroups,'Layers');
+    registerCommand('layers.visibility','Toggle Selected Visibility',['hide selected','show selected','visibility'],toggleSelectedVisibility,'Layers');
+    registerCommand('groups.new','New Group',['create group','group'],addEmptyGroup,'Layers');
+    registerCommand('layers.select','Select Layers',['selection mode','multi select'],toggleLayerSelectionMode,'Layers');
+    registerCommand('undo','Undo',['back'],undo,'Edit');
+    registerCommand('redo','Redo',['forward'],redo,'Edit');
+    registerCommand('view.zoomIn','Zoom In',['zoom','magnify'],zoomIn,'View');
+    registerCommand('view.zoomOut','Zoom Out',['shrink','zoom out'],zoomOut,'View');
+    registerCommand('view.grid','Toggle Grid',['grid lines','show grid'],toggleGridLines,'View');
+    registerCommand('layers.thumbnails','Larger Thumbnails',['thumbnail size','bigger thumbnails'],toggleLayerThumbSize,'Layers');
+    registerCommand('file.save','Save Project',['save','project'],saveProject,'File');
+    registerCommand('file.export','Export PNG',['png','export image'],saveImage,'File');
+}
+function clearDragIndicators(){document.querySelectorAll('.layer-row.drop-before,.layer-row.drop-after,.layer-row.drop-inside').forEach(e=>e.classList.remove('drop-before','drop-after','drop-inside'));}
+function getDropTargetAt(x,y){const el=document.elementFromPoint(x,y);const row=el&&el.closest?el.closest('.layer-row'):null;return row&&row.dataset.nodeId?getNodeById(row.dataset.nodeId):null;}
+function isNodeInside(node,possibleAncestor){return node!==possibleAncestor && possibleAncestor && possibleAncestor.kind==='group' && collectNodeIds(possibleAncestor).includes(nodeId(node));}
+function canDropNodes(nodes,target,mode){if(!target)return false;return !nodes.some(n=>n===target||isNodeInside(target,n));}
+function performTreeDrop(nodes,target,mode){
+    const f=frames[activeFrameIndex];if(!f||!nodes.length||!target||!canDropNodes(nodes,target,mode))return;
+    const before=captureTreeState();
+    // Remove selected roots from their current parents first.
+    nodes.forEach(n=>{const found=findNode(f.layerTree,nodeId(n));if(found){const arr=found.parent?found.parent.children:f.layerTree;arr.splice(found.index,1);}});
+    if(mode==='inside' && target.kind==='group'){
+        target.collapsed=false;target.children.push(...nodes);
+    }else{
+        const found=findNode(f.layerTree,nodeId(target));if(!found)return;const arr=found.parent?found.parent.children:f.layerTree;let idx=arr.indexOf(target)+(mode==='after'?1:0);arr.splice(idx,0,...nodes);
+    }
+    syncActiveLayersFromTree();reindexDom();refreshHookedComposites();pushTreeOperation('Drag and drop',before);renderLayersPanel();
+}
+function beginTreeDrag(node,row,event){
+    if(layerSelectionMode && !isNodeSelected(node))return;
+    if(event.button!=null && event.button!==0)return;
+    const startX=event.clientX,startY=event.clientY; const nodes=layerSelectionMode?collectSelectedRootsSorted().map(e=>e.node):[node];
+    let timer=setTimeout(()=>{treeDragState={node,nodes,startX,startY,row,moved:false};row.classList.add('dragging');row.setPointerCapture?.(event.pointerId);},260);
+    const move=e=>{if(!treeDragState){if(Math.hypot(e.clientX-startX,e.clientY-startY)>10){clearTimeout(timer);}return;} if(Math.hypot(e.clientX-treeDragState.startX,e.clientY-treeDragState.startY)>8)treeDragState.moved=true;clearDragIndicators();const target=getDropTargetAt(e.clientX,e.clientY);if(target&&!canDropNodes(treeDragState.nodes,target,'inside'))return;if(target){const tid=nodeId(target).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); const rect=document.querySelector('[data-node-id="'+tid+'"]')?.getBoundingClientRect();let mode='inside';if(target.kind!=='group'){mode=(e.clientY-(rect?.top||0))<(rect?.height||40)/2?'before':'after';}else if(e.clientX>(rect?.left||0)+36 && e.clientY-(rect?.top||0)>(rect?.height||40)*.25 && e.clientY-(rect?.top||0)<(rect?.height||40)*.75){mode='inside';}else mode=(e.clientY-(rect?.top||0))<(rect?.height||40)/2?'before':'after';if(canDropNodes(treeDragState.nodes,target,mode)){const tid2=nodeId(target).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); const el=document.querySelector('[data-node-id="'+tid2+'"]');if(el)el.classList.add('drop-'+mode);treeDragState.target=target;treeDragState.mode=mode;}}};
+    const up=e=>{clearTimeout(timer);document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);if(treeDragState){const st=treeDragState;clearDragIndicators();treeDragState=null;st.row.classList.remove('dragging');if(st.moved&&st.target){suppressNextTreeClick=true;performTreeDrop(st.nodes,st.target,st.mode);}}};
+    document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up,{once:false});
+}
+
 function renderLayersPanel() {
     const list = document.getElementById('layersList');
     list.innerHTML = '';
-    for (let i = layers.length - 1; i >= 0; i--) {
-      try {
-        const layer = layers[i];
-        const row = document.createElement('div');
-        row.className = 'layer-row' + (i === activeLayerIndex ? ' active-layer' : '');
-
-        const thumb = document.createElement('img');
-        thumb.src = makeThumbnail(layer, largeLayerThumbs ? 64 : 28);
-        thumb.style.cssText = 'width:' + (largeLayerThumbs ? 64 : 28) + 'px;height:' + (largeLayerThumbs ? 64 : 28) + 'px;border-radius:4px;flex:none;border:1px solid #444;';
-
-        const vis = document.createElement('button');
-        vis.className = 'layer-icon-btn layer-vis' + (layer.visible ? '' : ' off');
-        vis.innerText = layer.visible ? '\u{1F441}\uFE0F' : '\u{1F6AB}';
-        vis.onclick = (e) => { e.stopPropagation(); layer.visible = !layer.visible; layer.applyVisualState(); refreshHookedComposites(); renderLayersPanel(); };
-
-        const name = document.createElement('div');
-        name.className = 'layer-name';
-        name.innerText = layer.name;
-        name.onclick = (e) => {
-            e.stopPropagation();
-            const commit = (newName) => {
-                const v = (newName || '').trim();
-                if (v) layer.name = v;
-                renderLayersPanel();
-            };
-            if (shouldUseCustomKeyboard()) {
-                openCustomKeyboard(layer.name, commit);
-            } else {
-                // Desktop: use a real native input so the device's own
-                // keyboard (and its usual copy/paste/etc.) just works,
-                // instead of popping up our on-screen one unnecessarily.
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.className = 'layer-name-input';
-                input.value = layer.name;
-                input.onclick = (ev) => ev.stopPropagation();
-                input.onkeydown = (ev) => { if (ev.key === 'Enter') input.blur(); if (ev.key === 'Escape') { input.value = layer.name; input.blur(); } };
-                input.onblur = () => commit(input.value);
-                name.replaceWith(input);
-                input.focus();
-                input.select();
-            }
-        };
-
-        const badge = document.createElement('div');
-        badge.className = 'layer-type-badge';
-        badge.innerText = layer.type;
-
-        const up = mkLayerIconBtn('\u2B06\uFE0F', (e) => { e.stopPropagation(); moveLayer(i, i + 1); });
-        up.disabled = i === layers.length - 1;
-
-        const down = mkLayerIconBtn('\u2B07\uFE0F', (e) => { e.stopPropagation(); moveLayer(i, i - 1); });
-        down.disabled = i === 0;
-
-        const clr = mkLayerIconBtn('\u{1F9F9}', (e) => { e.stopPropagation(); clearLayerAt(i); });
-        clr.style.display = layer.type !== 'reference' ? 'flex' : 'none';
-
-        const del = mkLayerIconBtn('\u{1F5D1}\uFE0F', (e) => { e.stopPropagation(); deleteLayer(i); });
-
-        row.onclick = () => setActiveLayer(i);
-        row.append(thumb);
-        if (layers.length > 1) row.append(vis);
-        row.append(name, badge, up, down, clr, del);
-        list.appendChild(row);
-
-        if (i === activeLayerIndex) {
-            const opRow = document.createElement('div');
-            opRow.className = 'layer-opacity-row';
-            const slider = document.createElement('input');
-            slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = Math.round(layer.opacity * 100);
-            const label = document.createElement('span');
-            label.innerText = slider.value + '%';
-            slider.oninput = () => { layer.opacity = slider.value / 100; layer.applyVisualState(); label.innerText = slider.value + '%'; refreshHookedComposites(); };
-            opRow.append(slider, label);
-            list.appendChild(opRow);
-
-            if (layer.type === 'reference') list.appendChild(buildReferenceTransformUI(layer));
+    const f=frames[activeFrameIndex]; if(!f) return;
+    ensureFrameLayerTree(f);
+    const renderNodes=(nodes, depth)=>{
+        for(let ni=nodes.length-1;ni>=0;ni--){
+            const node=nodes[ni];
+            if(node.kind==='group') renderGroupRow(node,depth);
+            else renderLayerRow(node,depth);
         }
-      } catch (err) {
-        console.error('layer row ' + i + ' failed to render:', err && err.message);
-      }
-    }
+    };
+    const renderLayerRow=(node,depth)=>{
+        const layer=node.layer, i=layers.indexOf(layer); if(!layer)return;
+        const row=document.createElement('div');
+        row.className='layer-row'+(i===activeLayerIndex?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.touchAction='none';
+        row.style.paddingLeft=(6+depth*18)+'px';
+        const colorTag=document.createElement('button'); colorTag.className='layer-color-tag'+(layer.color?'':' no-color'); colorTag.style.background=layer.color||'transparent'; colorTag.title='Layer colour tag'; colorTag.setAttribute('aria-label','Change layer colour tag'); colorTag.onclick=e=>{e.stopPropagation();cycleLayerColor(layer.id);};
+        const thumb=document.createElement('img'); thumb.src=makeThumbnail(layer,largeLayerThumbs?64:28); thumb.style.cssText='width:'+(largeLayerThumbs?64:28)+'px;height:'+(largeLayerThumbs?64:28)+'px;border-radius:4px;flex:none;border:1px solid #444;';
+        const vis=document.createElement('button'); vis.className='layer-icon-btn layer-vis'+(layer.visible?'':' off'); vis.innerText=layer.visible?'\u{1F441}\uFE0F':'\u{1F6AB}'; vis.onclick=e=>{e.stopPropagation();layer.visible=!layer.visible;layer.applyVisualState();refreshHookedComposites();renderLayersPanel();};
+        const sel=document.createElement('input'); sel.type='checkbox'; sel.checked=isNodeSelected(node); sel.style.display=layerSelectionMode?'block':'none'; sel.disabled=layerSelectionMode&&selectionContainsDescendantOfSelected(node); sel.onclick=e=>{e.stopPropagation();selectTreeNode(node,sel.checked);renderLayersPanel();};
+        const name=document.createElement('div'); name.className='layer-name'; name.innerText=layer.name;
+        name.onclick=e=>{e.stopPropagation(); if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();return;} const commit=v=>{v=(v||'').trim();if(v)layer.name=v;renderLayersPanel();}; if(shouldUseCustomKeyboard())openCustomKeyboard(layer.name,commit);else{const input=document.createElement('input');input.type='text';input.className='layer-name-input';input.value=layer.name;input.onclick=ev=>ev.stopPropagation();input.onkeydown=ev=>{if(ev.key==='Enter')input.blur();if(ev.key==='Escape'){input.value=layer.name;input.blur();}};input.onblur=()=>commit(input.value);name.replaceWith(input);input.focus();input.select();}};
+        const badge=document.createElement('div'); badge.className='layer-type-badge'; badge.innerText=layer.type;
+        const foundNode=findNode(f.layerTree,nodeId(node));
+        const parent=foundNode?foundNode.parent:null;
+        const arr=parent?parent.children:f.layerTree;
+        const pos=arr.indexOf(node);
+        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,1);});
+        const upTarget=pos<arr.length-1?arr[pos+1]:null;
+        up.disabled=pos>=arr.length-1;
+        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,-1);});
+        const downTarget=pos>0?arr[pos-1]:null;
+        down.disabled=pos<=0;
+        const clr=mkLayerIconBtn('\u{1F9F9}',e=>{e.stopPropagation();clearLayerAt(i);}); clr.style.display=layer.type!=='reference'?'flex':'none';
+        const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i);});
+        row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
+        row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); list.appendChild(row);
+        if(!layerSelectionMode && i===activeLayerIndex){const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
+    };
+    const renderGroupRow=(node,depth)=>{
+        const row=document.createElement('div'); row.className='layer-row group-row'+(activeGroupId===node.id?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.touchAction='none'; row.style.paddingLeft=(depth*18)+'px';
+        const exp=document.createElement('button'); exp.className='layer-icon-btn'; exp.style.minWidth='34px'; exp.innerText=node.collapsed?'\u25B6':'\u25BC'; exp.onclick=e=>{e.stopPropagation();node.collapsed=!node.collapsed;renderLayersPanel();};
+        const sel=document.createElement('input'); sel.type='checkbox'; sel.checked=isNodeSelected(node); sel.style.display=layerSelectionMode?'block':'none'; sel.disabled=layerSelectionMode&&selectionContainsDescendantOfSelected(node); sel.onclick=e=>{e.stopPropagation();selectTreeNode(node,sel.checked);renderLayersPanel();};
+        const vis=document.createElement('button'); vis.className='layer-icon-btn layer-vis'+(node.visible?'':' off'); vis.innerText=node.visible?'\u{1F441}\uFE0F':'\u{1F6AB}'; vis.onclick=e=>{e.stopPropagation();node.visible=!node.visible;applyGroupVisualState(node);renderLayersPanel();};
+        const colorTag=document.createElement('button'); colorTag.className='layer-color-tag'+(node.color?'':' no-color'); colorTag.style.background=node.color||'transparent'; colorTag.title='Group colour tag'; colorTag.setAttribute('aria-label','Change group colour tag'); colorTag.onclick=e=>{e.stopPropagation();cycleGroupColor(node.id);};
+        const icon=document.createElement('span'); icon.innerText='\u{1F5C2}\uFE0F'; icon.style.fontSize='18px';
+        const name=document.createElement('div'); name.className='layer-name'; name.innerText=node.name; name.onclick=e=>{e.stopPropagation();if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();return;}activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();};
+        const gf=findNode(f.layerTree,node.id); const arr=gf&&gf.parent?gf.parent.children:f.layerTree; const pos=arr.indexOf(node);
+        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,1);});up.disabled=pos>=arr.length-1;
+        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,-1);});down.disabled=pos<=0;
+        const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteGroup(node);});
+        row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=e=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(e.target===exp||e.target===sel||e.target===vis||e.target===name)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();}};
+        row.append(colorTag,exp,sel,vis,icon,name,up,down,del); list.appendChild(row);
+        if(!layerSelectionMode && activeGroupId===node.id){ const op=document.createElement('div'); op.className='layer-opacity-row'; const sl=document.createElement('input'); sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(node.opacity*100); const lab=document.createElement('span');lab.innerText=sl.value+'%'; sl.oninput=()=>{node.opacity=sl.value/100;lab.innerText=sl.value+'%';applyGroupVisualState(node);}; op.append(sl,lab); const bm=document.createElement('select'); bm.className='num-input'; ['source-over','multiply','screen','overlay','darken','lighten'].forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
+        if(!node.collapsed)renderNodes(node.children,depth+1);
+    };
+    renderNodes(f.layerTree,0);
+    const searchInput=document.getElementById('layerSearchInput'); if(searchInput && searchInput.value) renderLayerSearchResults(searchInput.value);
+    const sb=document.getElementById('layerSelectionToolbar'); const sa=document.getElementById('layerSelectionActions'); const gb=document.getElementById('groupSelectedBtn'); const ga=document.getElementById('groupSelectedActionBtn');
+    if(sb) sb.style.display=layerSelectionMode?'none':'flex'; if(sa) sa.style.display=layerSelectionMode?'flex':'none'; const sc=document.getElementById('selectionCount'); if(sc) sc.innerText=selectedNodeIds.size+' selected'; if(gb) gb.disabled=selectedNodeIds.size===0; if(ga) ga.disabled=selectedNodeIds.size===0;
+}
+function applyGroupVisualState(group){
+    const walk=(nodes,parentVisible,parentOpacity)=>{(nodes||[]).forEach(n=>{if(n.kind==='group'){walk(n.children,parentVisible&&n.visible,parentOpacity*n.opacity);}else if(n.layer){n.layer._groupVisible=parentVisible;n.layer._groupOpacity=parentOpacity;n.layer.applyVisualState();}})};
+    walk([group],true,1);
+    refreshHookedComposites();
+}
+function applyGroupBlendMode(group){
+    // The current DOM compositor cannot yet isolate a group into a separate
+    // offscreen surface, so Normal remains the rendering fallback. The
+    // selected mode is stored now so future compositing can consume it.
+    if(group) group.blendMode=group.blendMode||'source-over';
+    refreshHookedComposites();
+}
+function cycleGroupColor(groupId){
+    const f=frames[activeFrameIndex];
+    const found=f&&findGroupNode(ensureFrameLayerTree(f),groupId);
+    if(!found)return;
+    const palette=[null,'#ef4444','#f59e0b','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#888'];
+    const ix=palette.indexOf(found.node.color);
+    found.node.color=palette[(ix+1)%palette.length];
+    renderLayersPanel();
+}
+function cycleLayerColor(layerId){
+    const f=frames[activeFrameIndex];
+    const found=f&&findLayerNode(ensureFrameLayerTree(f),layerId);
+    if(!found || !found.node.layer)return;
+    const palette=[null,'#ef4444','#f59e0b','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#888'];
+    const ix=palette.indexOf(found.node.layer.color);
+    found.node.layer.color=palette[(ix+1)%palette.length];
+    renderLayersPanel();
+}
+
+function moveSelectedBlock(direction){
+    const f=frames[activeFrameIndex]; if(!f || !selectedNodeIds.size) return;
+    const entries=collectSelectedRootsSorted(); if(!entries.length)return;
+    const before=captureTreeState();
+    // A single selected layer/group follows the same Up/Down semantics as its row buttons,
+    // including entering an adjacent group. Multi-selection moves as a block within each parent.
+    if(entries.length===1){ moveTreeNode(entries[0].node,direction); return; }
+    const groups=new Map(); entries.forEach(e=>{const key=e.parent?e.parent.id:'__root__';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e.node);});
+    groups.forEach((nodes,parentKey)=>{
+        const parent=parentKey==='__root__'?null:findGroupNode(f.layerTree,parentKey).node; const arr=parent?parent.children:f.layerTree;
+        const indices=nodes.map(n=>arr.indexOf(n)).filter(i=>i>=0).sort((a,b)=>a-b); if(!indices.length)return;
+        if(direction>0 && indices[indices.length-1]===arr.length-1)return;
+        if(direction<0 && indices[0]===0)return;
+        const ordered=indices.map(i=>arr[i]); const remaining=arr.filter(n=>!ordered.includes(n));
+        const targetIndex=direction>0 ? indices[indices.length-1]+1 : indices[0]-1;
+        const insertion=direction>0 ? Math.min(remaining.length,targetIndex) : Math.max(0,targetIndex);
+        remaining.splice(insertion,0,...ordered); arr.splice(0,arr.length,...remaining);
+    });
+    syncActiveLayersFromTree();reindexDom();refreshHookedComposites();pushTreeOperation('Move selected block',before);renderLayersPanel();
+}
+
+function toggleLayerSelectionMode(){
+    layerSelectionMode=!layerSelectionMode;
+    if(!layerSelectionMode) clearLayerTreeSelection();
+    renderLayersPanel();
+}
+function selectAllTreeNodes(){
+    const f=frames[activeFrameIndex]; if(!f)return;
+    clearLayerTreeSelection(); (f.layerTree||[]).forEach(n=>selectTreeNode(n,true)); renderLayersPanel();
+}
+function clearTreeSelection(){clearLayerTreeSelection();renderLayersPanel();}
+function deleteGroup(node){
+    const f=frames[activeFrameIndex]; if(!f)return; const found=findNode(f.layerTree,node.id); if(!found)return;
+    const hasChildren=(node.children||[]).length>0;
+    const message=hasChildren ? 'Delete this group? Its contents will be kept at the current level.' : 'Delete this empty group?';
+    if(!confirm(message)) return;
+    const before=captureTreeState();
+    const arr=found.parent?found.parent.children:f.layerTree;
+    if(hasChildren)arr.splice(found.index,1,...node.children); else arr.splice(found.index,1);
+    if(activeGroupId===node.id)activeGroupId=null;
+    syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites(); pushTreeOperation('Delete group',before); renderLayersPanel();
 }
 
 // Small factory for the plain icon buttons in each layer row (reorder/
@@ -2353,14 +2963,11 @@ function moveLayer(from, to) {
 // Removes a layer (unless it's the last one left) and records it on the undo stack so it can be brought straight back.
 function deleteLayer(i) {
     if (layers.length === 1) return;
-    const layer = layers[i];
-    layer.el.remove();
-    layers.splice(i, 1);
-    if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
-    else if (activeLayerIndex > i) activeLayerIndex--;
-    pushUndo({ type: 'deleteLayer', frameIndex: activeFrameIndex, index: i, layer });
-    refreshHookedComposites();
-    renderLayersPanel();
+    const layer=layers[i]; if(!layer)return; const f=frames[activeFrameIndex]; const found=f?findLayerNode(f.layerTree,layer.id):null; if(!found)return;
+    if(!confirm('Delete layer "'+layer.name+'"?'))return;
+    const before=captureTreeState(); const arr=found.parent?found.parent.children:f.layerTree; arr.splice(found.index,1); layer.el.remove();
+    if(activeLayerId===layer.id){activeLayerId=null;activeLayerIndex=Math.max(0,Math.min(i,layers.length-2));const next=layers[activeLayerIndex];activeLayerId=next?next.id:null;}
+    syncActiveLayersFromTree();reindexDom();refreshHookedComposites();pushTreeOperation('Delete layer',before);renderLayersPanel();
 }
 
 /* ============================================================
@@ -2396,8 +3003,11 @@ function switchFrame(idx) {
     layers.forEach(l => l.el.remove());
     deselect();
     activeFrameIndex = idx;
-    layers = frames[idx].layers;
+    ensureFrameLayerTree(frames[idx]);
+    layers = flattenLayerTree(frames[idx].layerTree);
+    frames[idx].layers = layers;
     activeLayerIndex = Math.min(Math.max(activeLayerIndex, 0), layers.length - 1);
+    activeLayerId = layers[activeLayerIndex] ? layers[activeLayerIndex].id : null;
     layers.forEach(l => container.appendChild(l.el));
     reindexDom();
     layoutAll();
@@ -2497,6 +3107,9 @@ function undo() {
     if (entry.type === 'pixels') {
         const layer = findLayerById(entry.frameIndex, entry.layerId);
         if (layer) { layer.pixelData = cloneGrid(entry.before); layer.redrawFromData(); }
+    } else if (entry.type === 'tree') {
+        restoreTreeState(entry.before);
+        traceLog('Undo tree operation: ' + entry.label);
     } else if (entry.type === 'deleteLayer') {
         layers.splice(entry.index, 0, entry.layer);
         container.appendChild(entry.layer.el);
@@ -2575,6 +3188,7 @@ function setupKeyboardShortcuts() {
         const k = e.key.toLowerCase();
         if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
         else if (k === 'y') { e.preventDefault(); redo(); }
+        else if (k === 'k') { e.preventDefault(); openGlobalCommandPalette(); }
     });
     // Scroll wheel zooms in/out. Ctrl+scroll is the standard browser pinch-
     // zoom shortcut on desktop (browsers intercept it for page zoom by default
@@ -2584,6 +3198,154 @@ function setupKeyboardShortcuts() {
         e.preventDefault();
         if (e.deltaY < 0) zoomIn(); else if (e.deltaY > 0) zoomOut();
     }, { passive: false });
+}
+
+/* ============================================================
+   MAGIC WAND SELECTION
+   Paint.NET-style colour selection, designed for touch first.
+   Exact mode matches the tapped colour exactly. Fuzzy mode uses an
+   adjustable RGB distance tolerance. Contiguous flood-fills one region;
+   Global finds matching pixels anywhere on the active pixel-like layer.
+   Transparent pixels are valid targets in both modes.
+   ============================================================ */
+function wandKey(x,y){ return x + ',' + y; }
+
+// FUZZY WAND MATCHING ALGORITHM
+// This is a simple RGB colour-distance approach inspired by the general
+// tolerance-based behaviour found in raster editors such as Paint.NET; it is
+// NOT copied from Paint.NET's implementation.
+//
+// Each colour is treated as a point in 3D RGB space (R, G, B). The distance
+// between the tapped colour and a candidate pixel is the Euclidean distance:
+//   sqrt((R1-R2)^2 + (G1-G2)^2 + (B1-B2)^2)
+//
+// The largest possible RGB distance is sqrt(255^2 * 3). The tolerance slider
+// converts 0..100% into a fraction of that maximum distance. Therefore:
+//   tolerance 0%  = exact RGB match
+//   higher values = progressively wider colour matching
+//
+// Exact mode bypasses this distance calculation and requires the colour to
+// match exactly. Transparent pixels are handled separately as an exact target.
+// This RGB metric is simple and fast, but it is not a perceptual colour metric
+// such as Lab/Delta-E; that can be considered later if closer human-perceived
+// colour matching is desired.
+function wandColourDistance(a,b){
+    if (a === b) return 0;
+    if (a == null || b == null) return Infinity;
+    const ah = a.replace('#',''), bh = b.replace('#','');
+    const ar=parseInt(ah.slice(0,2),16), ag=parseInt(ah.slice(2,4),16), ab=parseInt(ah.slice(4,6),16);
+    const br=parseInt(bh.slice(0,2),16), bg=parseInt(bh.slice(2,4),16), bb=parseInt(bh.slice(4,6),16);
+    return Math.sqrt((ar-br)**2+(ag-bg)**2+(ab-bb)**2);
+}
+function wandMatches(c,target){
+    if (!wandFuzzy) return c === target;
+    if (c == null || target == null) return c === target;
+    const maxDist=Math.sqrt(255*255*3);
+    return wandColourDistance(c,target) <= (wandTolerance/100)*maxDist;
+}
+let wandOverlayCanvasW = 0, wandOverlayCanvasH = 0;
+function ensureWandSelectionMask(){
+    const size = gridW * gridH;
+    if (!wandSelection || wandSelection.length !== size) {
+        wandSelection = new Uint8Array(size);
+        wandSelectionCount = 0;
+    }
+    return wandSelection;
+}
+function hasWandSelection(){ return !!wandSelection && wandSelectionCount > 0; }
+function setWandPixel(mask, x, y){
+    const i = y * gridW + x;
+    if (!mask[i]) { mask[i] = 1; wandSelectionCount++; }
+}
+function renderWandSelection(){
+    const ov=document.getElementById('wandSelectionOverlay');
+    if(!ov) return;
+    if(!hasWandSelection()){
+        ov.style.display='none';
+        const c=document.getElementById('wandSelectionCount'); if(c)c.textContent='No wand selection';
+        wandOverlayCanvasW = wandOverlayCanvasH = 0;
+        return;
+    }
+    // Keep the overlay at native grid resolution and build it in one ImageData
+    // operation. The selection itself is a compact typed-array mask, rather than
+    // a Set containing one string/object for every selected pixel.
+    if (ov.width !== gridW || ov.height !== gridH) {
+        ov.width = gridW; ov.height = gridH;
+        wandOverlayCanvasW = gridW; wandOverlayCanvasH = gridH;
+    }
+    ov.style.width=(gridW*scale)+'px';
+    ov.style.height=(gridH*scale)+'px';
+    ov.style.display='block';
+    const ctx=ov.getContext('2d', {willReadFrequently:false});
+    const image=ctx.createImageData(gridW, gridH);
+    const data=image.data;
+    const mask=wandSelection;
+    // RGBA overlay colour: semi-transparent blue.
+    for(let p=0, i=0; p<mask.length; p++, i+=4){
+        if(mask[p]){
+            data[i]=0; data[i+1]=120; data[i+2]=212; data[i+3]=72;
+        }
+    }
+    ctx.putImageData(image, 0, 0);
+    const c=document.getElementById('wandSelectionCount'); if(c)c.textContent=wandSelectionCount.toLocaleString()+' pixels selected';
+}
+function clearWandSelection(){ wandSelection=null; wandSelectionCount=0; renderWandSelection(); }
+function setWandTolerance(v){ wandTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('wandToleranceLabel'); if(l)l.textContent=wandTolerance; }
+function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementById('wandMatchBtn'); if(b)b.textContent=wandFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('wandTolerance'); if(r)r.disabled=!wandFuzzy; }
+function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementById('wandScopeBtn'); if(b){b.textContent=wandGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!wandGlobal);} }
+function performWandSelection(x,y){
+    const layer=activeLayer(); if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
+    const target=layer.pixelData[x][y];
+    const out=new Uint8Array(gridW * gridH);
+    let count=0;
+    const mark=(px,py)=>{ const i=py*gridW+px; if(!out[i]){out[i]=1;count++;} };
+    if(wandGlobal){
+        for(let ix=0;ix<gridW;ix++) for(let iy=0;iy<gridH;iy++) if(wandMatches(layer.pixelData[ix][iy],target)) mark(ix,iy);
+    }else{
+        const stack=[[x,y]], seen=new Set();
+        while(stack.length){const [cx,cy]=stack.pop();const k=wandKey(cx,cy);if(seen.has(k)||cx<0||cy<0||cx>=gridW||cy>=gridH)continue;seen.add(k);if(!wandMatches(layer.pixelData[cx][cy],target))continue;mark(cx,cy);stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);}
+    }
+    applySelectionMask(out,pixelSelectionMode);
+}
+function applySelectionMask(incoming, mode){
+    const size=gridW*gridH;
+    if(!wandSelection || wandSelection.length!==size || mode==='replace'){ wandSelection=new Uint8Array(size); wandSelectionCount=0; }
+    for(let i=0;i<size;i++){
+        if(mode==='add'){ if(incoming[i]&&!wandSelection[i]){wandSelection[i]=1;wandSelectionCount++;} }
+        else if(mode==='subtract'){ if(incoming[i]&&wandSelection[i]){wandSelection[i]=0;wandSelectionCount--;} }
+        else if(incoming[i]){wandSelection[i]=1;wandSelectionCount++;}
+    }
+    renderWandSelection();
+}
+function setPixelSelectionMode(mode){
+    pixelSelectionMode=mode;
+    ['replace','add','subtract'].forEach(m=>{const b=document.getElementById('wandSelMode'+m.charAt(0).toUpperCase()+m.slice(1));if(b)b.classList.toggle('active',m===mode);});
+}
+function pointInPolygon(px,py,pts){
+    let inside=false;
+    for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+        const a=pts[i],b=pts[j];
+        if(((a.y>py)!=(b.y>py)) && px < (b.x-a.x)*(py-a.y)/(b.y-a.y)+a.x) inside=!inside;
+    }
+    return inside;
+}
+function performLassoSelection(points){
+    if(!points||points.length<3)return;
+    const out=new Uint8Array(gridW*gridH);
+    let minX=gridW-1,maxX=0,minY=gridH-1,maxY=0;
+    points.forEach(p=>{minX=Math.max(0,Math.min(minX,Math.floor(p.x)));maxX=Math.min(gridW-1,Math.max(maxX,Math.ceil(p.x)));minY=Math.max(0,Math.min(minY,Math.floor(p.y)));maxY=Math.min(gridH-1,Math.max(maxY,Math.ceil(p.y)));});
+    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++)if(pointInPolygon(x+.5,y+.5,points))out[y*gridW+x]=1;
+    applySelectionMask(out,pixelSelectionMode);
+}
+
+function confirmWandDelete(){
+    if(!hasWandSelection())return;
+    const layer=activeLayer(); if(!isPixelLike(layer))return;
+    if(!confirm('Delete '+wandSelectionCount.toLocaleString()+' selected pixels?'))return;
+    const snap=beginEdit();
+    const mask=wandSelection;
+    for(let x=0;x<gridW;x++) for(let y=0;y<gridH;y++) if(mask[y*gridW+x]) layer.plot(x,y,null);
+    commitEdit(snap); clearWandSelection();
 }
 
 /* ============================================================
@@ -2618,7 +3380,7 @@ function toggleMoveSelection() {
 }
 // Clears the current selection and turns off move-selection mode.
 function deselect() {
-    selection = null; movingSelection = false;
+    selection = null; movingSelection = false; clearWandSelection();
     const btn = document.getElementById('moveSelBtn');
     if (btn) btn.classList.remove('active');
     updateSelectionBox();
@@ -2656,9 +3418,10 @@ function flipActiveLayerV() {
 
 // Erases (sets to transparent) every pixel inside the current selection on the active layer.
 function deleteSelection() {
-    if (!selection) return;
     const layer = activeLayer();
     if (!isPixelLike(layer)) return;
+    if (hasWandSelection()) { confirmWandDelete(); return; }
+    if (!selection) return;
     const snap = beginEdit();
     for (let x = selection.x0; x <= selection.x1; x++)
         for (let y = selection.y0; y <= selection.y1; y++) layer.plot(x, y, null);
@@ -2867,6 +3630,16 @@ function createSwatch(color) {
         return;
     }
     const hex = color.toUpperCase();
+
+    // Do not create duplicate colours. If the chosen colour already exists,
+    // simply select the existing swatch instead.
+    const existing = [...document.querySelectorAll('#palette .swatch')]
+        .find(el => !el.classList.contains('transparent-swatch') && rgbToHex(el.style.backgroundColor) === hex);
+    if (existing) {
+        handleSwatchClick(hex);
+        return;
+    }
+
     const wrapper = document.createElement('div');
     wrapper.className = 'swatch-wrapper';
     const s = document.createElement('div');
@@ -2888,7 +3661,9 @@ function createSwatch(color) {
     s.onclick = () => { if (!isEditing) uiAction(() => handleSwatchClick(hex)); };
     wrapper.append(s, badge);
     document.getElementById('palette').insertBefore(wrapper, document.getElementById('transparencyWrapper'));
-    updateUI();
+
+    // A newly created colour becomes the active drawing colour immediately.
+    handleSwatchClick(hex);
 }
 
 // Wires up drag-to-reorder for palette swatches while in edit mode.
@@ -2901,7 +3676,11 @@ function setupPaletteDragEvents() {
         const cy = e.touches ? e.touches[0].clientY : e.clientY;
         const target = document.elementFromPoint(cx, cy);
         const overWrapper = target?.closest('.swatch-wrapper');
-        if (overWrapper && overWrapper !== dragTarget) {
+        // Transparency and the colour-picker are fixed palette controls, not
+        // swatches. They can neither be dragged nor used as swap/reorder targets.
+        const isFixedWrapper = overWrapper === document.getElementById('transparencyWrapper') ||
+                               overWrapper === document.getElementById('pickerContainer');
+        if (overWrapper && overWrapper !== dragTarget && !isFixedWrapper) {
             const children = [...pal.children];
             if (children.indexOf(dragTarget) < children.indexOf(overWrapper)) pal.insertBefore(dragTarget, overWrapper.nextSibling);
             else pal.insertBefore(dragTarget, overWrapper);
@@ -2937,7 +3716,9 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
-    if (currentTool !== 'brush') hideCursor();
+    if (currentTool !== 'brush' && currentTool !== 'eyedrop' && currentTool !== 'wand') hideCursor();
+    const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
+    const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
 }
 
 // Converts a CSS "rgb(r,g,b)" string (as read from an element's computed style) into "#RRGGBB".
@@ -3005,7 +3786,7 @@ function setupDrawingEvents() {
     const g = {
         panStart: null, xform: null, pendingTouch: null, shapeStart: null,
         selDragOrigin: null, moveBuffer: null, currentEditSnapshot: null,
-        suppressStroke: false, vecDragTarget: null, vecFreehand: null, lastBrushPos: null
+        suppressStroke: false, vecDragTarget: null, vecFreehand: null, lastBrushPos: null, manualPan: null
     };
 
     // -- coordinate helpers --------------------------------------------
@@ -3055,7 +3836,7 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop';
+        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand';
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
@@ -3117,6 +3898,11 @@ function setupDrawingEvents() {
         }
         const layer = activeLayer();
         if (!isPixelLike(layer)) return;
+        if (currentTool === 'wand') {
+            performWandSelection(x,y);
+            g.suppressStroke = true;
+            return;
+        }
         if (currentTool === 'bucket') {
             const target = layer.pixelData[x] ? layer.pixelData[x][y] : undefined;
             if (target !== undefined && target !== selectedColor) {
@@ -3227,6 +4013,7 @@ function setupDrawingEvents() {
         isDrawing = true;
         g.suppressStroke = false;
         if (currentTool === 'select') { startSelectionDrag(x, y); return; }
+        if (currentTool === 'lasso') { g.lasso=[{x:x+.5,y:y+.5}]; g.suppressStroke=true; return; }
         if (currentTool === 'vedit') { startVectorEditDrag(x, y); return; }
         if (currentTool === 'vpen' || currentTool === 'vshape') { startVectorFreehand(x, y); return; }
         if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
@@ -3333,6 +4120,16 @@ function setupDrawingEvents() {
             return;
         }
 
+        // Pan tool: a single finger/mouse drag moves the viewport instead of
+        // editing the active layer. Two-finger gestures still use the existing
+        // pan+zoom+rotate camera gesture above. Keeping this as a viewport
+        // operation means it works even when there is no editable active layer.
+        if (currentTool === 'pan') {
+            g.manualPan = { x: cx, y: cy, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
+            if (touches) e.preventDefault();
+            return;
+        }
+
         const layer = activeLayer();
         if (!layer) return;
         const [x, y] = getPosFromClient(cx, cy);
@@ -3347,6 +4144,15 @@ function setupDrawingEvents() {
 
     const onMove = (e) => {
         const touches = e.touches;
+
+        if (g.manualPan) {
+            e.preventDefault();
+            const cx = touches ? touches[0].clientX : e.clientX;
+            const cy = touches ? touches[0].clientY : e.clientY;
+            viewport.scrollLeft = g.manualPan.scrollLeft - (cx - g.manualPan.x);
+            viewport.scrollTop = g.manualPan.scrollTop - (cy - g.manualPan.y);
+            return;
+        }
 
         if (g.xform) {
             e.preventDefault();
@@ -3384,6 +4190,7 @@ function setupDrawingEvents() {
                 if (activeLayerHasLiveHook()) scheduleHookedCompositeRefresh();
             }
             else if (currentTool === 'select') updateSelectionDrag(x, y);
+            else if (currentTool === 'lasso' && g.lasso) { const p={x:x+.5,y:y+.5},last=g.lasso[g.lasso.length-1]; if(Math.hypot(p.x-last.x,p.y-last.y)>=.5) g.lasso.push(p); }
             else if (currentTool === 'vedit') updateVectorEditDrag(x, y);
             else if (currentTool === 'vpen' || currentTool === 'vshape') updateVectorFreehand(x, y);
             else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && g.shapeStart) {
@@ -3403,6 +4210,7 @@ function setupDrawingEvents() {
         }
         g.xform = null;
         g.panStart = null;
+        g.manualPan = null;
         const fab = document.getElementById('rotationResetFab');
         if (fab) fab.style.pointerEvents = '';
         if (g.pendingTouch) commitPendingTouch();
@@ -3413,6 +4221,8 @@ function setupDrawingEvents() {
             if (currentTool === 'select') {
                 endSelectionDrag();
                 if (openPanelName === 'layers') renderLayersPanel();
+            } else if (currentTool === 'lasso') {
+                if(g.lasso){ performLassoSelection(g.lasso); g.lasso=null; }
             } else if (currentTool === 'vedit') {
                 endVectorEditDrag();
             } else if (currentTool === 'vpen' || currentTool === 'vshape') {
@@ -3647,7 +4457,7 @@ const startFreshConfirm = makeTapTwiceConfirm({
     btnId: 'startFreshBtn', idleText: '\ud83c\udd95 Start Fresh', armedText: '\u26A0\uFE0F TAP AGAIN TO DISCARD & START FRESH',
     onConfirm: () => {
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
-        frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
+        frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
         undoStack = []; redoStack = [];
         selection = null; movingSelection = false; transformMode = false;
         lastEnteredProfile = null;
@@ -3711,7 +4521,7 @@ function setupImportImageInput() {
         const proceed = () => {
             try {
                 let w = img.naturalWidth, h = img.naturalHeight;
-                const MAX = 999;
+                const MAX = 2000;
                 if (w > MAX || h > MAX) {
                     const f = Math.min(MAX / w, MAX / h);
                     w = Math.max(1, Math.round(w * f));
@@ -3720,7 +4530,7 @@ function setupImportImageInput() {
                 traceLog('Importing image as new project: ' + img.naturalWidth + '\u00D7' + img.naturalHeight + ' -> canvas ' + w + '\u00D7' + h);
 
                 frames.forEach(f => f.layers.forEach(l => l.el.remove()));
-                frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
+                frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
                 undoStack = []; redoStack = [];
                 selection = null; movingSelection = false; transformMode = false;
                 currentProjectId = null;
@@ -3731,14 +4541,15 @@ function setupImportImageInput() {
                 closeNewCanvasModal(); // success: now safe to close
                 hideGallery();
                 revealMainApp();
-                const base = pixelLayerFromImage('Layer 1', img, w, h);
+                const base = pendingImportKind === 'reference' ? new ReferenceLayer(file.name.replace(/\.[^.]+$/, '') || 'Reference', img) : pixelLayerFromImage('Layer 1', img, w, h);
                 layers = [base];
-                frames = [{ name: 'Frame 1', layers }];
+                frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
                 activeFrameIndex = 0;
                 container.appendChild(base.el);
                 setActiveLayer(0);
                 document.getElementById('framesSection').style.display = 'none';
                 lastEnteredProfile = 'standard';
+                pendingImportKind = 'pixel';
                 layoutAll();
             } catch (err) {
                 console.error('Image import failed:', err && err.message);
@@ -3791,18 +4602,26 @@ async function copyToClipboard() {
 
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
-    if (l.type === 'pixel') return { type: 'pixel', name: l.name, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
-    if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
-    if (l.type === 'vector') return { type: 'vector', name: l.name, visible: l.visible, opacity: l.opacity, splines: l.splines };
-    return { type: 'reference', name: l.name, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
+    if (l.type === 'pixel') return { type: 'pixel', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
+    if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
+    if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, splines: l.splines };
+    return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
+}
+
+function serializeLayerTree(nodes, frameLayers) {
+    return (nodes || []).map(n => {
+        if (n.kind === 'group' || n.kind === 'folder') return { kind: 'group', id: n.id, name: n.name, color: n.color, visible: n.visible, opacity: n.opacity, collapsed: n.collapsed, blendMode: n.blendMode || 'source-over', children: serializeLayerTree(n.children, frameLayers) };
+        const idx = frameLayers.indexOf(n.layer);
+        return { kind: 'layer', layerIndex: idx };
+    });
 }
 
 // Serializes every frame/layer into one JSON file and triggers a download. This -- not cookies or localStorage -- is the only way project state is ever persisted.
 function saveProject() {
     const data = {
-        version: 2,
+        version: 6,
         gridW, gridH, scale, profile: selectedProfile,
-        activeFrameIndex, activeLayerIndex,
+        activeFrameIndex, activeLayerIndex, activeLayerId,
         frames: frames.map(f => {
             const serialized = f.layers.map(serializeLayer);
             serialized.forEach(sl => {
@@ -3812,7 +4631,7 @@ function saveProject() {
                 }
                 delete sl.hookedTo;
             });
-            return { name: f.name, layers: serialized };
+            ensureFrameLayerTree(f); return { name: f.name, layers: serialized, layerTree: serializeLayerTree(f.layerTree, f.layers) };
         })
     };
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
@@ -3838,13 +4657,26 @@ function loadProjectFile(file) {
         if (zoomIndex === -1) zoomIndex = ZOOM_STEPS.indexOf(10);
         document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
 
-        const frameDefs = data.version === 2 ? data.frames : [{ name: 'Frame 1', layers: data.layers }];
+        const frameDefs = data.version >= 2 ? data.frames : [{ name: 'Frame 1', layers: data.layers }];
         const builtFrames = frameDefs.map(fd => ({ name: fd.name, layers: new Array(fd.layers.length) }));
         let remaining = frameDefs.reduce((n, fd) => n + fd.layers.length, 0);
 
         const finalize = () => {
             if (--remaining > 0) return;
             frames = builtFrames;
+            // Restore the hierarchical layer tree when loading a v3 project.
+            // Older v2/legacy projects simply become a root-level tree.
+            frames.forEach((f, fi) => {
+                const savedTree = frameDefs[fi].layerTree;
+                if (Array.isArray(savedTree)) {
+                    const buildTree = nodes => (nodes || []).map(n => {
+                        if (n.kind === 'group' || n.kind === 'folder') return { kind: 'group', id: n.id || ('group-' + (nextGroupId++)), name: n.name || 'Group', color: n.color || null, visible: n.visible !== false, opacity: typeof n.opacity === 'number' ? n.opacity : 1, collapsed: !!n.collapsed, blendMode: n.blendMode || 'source-over', children: buildTree(n.children) };
+                        return f.layers[n.layerIndex] ? makeLayerNode(f.layers[n.layerIndex]) : null;
+                    }).filter(Boolean);
+                    f.layerTree = buildTree(savedTree);
+                    f.layers = flattenLayerTree(f.layerTree);
+                } else { f.layerTree = f.layers.map(makeLayerNode); }
+            });
             // Resolve each mask/clip layer's saved hookedToIndex (a
             // frame-relative position) back into the actual id of the
             // newly built layer at that position, now that every layer
@@ -3860,7 +4692,7 @@ function loadProjectFile(file) {
             layers = frames[activeFrameIndex].layers;
             layers.forEach(l => container.appendChild(l.el));
             reindexDom();
-            setActiveLayer(Math.min(data.activeLayerIndex || 0, layers.length - 1));
+            setActiveLayer(data.activeLayerId != null && layers.some(l => l.id === data.activeLayerId) ? layers.findIndex(l => l.id === data.activeLayerId) : Math.min(data.activeLayerIndex || 0, layers.length - 1));
             lastEnteredProfile = selectedProfile;
             layoutAll();
             refreshHookedComposites();
@@ -3873,6 +4705,7 @@ function loadProjectFile(file) {
                 if (ld.type === 'vector') {
                     const l = new VectorLayer(ld.name);
                     l.splines = (ld.splines || []).map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }));
+                    l.color = ld.color || null;
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
                     builtFrames[fi].layers[li] = l;
@@ -3886,6 +4719,7 @@ function loadProjectFile(file) {
                     else if (ld.type === 'mask') { l = new MaskLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
                     else if (ld.type === 'clip') { l = new ClipLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
                     else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
+                    l.color = ld.color || null;
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
                     builtFrames[fi].layers[li] = l;
@@ -3965,6 +4799,7 @@ function saveCurrentStateToStore(existingId, nameOverride) {
         frames, // live reference -- the editor holds the same objects
         activeFrameIndex,
         activeLayerIndex,
+        activeLayerId,
         scale,
         thumbnailDataURL: thumb,
         updatedAt: Date.now()
@@ -3999,7 +4834,7 @@ function openProjectFromStore(id) {
     // Re-attach all layer canvases to the container
     layers.forEach(l => { if (!container.contains(l.el)) container.appendChild(l.el); });
     reindexDom();
-    setActiveLayer(Math.min(proj.activeLayerIndex || 0, layers.length - 1));
+    setActiveLayer(proj.activeLayerId != null && layers.some(l => l.id === proj.activeLayerId) ? layers.findIndex(l => l.id === proj.activeLayerId) : Math.min(proj.activeLayerIndex || 0, layers.length - 1));
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     layoutAll();
     renderLayersPanel();
@@ -4052,6 +4887,8 @@ function renderGallery() {
         if (proj.thumbnailDataURL) {
             const img = document.createElement('img');
             img.src = proj.thumbnailDataURL;
+            const thumbZoom = Number(proj.scale || 1);
+            if (thumbZoom < 1) { img.style.filter = 'blur(' + Math.min(4, Math.max(.15, (1-thumbZoom)*4)).toFixed(2) + 'px)'; img.classList.add('low-zoom-thumb'); }
             thumbWrap.appendChild(img);
         }
 
@@ -4137,6 +4974,15 @@ function openNewCanvasSheet() {
     });
     sheet.appendChild(profileRow);
 
+    // Import Image is intentionally placed directly beneath the profile choices.
+    // It uses the same import flow as the Pixel Art Hub/profile import button.
+    const importBtn = document.createElement('button');
+    importBtn.className = 'btn-start';
+    importBtn.style.cssText = 'width:100%; height:40px; background:#2a6aba; border:1px solid #4b7fc5; color:white; border-radius:8px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:12px; margin-top:8px;';
+    importBtn.textContent = '🖼️ Import Image';
+    importBtn.onclick = openImportSheet;
+    sheet.appendChild(importBtn);
+
     const hintEl = document.createElement('div');
     hintEl.id = 'ncm-hint';
     hintEl.style.cssText = 'font-size:9px; color:#888; text-align:center; min-height:18px;';
@@ -4160,12 +5006,12 @@ function openNewCanvasSheet() {
         grp.id = gid;
         grp.style.cssText = 'display:flex; gap:4px;';
         const defaultVal = li === 0 ? 32 : 32;
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
             const sel = document.createElement('select');
             sel.style.cssText = 'appearance:none; -webkit-appearance:none; background:#2a2a2a; border:2px solid #444; border-radius:10px; width:45px; height:55px; color:#0078d4; font-size:24px; font-weight:bold; text-align:center; cursor:pointer; outline:none;';
             sel.disabled = selectedProfile === 'portrait';
             const dv = selectedProfile === 'portrait' ? 40 : defaultVal;
-            const digits = String(dv).padStart(3,'0').split('');
+            const digits = String(dv).padStart(4,'0').split('');
             for (let d = 0; d <= 9; d++) {
                 const opt = document.createElement('option');
                 opt.value = d; opt.textContent = d;
@@ -4218,7 +5064,7 @@ function openImportSheet() {
     hintBox.className = 'import-hint-box';
     hintBox.innerHTML = '<strong>How to import:</strong><br>' +
         '1. Tap the button below to pick an image from your photos or files.<br>' +
-        '2. The canvas size is matched to the image (capped at 999px per side).<br>' +
+        '2. The canvas size is matched to the image (capped at 2000px per side).<br>' +
         '3. The image is placed on a new pixel layer you can paint over.';
     sheet.appendChild(hintBox);
 
@@ -4227,11 +5073,9 @@ function openImportSheet() {
     importBtn.id = 'ncm-import-btn';
     importBtn.style.cssText = 'width:100%; height:50px; background:#2a6aba; border:none; color:white; border-radius:25px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:14px;';
     importBtn.textContent = '🖼️ Choose Image';
-    importBtn.onclick = () => {
-        // Don't close yet -- stay open until the image actually loads or fails
-        document.getElementById('hubImageInput').click();
-    };
+    importBtn.onclick = () => { pendingImportKind='pixel'; document.getElementById('hubImageInput').click(); };
     sheet.appendChild(importBtn);
+    const refBtn=document.createElement('button'); refBtn.className='btn-start'; refBtn.style.cssText='width:100%; height:46px; background:#3a3a3a; margin-top:6px;'; refBtn.textContent='🖼️ Reference Layer'; refBtn.onclick=()=>{pendingImportKind='reference';document.getElementById('hubImageInput').click();}; sheet.appendChild(refBtn);
 
     const cancelBtn = document.createElement('button');
     cancelBtn.id = 'ncm-cancel';
@@ -4254,7 +5098,7 @@ document.getElementById('new-canvas-modal').addEventListener('click', (e) => {
 // ── Start new project from gallery ──────────────────────────
 function startNewProjectFromGallery(w, h) {
     if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
-    frames = []; layers = []; activeLayerIndex = -1; activeFrameIndex = 0;
+    frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
     undoStack = []; redoStack = [];
     selection = null; movingSelection = false; transformMode = false;
     gridW = w; gridH = h;
@@ -4263,7 +5107,7 @@ function startNewProjectFromGallery(w, h) {
     revealMainApp();
     const base = new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
-    frames = [{ name: 'Frame 1', layers }];
+    frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
     container.appendChild(base.el);
     setActiveLayer(0);
@@ -4379,7 +5223,7 @@ document.getElementById('ctx-save-file').addEventListener('click', () => {
                         delete sl.hookedTo;
                     }
                 });
-                return { name: f.name, layers: serialized };
+                ensureFrameLayerTree(f); return { name: f.name, layers: serialized, layerTree: serializeLayerTree(f.layerTree, f.layers) };
             })
         };
         const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
@@ -4456,7 +5300,7 @@ const drawerBackdrop = document.getElementById('drawerBackdrop');
 const keyboardBackdrop = document.getElementById('keyboardBackdrop');
 keyboardBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeCustomKeyboard(true); }, {passive: false});
 keyboardBackdrop.addEventListener('mousedown', () => closeCustomKeyboard(true));
-buildCustomKeyboard();
+requestAnimationFrame(() => { buildCustomKeyboard(); });
 drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeDrawer(); }, {passive: false});
 drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
 setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
@@ -4469,14 +5313,18 @@ if (window.visualViewport) {
 }
 
 document.getElementById('colorPicker').onchange = (e) => { uiAction(() => createSwatch(e.target.value.toUpperCase())); };
-setupPickers();
-selectProfile('standard');
-setupLayerFileInputs();
-setupImportImageInput();
-["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF"].forEach(c => createSwatch(c));
-handleToolBtn('brush');
-// Start on the gallery screen
-showGallery();
+// Let the Pixel Art Hub paint first. Editor controls, palettes and other
+// heavier initialization are deferred one frame so the app feels ready
+// before the rest of the script finishes initializing.
+requestAnimationFrame(() => {
+    setupPickers();
+    selectProfile('standard');
+    setupLayerFileInputs();
+    setupImportImageInput();
+    ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF"].forEach(c => createSwatch(c));
+    handleToolBtn('brush');
+    showGallery();
+});
 </script>
 </body>
 </html>
