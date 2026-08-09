@@ -510,7 +510,7 @@
                     <canvas id="vectorHandlesOverlay" class="layer-canvas reference-canvas" style="z-index:175; display:none;"></canvas>
                     <canvas id="selectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:177;display:none;"></canvas>
                     <div id="selectionBox"></div>
-                    <canvas id="wandSelectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:176;display:none;"></canvas>
+                    <canvas id="wandSelectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:178;display:none;"></canvas>
                     <div id="canvas-safety-overlay" onclick="cancelClear()"></div>
                 </div>
             </div>
@@ -3843,7 +3843,7 @@ function plot(x, y) {
 }
 
 // Hides the square pixel-preview cursor.
-function hideCursor() { pixelCursor.classList.remove('visible'); }
+function hideCursor() { if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; } pixelCursor.classList.remove('visible'); }
 
 // First press arms a confirmation state (shows the "outside tap to cancel" overlay); second press actually clears.
 function handleClearClick() {
@@ -3943,7 +3943,7 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand';
+        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand' || currentTool === 'lasso';
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
@@ -3952,7 +3952,8 @@ function setupDrawingEvents() {
             pixelCursor.style.top = (y * scale) + "px";
             pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : (selectedColor || 'rgba(255,255,255,0.2)');
             pixelCursor.classList.toggle('active', isDrawing);
-            cursorTimer = setTimeout(hideCursor, 500);
+            if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; }
+            if (!isDrawing) cursorTimer = setTimeout(hideCursor, 500);
         } else { hideCursor(); }
     };
 
