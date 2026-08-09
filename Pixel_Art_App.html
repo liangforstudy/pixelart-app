@@ -3760,7 +3760,22 @@ function animateSelectionAnts(now){
 if(!selectionAnimFrame) selectionAnimFrame=requestAnimationFrame(animateSelectionAnts);
 
 function renderWandSelection(){ updateSelectionOverlay(); }
-function clearWandSelection(){ wandSelection=null; wandSelectionCount=0; selection=null; updateSelectionOverlay(); updateSelectionToolsVisibility(); }
+// Clears the current pixel selection as an undoable operation. This is deliberately
+// separate from simply setting the selection variables to null: the CLEAR button
+// is an editor action, so Undo must restore the exact selection that was visible
+// immediately before it was cleared. Without this history entry, Undo would skip
+// the clear and undo the previous Wand selection instead (making a second tap
+// appear to revert to the first selection).
+function clearWandSelection(){
+    if (!hasWandSelection()) return;
+    const before = selectionSnapshot();
+    wandSelection = null;
+    wandSelectionCount = 0;
+    selection = null;
+    updateSelectionOverlay();
+    updateSelectionToolsVisibility();
+    recordSelectionUndo(before, selectionSnapshot());
+}
 function setWandTolerance(v){ wandTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('wandToleranceLabel'); if(l)l.textContent=wandTolerance; }
 function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementById('wandMatchBtn'); if(b)b.textContent=wandFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('wandTolerance'); if(r)r.disabled=!wandFuzzy; }
 function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementById('wandScopeBtn'); if(b){b.textContent=wandGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!wandGlobal);} }
