@@ -865,6 +865,30 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 <script>
 /* Restored ImageLayer */
+const PHOTO_HISTORY_TILE_SIZE = 64;
+
+function copyImageTile(imageData, tileX, tileY, tileSize = PHOTO_HISTORY_TILE_SIZE) {
+    const w=imageData.width, h=imageData.height;
+    const x0=tileX*tileSize, y0=tileY*tileSize;
+    const tw=Math.min(tileSize, w-x0), th=Math.min(tileSize, h-y0);
+    if(tw<=0 || th<=0) return null;
+    const out=new Uint8ClampedArray(tw*th*4), src=imageData.data;
+    for(let y=0;y<th;y++) out.set(src.subarray(((y0+y)*w+x0)*4, ((y0+y)*w+x0+tw)*4), y*tw*4);
+    return {tileX,tileY,width:tw,height:th,data:out};
+}
+
+function writeImageTile(imageData, tile, tileSize = PHOTO_HISTORY_TILE_SIZE) {
+    if(!tile) return;
+    const w=imageData.width, x0=tile.tileX*tileSize, y0=tile.tileY*tileSize;
+    for(let y=0;y<tile.height;y++) imageData.data.set(tile.data.subarray(y*tile.width*4,(y+1)*tile.width*4), ((y0+y)*w+x0)*4);
+}
+
+function sameImageTile(a,b){
+    if(!a || !b || a.width!==b.width || a.height!==b.height) return false;
+    for(let i=0;i<a.data.length;i++) if(a.data[i]!==b.data[i]) return false;
+    return true;
+}
+
 class ImageLayer {
     constructor(name, width, height) {
       this.name = name || 'Image Layer';
@@ -932,6 +956,7 @@ class ImageLayer {
 
     setPixel(x, y, color) {
       if (x < 0 || y < 0 || x >= this.gridW || y >= this.gridH) return;
+      if(this._historyCapture && this._historyCapture.mode==='tiles') this.captureHistoryTile(x,y);
       const d = this.imageData.data, i = this._offset(x, y);
       if (color == null) {
         d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
@@ -953,6 +978,23 @@ class ImageLayer {
       }
     }
 
+    captureHistoryTile(x,y) {
+      const c=this._historyCapture; if(!c || c.mode!=='tiles') return;
+      const tx=Math.floor(x/PHOTO_HISTORY_TILE_SIZE), ty=Math.floor(y/PHOTO_HISTORY_TILE_SIZE), key=tx+','+ty;
+      if(!c.tiles.has(key)) c.tiles.set(key, copyImageTile(this.imageData,tx,ty));
+    }
+    captureHistoryFull() {
+      const c=this._historyCapture; if(!c || c.mode!=='full' || c.before) return;
+      c.before=new Uint8ClampedArray(this.imageData.data);
+    }
+
+    setPixelData(data) {
+        const w=this.gridW, h=this.gridH;
+        if (this._historyCapture) {
+            for(let x=0;x<w;x++) for(let y=0;y<h;y++) if(!this._historyCapture.before.has(x+','+y)) this._historyCapture.before.set(x+','+y,this.pixelData[x][y]);
+        }
+        this.pixelData=makeTrackedPixelData(this,w,h,data);
+    }
     plot(x, y, color) {
       this.setPixel(x, y, color);
       this.ctx.putImageData(this.imageData, 0, 0);
@@ -974,12 +1016,14 @@ class ImageLayer {
 
     setImageData(imageData) {
       if (!imageData || imageData.width !== this.gridW || imageData.height !== this.gridH) return false;
+      if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
       this.imageData = imageData;
       this.redrawFromData();
       return true;
     }
 
     clear() {
+      if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
       this.imageData.data.fill(0);
       this.redrawFromData();
     }
@@ -1000,6 +1044,7 @@ class ImageLayer {
     }
 
     flipHorizontal() {
+      if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
       const c = document.createElement('canvas');
       c.width = this.gridW; c.height = this.gridH;
       const x = c.getContext('2d');
@@ -1010,6 +1055,7 @@ class ImageLayer {
     }
 
     flipVertical() {
+      if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
       const c = document.createElement('canvas');
       c.width = this.gridW; c.height = this.gridH;
       const x = c.getContext('2d');
@@ -1604,54 +1650,77 @@ let pendingImportKind = 'pixel';
 
 
 let undoStack = [], redoStack = [];
-let MAX_UNDO = 40;
+let MAX_UNDO = 40; // action cap; the memory budget is the primary safety limit
+const HISTORY_MEMORY_BUDGET = 64 * 1024 * 1024; // 64 MiB
+const PHOTO_HISTORY_MEMORY_BUDGET = 128 * 1024 * 1024; // 128 MiB cap for Photo history within the shared budget
+let historyMemoryBytes = 0;
 let historyRoot = null;
 let historyCurrent = null;
-let historyBranchView = false;
+let historyBranchView = false; // retained for compatibility; history is now linear
 
 function resetHistory() {
     undoStack = [];
     redoStack = [];
+    historyMemoryBytes = 0;
     historyRoot = { id: 0, entry: null, parent: null, children: [] };
     historyCurrent = historyRoot;
     updateUndoRedoFabs();
     if (typeof renderUndoHistory === 'function' && openPanelName === 'history') renderUndoHistory();
 }
-
-function historyNodeLabel(node) {
-    return node.entry ? historyEntryLabel(node.entry, 0) : 'Initial state';
+function historyNodeLabel(node) { return node.entry ? historyEntryLabel(node.entry, 0) : 'Initial state'; }
+function getHistoryPath(node) { const out=[]; while(node && node!==historyRoot){out.push(node);node=node.parent;} return out.reverse(); }
+function historyDescendants(node, depth=0) { const out=[]; (node.children||[]).forEach(ch=>{out.push({node:ch,depth});out.push(...historyDescendants(ch,depth+1));}); return out; }
+function estimateHistoryEntryBytes(entry) {
+    if (!entry) return 0;
+    if (entry.type === 'imageTiles' && Array.isArray(entry.tiles)) {
+        let bytes=128;
+        for(const t of entry.tiles) bytes += (t.before?.data?.byteLength||0) + (t.after?.data?.byteLength||0) + 64;
+        return bytes;
+    }
+    if (entry.type === 'imageFull') {
+        return 128 + (entry.before?.byteLength||0) + (entry.after?.byteLength||0);
+    }
+    if (entry.type === 'pixels' && Array.isArray(entry.changes)) {
+        let bytes = 64;
+        for (let i=0;i<entry.changes.length;i+=4) {
+            bytes += 32;
+            bytes += String(entry.changes[i+2] ?? '').length * 2;
+            bytes += String(entry.changes[i+3] ?? '').length * 2;
+        }
+        return bytes;
+    }
+    try { return Math.max(256, JSON.stringify(entry,(k,v)=>k==='__historyNode'?undefined:v).length*2); }
+    catch(e) { return 1024; }
 }
-
-function getHistoryPath(node) {
-    const out=[];
-    while(node && node !== historyRoot) { out.push(node); node=node.parent; }
-    return out.reverse();
+function detachHistoryNode(node) {
+    if (!node) return;
+    if (node.parent) node.parent.children=(node.parent.children||[]).filter(ch=>ch!==node);
+    node.parent=null; node.children=[]; node.lastVisitedChild=null;
+    if (node.entry) node.entry.__historyNode=null;
 }
-
-function historyDescendants(node, depth=0) {
-    const out=[];
-    (node.children || []).forEach(child => { out.push({node:child, depth}); out.push(...historyDescendants(child, depth+1)); });
-    return out;
+function discardRedoHistory() {
+    for (const old of redoStack) {
+        historyMemoryBytes=Math.max(0,historyMemoryBytes-(old.__historyBytes||0));
+        if (old.__historyNode) detachHistoryNode(old.__historyNode);
+    }
+    redoStack=[];
+    if (historyCurrent) historyCurrent.children=[];
 }
-
 function pruneHistoryLimit() {
     if (!historyCurrent || !historyRoot) return;
-    // Keep at most MAX_UNDO actions from the retained root. This also bounds
-    // the pixel snapshots held by abandoned branches, rather than merely
-    // hiding them from the linear undo stack.
-    let root=historyCurrent;
-    for(let i=0;i<MAX_UNDO && root.parent;i++) root=root.parent;
-    if(root!==historyRoot){
-        if(root.parent) root.parent.children=root.parent.children.filter(n=>n!==root);
-        root.parent=null;
-        historyRoot=root;
+    while (undoStack.length>MAX_UNDO || historyMemoryBytes>HISTORY_MEMORY_BUDGET) {
+        const old=undoStack.shift();
+        if (!old) break;
+        historyMemoryBytes=Math.max(0,historyMemoryBytes-(old.__historyBytes||0));
+        const node=old.__historyNode;
+        if (node) {
+            const next=node.children && node.children[0];
+            if (historyRoot===node) historyRoot=next||historyCurrent;
+            detachHistoryNode(node);
+            if (next) next.parent=historyRoot;
+        }
     }
-    const trim=(node,depth)=>{
-        if(depth>=MAX_UNDO){ node.children=[]; return; }
-        node.children.forEach(ch=>trim(ch,depth+1));
-    };
-    trim(historyRoot,0);
-    while(undoStack.length>MAX_UNDO) undoStack.shift();
+    if (historyRoot) historyRoot.parent=null;
 }
 
 let eventsInitialized = false;
@@ -2061,7 +2130,7 @@ function applyPanelVisibility() {
 }
 function historyEntryLabel(entry, index) {
     if (entry.label) return entry.label;
-    const names = {pixels:'Draw / edit pixels', selection:'Selection change', tree:'Layer / group change', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
+    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', tree:'Layer / group change', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
     let label = names[entry.type] || 'Edit';
     if (entry.layer && entry.layer.name) label += ': ' + entry.layer.name;
     if (entry.layerId) { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer) label += ': ' + layer.name; }
@@ -2072,27 +2141,11 @@ function renderUndoHistory() {
     list.innerHTML='';
     const controls=document.createElement('div');
     controls.style.cssText='display:flex;gap:5px;align-items:center;margin-bottom:5px;';
-    const mode=document.createElement('button'); mode.className='btn'; mode.textContent=historyBranchView?'LINEAR VIEW':'BRANCH VIEW';
-    mode.onclick=()=>{ historyBranchView=!historyBranchView; renderUndoHistory(); };
-    const limit=document.createElement('select'); limit.className='btn';
-    [40,100,250,500,1000].forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent='LIMIT '+v; if(v===MAX_UNDO)o.selected=true; limit.appendChild(o); });
-    limit.onchange=()=>{ MAX_UNDO=Number(limit.value)||40; pruneHistoryLimit(); updateUndoRedoFabs(); renderUndoHistory(); };
-    controls.append(mode,limit); list.appendChild(controls);
+    const status=document.createElement('span'); status.style.cssText='font-size:10px;color:#aaa;';
+    status.textContent='Linear history • '+(Math.round(historyMemoryBytes/1024/1024*10)/10)+' / 64 MiB';
+    controls.append(status); list.appendChild(controls);
 
     if (!historyRoot) resetHistory();
-    if (historyBranchView) {
-        const renderNode=(node,depth)=>{
-            const b=document.createElement('button');
-            b.className='history-entry'+(node===historyCurrent?' current':'');
-            b.style.marginLeft=(depth*12)+'px';
-            b.textContent=(node===historyCurrent?'✓ ':'')+historyNodeLabel(node);
-            b.onclick=()=>jumpToHistoryNode(node);
-            list.appendChild(b);
-            (node.children||[]).forEach(ch=>renderNode(ch,depth+1));
-        };
-        renderNode(historyRoot,0);
-        return;
-    }
     const applied=undoStack.slice();
     const future=redoStack.slice().reverse();
     if (!applied.length && !future.length) { const e=document.createElement('div'); e.className='history-empty'; e.textContent='No undo history'; list.appendChild(e); return; }
@@ -2244,12 +2297,46 @@ class Layer {
     }
 }
 
+// Sparse history instrumentation for PixelLayer. During an edit, the first write
+// to each cell records its old value. No canvas-sized snapshot is created.
+function makeTrackedPixelData(layer, w, h, source) {
+    const cols = source || Array(w).fill().map(() => Array(h).fill(null));
+    const proxiedCols = cols.map((col, x) => new Proxy(col, {
+        set(target, key, value) {
+            const y = Number(key);
+            if (Number.isInteger(y) && y >= 0 && y < h && layer._historyCapture && !layer._historyCapture.before.has(x+','+y)) {
+                layer._historyCapture.before.set(x+','+y, target[y]);
+            }
+            target[key] = value;
+            return true;
+        }
+    }));
+    return new Proxy(proxiedCols, {
+        set(target, key, value) {
+            const x = Number(key);
+            if (Number.isInteger(x) && x >= 0 && x < w && layer._historyCapture && Array.isArray(value)) {
+                const old = target[x];
+                for (let y=0;y<h;y++) if (!layer._historyCapture.before.has(x+','+y)) layer._historyCapture.before.set(x+','+y, old[y]);
+                value = new Proxy(value, {
+                    set(t,k,v) {
+                        const y=Number(k);
+                        if (Number.isInteger(y) && y>=0 && y<h && layer._historyCapture && !layer._historyCapture.before.has(x+','+y)) layer._historyCapture.before.set(x+','+y,t[y]);
+                        t[k]=v; return true;
+                    }
+                });
+            }
+            target[key]=value; return true;
+        }
+    });
+}
+
 // A layer bound to the canvas grid: one colour (or null/transparent) per cell.
 class PixelLayer extends Layer {
     constructor(name, w, h) {
         super('pixel', name);
         this.gridW = w; this.gridH = h;
-        this.pixelData = Array(w).fill().map(() => Array(h).fill(null));
+        this._historyCapture = null;
+        this.pixelData = makeTrackedPixelData(this, w, h);
         this.renderMode = 'pixel';
         this.imageSource = null;
         this.el.width = w; this.el.height = h;
@@ -2298,7 +2385,7 @@ class PixelLayer extends Layer {
         for (let x = 0; x < Math.min(this.gridW, newW); x++)
             for (let y = 0; y < Math.min(this.gridH, newH); y++)
                 newData[x][y] = this.pixelData[x][y];
-        this.pixelData = newData;
+        this.setPixelData(newData);
         this.gridW = newW; this.gridH = newH;
         this.el.width = newW; this.el.height = newH;
         this.redrawFromData();
@@ -2307,14 +2394,14 @@ class PixelLayer extends Layer {
     flipHorizontal() {
         const newData = Array(this.gridW).fill().map(() => Array(this.gridH).fill(null));
         for (let x = 0; x < this.gridW; x++) for (let y = 0; y < this.gridH; y++) newData[this.gridW - 1 - x][y] = this.pixelData[x][y];
-        this.pixelData = newData;
+        this.setPixelData(newData);
         this.redrawFromData();
     }
     // Mirrors the layer's pixel content top-bottom in place.
     flipVertical() {
         const newData = Array(this.gridW).fill().map(() => Array(this.gridH).fill(null));
         for (let x = 0; x < this.gridW; x++) for (let y = 0; y < this.gridH; y++) newData[x][this.gridH - 1 - y] = this.pixelData[x][y];
-        this.pixelData = newData;
+        this.setPixelData(newData);
         this.redrawFromData();
     }
     layoutCSS() {
@@ -3246,7 +3333,7 @@ function clearLayerAt(i) {
     const wasActive = activeLayerIndex;
     activeLayerIndex = i;
     const snap = beginEdit();
-    layer.pixelData = Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null));
+    layer.setPixelData(Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null)));
     layer.redrawFromData();
     commitEdit(snap);
     activeLayerIndex = wasActive;
@@ -3749,110 +3836,123 @@ function exportSpritesheet() {
    UNDO / REDO (pixel content edits, plus layer add/delete)
    Reorder and canvas resize are still not covered in this pass.
    ============================================================ */
-function cloneGrid(pixelData) { return pixelData.map(col => col.slice()); }
-
-// Adds an entry to the undo stack, capping its size, and clears the redo stack (a new action invalidates old redo history).
+// History stores compact pixel deltas instead of full before/after grids.
 function pushUndo(entry) {
     if (!historyRoot) resetHistory();
-    const node = { id: Date.now() + Math.random(), entry, parent: historyCurrent, children: [] };
+    discardRedoHistory();
+    const node={id:Date.now()+Math.random(),entry,parent:historyCurrent,children:[],lastVisitedChild:null};
     historyCurrent.children.push(node);
-    entry.__historyNode = node;
-    historyCurrent = node;
+    entry.__historyNode=node;
+    entry.__historyBytes=estimateHistoryEntryBytes(entry);
+    historyMemoryBytes+=entry.__historyBytes;
+    historyCurrent=node;
     undoStack.push(entry);
-    // A new edit from an older state creates a branch. The old redo path is
-    // intentionally retained in the history tree, but is no longer the active redo stack.
-    redoStack = [];
     pruneHistoryLimit();
     updateUndoRedoFabs();
-    if (openPanelName === 'history') renderUndoHistory();
+    if(openPanelName==='history') renderUndoHistory();
 }
 
-// Snapshots the active pixel layer's content before an edit starts, so commitEdit() can later diff and record what changed.
 function beginEdit() {
-    const layer = activeLayer();
-    if (!isPixelLike(layer)) return null;
-    return { type: 'pixels', frameIndex: activeFrameIndex, layerId: layer.id, before: cloneGrid(layer.pixelData) };
-}
-// Compares the snapshot from beginEdit() against the current content; if anything actually changed, records a before/after undo entry.
-function commitEdit(pending) {
-    if (!pending) return;
-    const layer = activeLayer();
-    if (!layer || layer.id !== pending.layerId) return;
-    let changed = false;
-    outer: for (let x = 0; x < layer.gridW; x++) for (let y = 0; y < layer.gridH; y++) {
-        if (pending.before[x][y] !== layer.pixelData[x][y]) { changed = true; break outer; }
+    const layer=activeLayer();
+    if(!isPixelLike(layer)) return null;
+    if(layer instanceof ImageLayer) {
+        const pending={type:'imageEdit',frameIndex:activeFrameIndex,layerId:layer.id,mode:'tiles',tiles:new Map(),before:null};
+        layer._historyCapture=pending;
+        return pending;
     }
-    if (!changed) return;
-    pushUndo({ type: 'pixels', frameIndex: pending.frameIndex, layerId: pending.layerId, before: pending.before, after: cloneGrid(layer.pixelData) });
+    const pending={type:'pixels',frameIndex:activeFrameIndex,layerId:layer.id,before:new Map()};
+    if(layer instanceof PixelLayer) layer._historyCapture=pending;
+    return pending;
+}
+function commitEdit(pending) {
+    if(!pending) return;
+    const layer=findLayerById(pending.frameIndex,pending.layerId) || activeLayer();
+    if(!layer || layer.id!==pending.layerId) return;
+    if(layer instanceof PixelLayer) {
+        layer._historyCapture=null;
+        const changes=[];
+        for(const [key,before] of pending.before) {
+            const sep=key.indexOf(','), x=Number(key.slice(0,sep)), y=Number(key.slice(sep+1));
+            const after=layer.pixelData[x]?.[y];
+            if(before!==after) changes.push(x,y,before,after);
+        }
+        if(!changes.length) return;
+        pushUndo({type:'pixels',frameIndex:pending.frameIndex,layerId:pending.layerId,changes});
+    } else if(layer instanceof ImageLayer) {
+        layer._historyCapture=null;
+        if(pending.mode==='full') {
+            const after=new Uint8ClampedArray(layer.imageData.data);
+            let different=!pending.before || pending.before.length!==after.length;
+            if(!different) for(let i=0;i<after.length;i++) if(pending.before[i]!==after[i]) { different=true; break; }
+            if(!different) return;
+            pushUndo({type:'imageFull',frameIndex:pending.frameIndex,layerId:pending.layerId,before:pending.before,after});
+        } else {
+            const tiles=[];
+            for(const tile of pending.tiles.values()) {
+                const after=copyImageTile(layer.imageData,tile.tileX,tile.tileY);
+                if(after && !sameImageTile(tile,after)) tiles.push({tileX:tile.tileX,tileY:tile.tileY,before:tile,after});
+            }
+            if(!tiles.length) return;
+            pushUndo({type:'imageTiles',frameIndex:pending.frameIndex,layerId:pending.layerId,tiles});
+        }
+    }
     refreshHookedComposites();
 }
-// Looks up a layer by its stable id within a specific frame -- used by undo/redo since array indices can shift.
-function findLayerById(frameIndex, layerId) {
-    const f = frames[frameIndex];
-    if (!f) return null;
-    return f.layers.find(l => l.id === layerId) || null;
-}
-// Steps one entry back in history: restores pixel content, or un-deletes/un-adds a layer, depending on the entry type.
-function undo() {
-    const entry=undoStack.pop();
-    if(!entry) return;
-    if(entry.frameIndex != null && entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex,true);
-    if(entry.type==='pixels'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId);
-        if(layer){ layer.pixelData=cloneGrid(entry.before); layer.redrawFromData(); }
-    } else if(entry.type==='selection'){
-        setSelectionRaw(entry.beforeMask?entry.beforeMask.slice():null,entry.beforeCount||0,entry.beforeRect?{...entry.beforeRect}:null);
-    } else if(entry.type==='tree'){
-        restoreTreeState(entry.before); traceLog('Undo tree operation: '+entry.label);
-    } else if(entry.type==='deleteLayer'){
-        layers.splice(entry.index,0,entry.layer); container.appendChild(entry.layer.el); reindexDom(); entry.layer.applyVisualState(); if(activeLayerIndex>=entry.index) activeLayerIndex++;
-    } else if(entry.type==='addLayer'){
-        entry.layer.el.remove(); const idx=layers.indexOf(entry.layer); if(idx!==-1) layers.splice(idx,1); if(activeLayerIndex>=layers.length) activeLayerIndex=layers.length-1;
-    } else if(entry.type==='addSpline'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ const idx=layer.splines.indexOf(entry.spline); if(idx!==-1) layer.splines.splice(idx,1); layer.layoutCSS(); }
-    } else if(entry.type==='editSplinePoints'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ entry.spline.points=entry.before.map(p=>({x:p.x,y:p.y})); layer.layoutCSS(); }
-    } else if(entry.type==='clearVectorLayer'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ layer.splines=entry.before.map(cloneSpline); layer.layoutCSS(); }
+function findLayerById(frameIndex,layerId) { const f=frames[frameIndex]; return f ? f.layers.find(l=>l.id===layerId)||null : null; }
+function applyPixelDelta(entry, forward) {
+    const layer=findLayerById(entry.frameIndex,entry.layerId); if(!layer) return;
+    for(let i=0;i<entry.changes.length;i+=4) {
+        const x=entry.changes[i], y=entry.changes[i+1], value=forward?entry.changes[i+3]:entry.changes[i+2];
+        if(layer instanceof PixelLayer) layer.pixelData[x][y]=value;
+        else if(typeof layer.setPixel==='function') layer.setPixel(x,y,value);
     }
+    if(typeof layer.redrawFromData==='function') layer.redrawFromData();
+}
+function applyHistoryEntry(entry, forward) {
+    if(!entry) return;
+    if(entry.frameIndex!=null && entry.frameIndex!==activeFrameIndex) switchFrame(entry.frameIndex,true);
+    if(entry.type==='imageTiles') {
+        const layer=findLayerById(entry.frameIndex,entry.layerId);
+        if(layer instanceof ImageLayer) {
+            for(const t of entry.tiles) writeImageTile(layer.imageData,forward?t.after:t.before);
+            layer.redrawFromData();
+        }
+    } else if(entry.type==='imageFull') {
+        const layer=findLayerById(entry.frameIndex,entry.layerId);
+        if(layer instanceof ImageLayer) {
+            layer.imageData=new ImageData(new Uint8ClampedArray(forward?entry.after:entry.before),layer.gridW,layer.gridH);
+            layer.redrawFromData();
+        }
+    } else if(entry.type==='pixels') applyPixelDelta(entry,forward);
+    else if(entry.type==='selection') setSelectionRaw(forward?(entry.afterMask?entry.afterMask.slice():null):(entry.beforeMask?entry.beforeMask.slice():null),forward?(entry.afterCount||0):(entry.beforeCount||0),forward?(entry.afterRect?{...entry.afterRect}:null):(entry.beforeRect?{...entry.beforeRect}:null));
+    else if(entry.type==='tree') restoreTreeState(forward?entry.after:entry.before);
+    else if(entry.type==='deleteLayer') {
+        if(forward){const idx=layers.indexOf(entry.layer);if(idx!==-1){entry.layer.el.remove();layers.splice(idx,1);}}
+        else if(!layers.includes(entry.layer)){layers.splice(Math.min(entry.index,layers.length),0,entry.layer);container.appendChild(entry.layer.el);reindexDom();entry.layer.applyVisualState();}
+        if(activeLayerIndex>=layers.length) activeLayerIndex=Math.max(0,layers.length-1);
+    } else if(entry.type==='addLayer') {
+        if(forward){if(!layers.includes(entry.layer)){layers.splice(Math.min(entry.index,layers.length),0,entry.layer);container.appendChild(entry.layer.el);reindexDom();entry.layer.applyVisualState();}}
+        else {entry.layer.el.remove();const idx=layers.indexOf(entry.layer);if(idx!==-1)layers.splice(idx,1);if(activeLayerIndex>=layers.length)activeLayerIndex=Math.max(0,layers.length-1);}
+    } else if(entry.type==='addSpline') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){if(forward)layer.splines.splice(Math.min(entry.index,layer.splines.length),0,entry.spline);else{const i=layer.splines.indexOf(entry.spline);if(i!==-1)layer.splines.splice(i,1);}layer.layoutCSS();} }
+    else if(entry.type==='editSplinePoints') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer&&entry.spline){entry.spline.points=(forward?entry.after:entry.before).map(p=>({x:p.x,y:p.y}));layer.layoutCSS();} }
+    else if(entry.type==='clearVectorLayer') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){layer.splines=forward?[]:entry.before.map(cloneSpline);layer.layoutCSS();} }
+    if(openPanelName==='layers') renderLayersPanel(); updateVectorHandles(); refreshHookedComposites();
+}
+function undo() {
+    const entry=undoStack.pop(); if(!entry) return;
+    applyHistoryEntry(entry,false);
     const node=entry.__historyNode;
-    if(node && historyCurrent===node) historyCurrent=node.parent || historyRoot;
+    if(node && historyCurrent===node) historyCurrent=node.parent||historyRoot;
     redoStack.push(entry);
-    if(openPanelName==='layers') renderLayersPanel();
-    updateUndoRedoFabs(); if(openPanelName==='history') renderUndoHistory(); updateVectorHandles(); refreshHookedComposites();
+    updateUndoRedoFabs(); if(openPanelName==='history') renderUndoHistory();
 }
 function redo(nodeOverride) {
-    let entry;
-    if(nodeOverride){
-        if(!historyCurrent || nodeOverride.parent!==historyCurrent) return;
-        entry=nodeOverride.entry;
-        const ri=redoStack.lastIndexOf(entry); if(ri!==-1) redoStack.splice(ri,1);
-    } else {
-        entry=redoStack.pop();
-    }
-    if(!entry) return;
-    if(entry.frameIndex != null && entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex,true);
-    if(entry.type==='pixels'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ layer.pixelData=cloneGrid(entry.after); layer.redrawFromData(); }
-    } else if(entry.type==='selection'){
-        setSelectionRaw(entry.afterMask?entry.afterMask.slice():null,entry.afterCount||0,entry.afterRect?{...entry.afterRect}:null);
-    } else if(entry.type==='tree'){
-        restoreTreeState(entry.after); traceLog('Redo tree operation: '+entry.label);
-    } else if(entry.type==='deleteLayer'){
-        const idx=layers.indexOf(entry.layer); if(idx!==-1){ layers[idx].el.remove(); layers.splice(idx,1); } if(activeLayerIndex>=layers.length) activeLayerIndex=layers.length-1;
-    } else if(entry.type==='addLayer'){
-        layers.splice(entry.index,0,entry.layer); container.appendChild(entry.layer.el); reindexDom(); entry.layer.applyVisualState();
-    } else if(entry.type==='addSpline'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ layer.splines.splice(Math.min(entry.index,layer.splines.length),0,entry.spline); layer.layoutCSS(); }
-    } else if(entry.type==='editSplinePoints'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ entry.spline.points=entry.after.map(p=>({x:p.x,y:p.y})); layer.layoutCSS(); }
-    } else if(entry.type==='clearVectorLayer'){
-        const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){ layer.splines=[]; layer.layoutCSS(); }
-    }
-    const histNode=entry.__historyNode;
-    if(histNode) historyCurrent=histNode;
+    let entry=nodeOverride?nodeOverride.entry:redoStack.pop(); if(!entry) return;
+    applyHistoryEntry(entry,true);
+    const node=entry.__historyNode; if(node) historyCurrent=node;
+    if(nodeOverride){const i=redoStack.indexOf(entry);if(i!==-1)redoStack.splice(i,1);}
     undoStack.push(entry);
-    if(openPanelName==='layers') renderLayersPanel(); updateUndoRedoFabs(); if(openPanelName==='history') renderUndoHistory(); updateVectorHandles(); refreshHookedComposites();
+    updateUndoRedoFabs(); if(openPanelName==='history') renderUndoHistory();
 }
 
 // Deep-copies one spline (including its point list) for undo snapshots.
@@ -4708,7 +4808,7 @@ function executeClear() {
     const layer = activeLayer();
     if (isPixelLike(layer)) {
         const snap = beginEdit();
-        layer.pixelData = Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null));
+        layer.setPixelData(Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null)));
         layer.redrawFromData();
         commitEdit(snap);
     }
