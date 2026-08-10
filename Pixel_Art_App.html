@@ -429,13 +429,231 @@
         .log-touch { color: #6ab7ff; }
         .log-trace { color: #b98aff; }
     </style>
+
+<style id="mode-resize-ui">
+.mode-choice-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.mode-choice{padding:10px 14px;border:1px solid #777;border-radius:10px;background:#eee}.mode-choice.active{outline:2px solid #555}.resize-anchor-grid{display:grid;grid-template-columns:repeat(3,42px);gap:4px}.resize-anchor-grid button{width:42px;height:42px}.canvas-resize-menu{position:fixed;z-index:99999;background:#fff;border:1px solid #777;border-radius:10px;padding:10px;box-shadow:0 5px 25px #0004}
+</style>
+<script>
+(function(){
+  const modes=[['image','Image'],['pixelArt','Pixel Art'],['portrait','Portrait'],['sprite','Sprite']];
+  window.canvasCreationModes=modes; window.currentCanvasMode='image';
+  window.setCanvasCreationMode=function(m){if(!modes.some(x=>x[0]===m))return;window.currentCanvasMode=m;document.dispatchEvent(new CustomEvent('canvas-mode-changed',{detail:{mode:m}}));};
+  window.getCanvasModeLimit=function(m=window.currentCanvasMode){return m==='pixelArt'?999:2000;};
+  window.resizeCanvasWithAnchor=function(newW,newH,anchor){
+    newW=Math.max(1,Math.floor(newW)); newH=Math.max(1,Math.floor(newH));
+    const limit=window.getCanvasModeLimit(); if(newW>limit||newH>limit) throw new Error('Canvas size exceeds the limit for this mode.');
+    document.dispatchEvent(new CustomEvent('canvas-resize-request',{detail:{width:newW,height:newH,anchor:anchor||'center',mode:window.currentCanvasMode}}));
+  };
+  window.showCanvasResizeMenu=function(x,y){
+    const old=document.querySelector('.canvas-resize-menu'); if(old)old.remove();
+    const d=document.createElement('div'); d.className='canvas-resize-menu'; d.style.left=x+'px'; d.style.top=y+'px';
+    d.innerHTML='<strong>Change canvas size</strong><div style="margin-top:8px"><label>Width <input id="resizeW" type="number" min="1" value="'+(window.canvasWidth||1)+'"></label></div><div><label>Height <input id="resizeH" type="number" min="1" value="'+(window.canvasHeight||1)+'"></label></div><div style="margin-top:8px">Anchor</div><div class="resize-anchor-grid">'+['nw','n','ne','w','center','e','sw','s','se'].map(a=>'<button data-anchor="'+a+'">'+({nw:'↖',n:'↑',ne:'↗',w:'←',center:'•',e:'→',sw:'↙',s:'↓',se:'↘'}[a])+'</button>').join('')+'</div><button id="resizeCancel" style="margin-top:8px">Cancel</button>';
+    document.body.appendChild(d);
+    d.querySelectorAll('[data-anchor]').forEach(b=>b.onclick=()=>{try{resizeCanvasWithAnchor(+d.querySelector('#resizeW').value,+d.querySelector('#resizeH').value,b.dataset.anchor);d.remove()}catch(e){alert(e.message)}});
+    d.querySelector('#resizeCancel').onclick=()=>d.remove();
+  };
+  document.addEventListener('DOMContentLoaded',()=>{
+    // Long press a project/card in the hub can call this menu; existing card handlers can delegate here.
+    document.addEventListener('contextmenu',e=>{const card=e.target.closest('[data-project-card],.gallery-card,.project-card');if(card){e.preventDefault();showCanvasResizeMenu(e.clientX,e.clientY);}});
+  });
+})();
+
+/* ============================================================
+   IMAGE MODE OPTIMIZATION
+   ------------------------------------------------------------
+   Image mode uses a compact RGBA ImageData-backed layer instead
+   of the Pixel Art mode's per-pixel JS arrays.
+
+   Pixel Art mode remains unchanged. This is deliberately a
+   separate representation so future image-mode operations can
+   be optimized independently.
+   ============================================================ */
+(function () {
+  class ImageLayer {
+    constructor(name, width, height) {
+      this.name = name || 'Image Layer';
+      this.gridW = width;
+      this.gridH = height;
+      this.gw = width;
+      this.gh = height;
+      this.visible = true;
+      this.opacity = 1;
+      this.color = null;
+      this.type = 'image';
+      this.id = 'image_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+      this.el = document.createElement('canvas');
+      this.el.width = width;
+      this.el.height = height;
+      this.el.className = 'layer-canvas image-layer-canvas';
+      this.ctx = this.el.getContext('2d', { willReadFrequently: true });
+      this.imageData = this.ctx.createImageData(width, height);
+
+      // Compatibility facade: old pixel tools can access pixelData[x][y]
+      // without allocating a giant nested JS array. Reads/writes go directly
+      // to the RGBA ImageData buffer.
+      const self = this;
+      this.pixelData = new Proxy([], {
+        get(_, x) {
+          if (x === 'length') return self.gridW;
+          if (x === 'map') return function (fn) {
+            // Materialize only when legacy code explicitly asks for map().
+            const a = Array(self.gridW);
+            for (let ix = 0; ix < self.gridW; ix++) {
+              const col = Array(self.gridH);
+              for (let iy = 0; iy < self.gridH; iy++) col[iy] = self.getPixel(ix, iy);
+              a[ix] = col;
+            }
+            return a.map(fn);
+          };
+          if (!Number.isInteger(+x) || +x < 0 || +x >= self.gridW) return undefined;
+          const ix = +x;
+          return new Proxy([], {
+            get(_, y) {
+              if (y === 'length') return self.gridH;
+              if (!Number.isInteger(+y) || +y < 0 || +y >= self.gridH) return undefined;
+              return self.getPixel(ix, +y);
+            },
+            set(_, y, value) {
+              if (Number.isInteger(+y) && +y >= 0 && +y < self.gridH) {
+                self.setPixel(ix, +y, value);
+                return true;
+              }
+              return false;
+            }
+          });
+        }
+      });
+    }
+
+    _offset(x, y) { return ((y * this.gridW + x) << 2); }
+
+    getPixel(x, y) {
+      if (x < 0 || y < 0 || x >= this.gridW || y >= this.gridH) return null;
+      const d = this.imageData.data, i = this._offset(x, y);
+      return d[i + 3] === 0 ? null : rgbToHexBytes(d[i], d[i + 1], d[i + 2]);
+    }
+
+    setPixel(x, y, color) {
+      if (x < 0 || y < 0 || x >= this.gridW || y >= this.gridH) return;
+      const d = this.imageData.data, i = this._offset(x, y);
+      if (color == null) {
+        d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
+        return;
+      }
+      const m = String(color).match(/^#([0-9a-f]{6})$/i);
+      if (m) {
+        d[i] = parseInt(m[1].slice(0,2),16);
+        d[i+1] = parseInt(m[1].slice(2,4),16);
+        d[i+2] = parseInt(m[1].slice(4,6),16);
+        d[i+3] = 255;
+        return;
+      }
+      const rgba = String(color).match(/^rgba?\(([^)]+)\)$/i);
+      if (rgba) {
+        const p = rgba[1].split(',').map(v => Number(v.trim()));
+        d[i] = p[0] || 0; d[i+1] = p[1] || 0; d[i+2] = p[2] || 0;
+        d[i+3] = p.length > 3 ? Math.round((p[3] <= 1 ? p[3] * 255 : p[3])) : 255;
+      }
+    }
+
+    plot(x, y, color) {
+      this.setPixel(x, y, color);
+      this.ctx.putImageData(this.imageData, 0, 0);
+    }
+
+    redrawFromData() {
+      this.ctx.putImageData(this.imageData, 0, 0);
+    }
+
+    redraw() { this.redrawFromData(); }
+
+    loadFromImage(img) {
+      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
+      this.ctx.drawImage(img, 0, 0, this.gridW, this.gridH);
+      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
+    }
+
+    getImageData() { return this.imageData; }
+
+    setImageData(imageData) {
+      if (!imageData || imageData.width !== this.gridW || imageData.height !== this.gridH) return false;
+      this.imageData = imageData;
+      this.redrawFromData();
+      return true;
+    }
+
+    clear() {
+      this.imageData.data.fill(0);
+      this.redrawFromData();
+    }
+
+    resizeToCanvas(newW, newH) {
+      const copy = document.createElement('canvas');
+      copy.width = newW; copy.height = newH;
+      const c = copy.getContext('2d');
+      c.imageSmoothingEnabled = false;
+      c.drawImage(this.el, 0, 0);
+      this.gridW = this.gw = newW;
+      this.gridH = this.gh = newH;
+      this.el.width = newW; this.el.height = newH;
+      this.ctx = this.el.getContext('2d', { willReadFrequently: true });
+      this.imageData = this.ctx.createImageData(newW, newH);
+      this.ctx.drawImage(copy, 0, 0);
+      this.imageData = this.ctx.getImageData(0, 0, newW, newH);
+    }
+
+    flipHorizontal() {
+      const c = document.createElement('canvas');
+      c.width = this.gridW; c.height = this.gridH;
+      const x = c.getContext('2d');
+      x.translate(this.gridW, 0); x.scale(-1, 1); x.drawImage(this.el, 0, 0);
+      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
+      this.ctx.drawImage(c, 0, 0);
+      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
+    }
+
+    flipVertical() {
+      const c = document.createElement('canvas');
+      c.width = this.gridW; c.height = this.gridH;
+      const x = c.getContext('2d');
+      x.translate(0, this.gridH); x.scale(1, -1); x.drawImage(this.el, 0, 0);
+      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
+      this.ctx.drawImage(c, 0, 0);
+      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
+    }
+
+    layoutCSS() {
+      this.el.style.width = (this.gridW * scale) + 'px';
+      this.el.style.height = (this.gridH * scale) + 'px';
+    }
+
+    clone() {
+      const copy = new ImageLayer(this.name, this.gridW, this.gridH);
+      copy.visible = this.visible; copy.opacity = this.opacity; copy.color = this.color;
+      copy.imageData.data.set(this.imageData.data);
+      copy.redrawFromData();
+      return copy;
+    }
+  }
+  window.ImageLayer = ImageLayer;
+})();
+
+</script>
+
+<style id="image-mode-optimization-css">
+.image-layer-canvas {
+  image-rendering: auto !important;
+}
+</style>
+
 </head>
 <body>
 
     <!-- ══════════ GALLERY SCREEN ══════════ -->
     <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
-            <h1>🎨 Pixel Art Hub</h1>
+            <h1>🎨 Pixel Art Hub</h1><div id="canvas-mode-choices" class="mode-choice-row" aria-label="Canvas mode"><button class="mode-choice active" data-mode="image">Image</button><button class="mode-choice" data-mode="pixelArt">Pixel Art</button><button class="mode-choice" data-mode="portrait">Portrait</button><button class="mode-choice" data-mode="sprite">Sprite</button></div><script>document.addEventListener('DOMContentLoaded',()=>document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(b=>b.onclick=()=>{setCanvasCreationMode(b.dataset.mode);document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(x=>x.classList.toggle('active',x===b));}));</script>
         </div>
         <div id="gallery-grid">
             <div class="gallery-card new-canvas-card"><div class="nc-icon">+</div><div class="nc-label">Pixel Art Hub</div><div class="nc-hint">Loading gallery…</div></div>
@@ -537,6 +755,7 @@
             </div>
             <div class="row">
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
+                <button class="btn tool-btn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
@@ -555,6 +774,10 @@
                         <input type="range" id="bucketTolerance" min="0" max="100" step="1" value="10" oninput="uiAction(() => setBucketTolerance(this.value))" style="flex:1;">
                         <span id="bucketToleranceLabel" style="font-size:10px;color:#ccc;width:28px;text-align:right;">10</span>
                     </div>
+                </div>
+                <div id="colorToAlphaControls" style="display:none;">
+                    <div class="panel-subtitle">COLOUR TO ALPHA • BACKGROUND REMOVAL</div>
+                    <div id="colorToAlphaTargetLabel" style="font-size:10px;color:#888;text-align:center;">Tap a pixel to sample the background colour</div>
                 </div>
                 <div id="wandControls" style="display:none;">
                     <div class="panel-subtitle">Wand Selection</div>
@@ -793,6 +1016,58 @@
     </div>
 
 
+
+<script>
+/* Tool expansion: Pencil, adjustable Brush, Hard Eraser, Soft Eraser.
+   Soft tools use alpha-weighted strokes; hard tools use full-opacity pixels. */
+(function () {
+  const TOOL_DEFS = {
+    pencil: { label: '✏️ Pencil Tool', size: 1, softness: 100, soft: false },
+    brush: { label: '🖌️ Brush Tool', size: 8, softness: 100, soft: false },
+    softBrush: { label: '🖌️ Soft Brush Tool', size: 8, softness: 35, soft: true },
+    hardEraser: { label: '🧹 Hard Eraser Tool', size: 1, softness: 100, soft: false },
+    softEraser: { label: '🧹 Soft Eraser Tool', size: 8, softness: 35, soft: true }
+  };
+
+  window.pixelToolDefs = TOOL_DEFS;
+  window.pixelToolState = {
+    current: 'pencil',
+    brushSize: 8,
+    brushSoftness: 100,
+    softEraserSize: 8,
+    softEraserSoftness: 35
+  };
+
+  window.selectPixelTool = function (name) {
+    if (!TOOL_DEFS[name]) return;
+    window.pixelToolState.current = name;
+
+    // Hard eraser intentionally selects the transparent swatch.
+    // Soft eraser does not, because it produces partial alpha.
+    if (name === 'hardEraser') {
+      try {
+        if (typeof window.selectTransparentSwatch === 'function')
+          window.selectTransparentSwatch();
+      } catch (_) {}
+    }
+
+    document.dispatchEvent(new CustomEvent('pixel-tool-changed', {
+      detail: { name, definition: TOOL_DEFS[name] }
+    }));
+  };
+
+  window.getPixelToolStroke = function () {
+    const s = window.pixelToolState;
+    const name = s.current;
+    if (name === 'pencil') return { size: 1, alpha: 1 };
+    if (name === 'brush') return { size: s.brushSize, alpha: s.brushSoftness / 100 };
+    if (name === 'softBrush') return { size: s.brushSize, alpha: s.brushSoftness / 100 };
+    if (name === 'hardEraser') return { size: s.softEraserSize, alpha: 1, erase: true };
+    return { size: s.softEraserSize, alpha: s.softEraserSoftness / 100, erase: true };
+  };
+})();
+</script>
+
 <script>
 /* ============================================================
    DEBUG CAPTURE (installed first, so it catches everything below)
@@ -912,7 +1187,7 @@ function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 function estimateMemoryBytes() {
     let bytes = 0;
     frames.forEach(f => f.layers.forEach(l => {
-        if (l.type === 'pixel' || l.type === 'mask' || l.type === 'clip') bytes += l.gridW * l.gridH * 4;
+        if (l.type === 'pixel' || l.type === 'image' || l.type === 'mask' || l.type === 'clip') bytes += l.gridW * l.gridH * 4;
         else if (l.image) bytes += (l.image.naturalWidth || 0) * (l.image.naturalHeight || 0) * 4;
     }));
     return bytes;
@@ -1290,6 +1565,7 @@ let wandTolerance = 10;
 let wandGlobal = false;         // false = contiguous flood fill, true = global matching
 let bucketFuzzy = false;
 let bucketTolerance = 10;
+let colorToAlphaTarget = null;
 let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
 let pendingImportKind = 'pixel';
 
@@ -2099,6 +2375,13 @@ function rgbToHexBytes(r, g, b) {
 }
 // Deep-copies a layer (pixel data or reference geometry) into a brand new Layer object. Used when duplicating a sprite frame.
 function cloneLayer(l) {
+    if (l.type === 'image') {
+        const nl = new ImageLayer(l.name, l.gridW, l.gridH);
+        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
+        nl.imageData.data.set(l.imageData.data);
+        nl.redrawFromData();
+        return nl;
+    }
     if (l.type === 'pixel' || l.type === 'mask' || l.type === 'clip') {
         const nl = l.type === 'mask' ? new MaskLayer(l.name, l.gridW, l.gridH)
                  : l.type === 'clip' ? new ClipLayer(l.name, l.gridW, l.gridH)
@@ -2243,7 +2526,7 @@ function initApp() {
     gridW = newW; gridH = newH;
     if(selectedProfile==='portrait'){ portraitTilePalettes=new Map([['0,0',[]]]); portraitActiveTileKey='0,0'; } else portraitTilePalettes=new Map();
     revealMainApp(); // needed now so `container` is assigned before we append the base layer
-    const base = new PixelLayer('Layer 1', gridW, gridH);
+    const base = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -2520,7 +2803,7 @@ function updateToolVisibility() {
     const type = layer ? layer.type : 'pixel';
     const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
 
-    show('pixelToolsSection', type === 'pixel' || type === 'mask' || type === 'clip');
+    show('pixelToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
     show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
@@ -2534,7 +2817,7 @@ function updateToolVisibility() {
     // "just start drawing" tool. Reference layers have no drawing tool of
     // their own, so those still fall back to the eyedropper.
     if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn('vpen');
-    else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn('brush');
+    else if ((type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn('brush');
     else if (type === 'reference' && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
 }
 
@@ -2554,7 +2837,7 @@ function activeLayer() {
 // only how they're combined with the layer below during compositing
 // differs from a plain pixel layer. Used everywhere a check used to be
 // pixel-only, so brush/bucket/select/shapes/undo/etc. all work on them too.
-function isPixelLike(layer) { return !!layer && (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip'); }
+function isPixelLike(layer) { return !!layer && (layer.type === 'pixel' || layer.type === 'image' || layer.type === 'mask' || layer.type === 'clip'); }
 
 // Creates a new blank pixel layer, makes it active, and records it on the undo stack.
 // Creates a new empty vector layer for splines.
@@ -2696,7 +2979,7 @@ function makeThumbnail(layer, size) {
         cx.fillStyle = '#4a4a4a';
         for (let yy = 0; yy < size; yy += 6) for (let xx = ((yy/6)%2)*6; xx < size; xx += 12) cx.fillRect(xx, yy, 6, 6);
         try {
-            if (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
+            if (layer.type === 'pixel' || layer.type === 'image' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
             else if (layer.image && layer.image.complete) { cx.imageSmoothingEnabled = true; cx.drawImage(layer.image, 0, 0, size, size); }
         } catch (e) { console.warn('thumbnail draw skipped:', e && e.message); }
         return c.toDataURL();
@@ -2789,7 +3072,7 @@ function buildSearchResults(query){
     const f=frames[activeFrameIndex]; if(f){
         collectTreeNodes(f.layerTree).forEach(n=>{const name=n.kind==='group'?n.name:n.layer.name; const path=getNodePathText(n); const textContent=n.kind==='layer' ? (n.layer.textContent||n.layer.text||'') : ''; const score=Math.max(fuzzyScore(q,name),fuzzyScore(q,path),fuzzyScore(q,textContent)); if(score>=0)results.push({type:n.kind==='group'?'group':'layer',name,path,score,action:()=>jumpToTreeNode(n)});});
     }
-    commandRegistry.forEach(c=>{const score=Math.max(fuzzyScore(q,c.name),...c.aliases.map(a=>fuzzyScore(q,a)));if(score>=0)results.push({type:'command',name:c.name,path:c.category+' • '+c.aliases.join(', '),score,action:c.action});});
+    commandRegistry.forEach(c=>{const score=Math.max(fuzzyScore(q,c.name),...c.aliases.map(a=>fuzzyScore(q,a)));if(score>=0)results.push({type:'command',name:c.name,path:c.category+' • '+c.aliases.join(', '),description:c.description,score,action:c.action});});
     return results.sort((a,b)=>b.score-a.score).slice(0,30);
 }
 function getNodePathText(node){
@@ -2799,7 +3082,7 @@ function renderLayerSearchResults(query){
     const box=document.getElementById('layerSearchResults'); if(!box)return;
     const results=buildSearchResults(query); box.innerHTML='';
     if(!query.trim()){box.style.display='none';return;} box.style.display='flex';
-    results.forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=e=>{e.stopPropagation();r.action();};box.appendChild(b);});
+    results.forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.description || (r.type.toUpperCase()+' • '+r.path))+'</small>';b.onclick=e=>{e.stopPropagation();r.action();};box.appendChild(b);});
     if(!results.length){const d=document.createElement('div');d.style.color='#888';d.style.padding='10px';d.innerText='No results';box.appendChild(d);}
 }
 function jumpToTreeNode(node){
@@ -2838,11 +3121,13 @@ function openGlobalCommandKeyboard(){
     );
 }
 function closeGlobalCommandPalette(){const o=document.getElementById('globalCommandPalette');if(o)o.style.display='none';globalPaletteOpen=false;if(customKeyboardState)closeCustomKeyboard(false);}
-function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.slice(0,20).map(c=>({type:'command',name:c.name,path:c.category,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
+function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.slice(0,20).map(c=>({type:'command',name:c.name,path:c.category,description:c.description,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.description || (r.type.toUpperCase()+' • '+r.path))+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
 function registerBuiltInCommands(){
     if(commandRegistry.length)return;
-    registerCommand('tool.brush','Brush',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
+    registerCommand('tool.brush','Pencil Tool',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
+    registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools');
+    commandRegistry[commandRegistry.length-1].description='Background removal';
     registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
     registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
     registerCommand('tool.line','Line',['straight line'],()=>handleToolBtn('line'),'Tools');
@@ -3387,13 +3672,29 @@ function wandKey(x,y){ return x + ',' + y; }
 // This RGB metric is simple and fast, but it is not a perceptual colour metric
 // such as Lab/Delta-E; that can be considered later if closer human-perceived
 // colour matching is desired.
+// Parse the editor's stored colour formats. Most existing pixels are #RRGGBB,
+// while Colour to Alpha can produce rgba(...) pixels so anti-aliased transparency
+// can be represented without destroying the foreground colour.
+function parseStoredColor(c){
+    if(c==null) return {r:0,g:0,b:0,a:0};
+    if(typeof c!=='string') return null;
+    const hex=c.replace('#','');
+    if(/^[0-9a-fA-F]{6}$/.test(hex)) return {r:parseInt(hex.slice(0,2),16),g:parseInt(hex.slice(2,4),16),b:parseInt(hex.slice(4,6),16),a:1};
+    const m=c.match(/^rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i);
+    if(m){ let a=m[4]==null?1:parseFloat(m[4]); if(String(m[4]||'').includes('%')) a/=100; return {r:parseFloat(m[1]),g:parseFloat(m[2]),b:parseFloat(m[3]),a:Math.max(0,Math.min(1,a))}; }
+    return null;
+}
+function rgbaString(r,g,b,a){
+    return `rgba(${Math.round(Math.max(0,Math.min(255,r)))},${Math.round(Math.max(0,Math.min(255,g)))},${Math.round(Math.max(0,Math.min(255,b)))},${Math.max(0,Math.min(1,a)).toFixed(4)})`;
+}
+
 function wandColourDistance(a,b){
     if (a === b) return 0;
-    if (a == null || b == null) return Infinity;
-    const ah = a.replace('#',''), bh = b.replace('#','');
-    const ar=parseInt(ah.slice(0,2),16), ag=parseInt(ah.slice(2,4),16), ab=parseInt(ah.slice(4,6),16);
-    const br=parseInt(bh.slice(0,2),16), bg=parseInt(bh.slice(2,4),16), bb=parseInt(bh.slice(4,6),16);
-    return Math.sqrt((ar-br)**2+(ag-bg)**2+(ab-bb)**2);
+    const A=parseStoredColor(a), B=parseStoredColor(b);
+    if(!A || !B) return Infinity;
+    // Ignore alpha here: Wand/Fill tolerance is a colour comparison.
+    // Transparent pixels are still handled as null by the exact matcher.
+    return Math.sqrt((A.r-B.r)**2+(A.g-B.g)**2+(A.b-B.b)**2);
 }
 function wandMatches(c,target){
     if (!wandFuzzy) return c === target;
@@ -3523,6 +3824,66 @@ function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementByI
 function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementById('wandScopeBtn'); if(b){b.textContent=wandGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!wandGlobal);} }
 function setBucketTolerance(v){ bucketTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('bucketToleranceLabel'); if(l)l.textContent=bucketTolerance; }
 function toggleBucketMatch(){ bucketFuzzy=!bucketFuzzy; const b=document.getElementById('bucketMatchBtn'); if(b)b.textContent=bucketFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('bucketTolerance'); if(r)r.disabled=!bucketFuzzy; }
+
+function updateColorToAlphaTargetLabel(){
+    const l=document.getElementById('colorToAlphaTargetLabel'); if(!l)return;
+    l.textContent=colorToAlphaTarget ? ('Target: '+colorToAlphaTarget) : 'Tap a pixel to sample the background colour';
+}
+
+// Colour-to-Alpha / background removal.
+// Given a sampled background colour B and a pixel C, solve for the smallest
+// opacity alpha that can explain C as a mixture of B and an unknown foreground
+// colour F: C = alpha*F + (1-alpha)*B. For each channel, alpha must be large
+// enough to keep the recovered F inside [0,255]; the maximum required alpha
+// across channels is therefore used. The foreground is then reconstructed from
+// that alpha. For white, this produces the familiar anti-aliased result where
+// 100% white becomes transparent and black/white mixtures retain proportional
+// opacity. This is a Color-to-Alpha/chroma-key operation, not selection feathering.
+function colorToAlphaPixel(c,target){
+    const C=parseStoredColor(c), B=parseStoredColor(target);
+    if(!C || !B) return {changed:false,value:c};
+    if(C.a<=0) return {changed:false,value:c};
+    // Treat existing source alpha as part of the resulting opacity.
+    let alpha=0;
+    const cb=[C.r,C.g,C.b], bb=[B.r,B.g,B.b];
+    for(let k=0;k<3;k++){
+        const cv=cb[k]/255, bv=bb[k]/255;
+        let need=0;
+        if(cv>bv){ need=(cv-bv)/(1-bv || 1); }
+        else if(cv<bv){ need=(bv-cv)/(bv || 1); }
+        alpha=Math.max(alpha,need);
+    }
+    alpha=Math.max(0,Math.min(1,alpha))*C.a;
+    if(alpha<=0.00001) return {changed:true,value:null};
+    const effectiveAlpha=Math.max(0.00001,alpha);
+    const recovered=[];
+    for(let k=0;k<3;k++){
+        const cv=cb[k]/255, bv=bb[k]/255;
+        const v=(cv-(1-effectiveAlpha/C.a)*bv)/(effectiveAlpha/C.a);
+        recovered.push(Math.max(0,Math.min(1,v))*255);
+    }
+    // Preserve source alpha while multiplying by the amount of background removed.
+    return {changed:true,value:rgbaString(recovered[0],recovered[1],recovered[2],alpha)};
+}
+function performColorToAlpha(x,y){
+    const layer=activeLayer();
+    if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH) return;
+    const source=layer.pixelData[x][y];
+    if(source==null) return;
+    colorToAlphaTarget=source;
+    updateColorToAlphaTargetLabel();
+    const before=beginEdit();
+    let changed=false;
+    for(let ix=0;ix<layer.gridW;ix++){
+        for(let iy=0;iy<layer.gridH;iy++){
+            const old=layer.pixelData[ix][iy];
+            const result=colorToAlphaPixel(old,colorToAlphaTarget);
+            if(result.changed && result.value!==old){ layer.pixelData[ix][iy]=result.value; changed=true; }
+        }
+    }
+    if(changed){ layer.redrawFromData(); commitEdit(before); }
+    else { /* No edit: do not create a useless history entry. */ }
+}
 
 function performWandSelection(x,y){
     const layer=activeLayer(); if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
@@ -3961,6 +4322,7 @@ function handleToolBtn(t) {
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
     if (t !== 'select') { /* leaving select tool keeps the selection, just stops editing it */ }
     currentTool = t;
+    if(t === 'colorToAlpha'){ colorToAlphaTarget=null; updateColorToAlphaTargetLabel(); }
     updateUI();
     updateToolVisibility();
     updateVectorHandles();
@@ -3974,7 +4336,7 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
-    if (currentTool !== 'brush' && currentTool !== 'eyedrop' && currentTool !== 'wand') hideCursor();
+    if (currentTool !== 'brush' && currentTool !== 'eyedrop' && currentTool !== 'wand' && currentTool !== 'lasso' && currentTool !== 'colorToAlpha') hideCursor();
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
 }
@@ -4096,15 +4458,15 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand' || currentTool === 'lasso';
+        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand' || currentTool === 'lasso' || currentTool === 'colorToAlpha';
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
-        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop') syncPortraitPaletteForPoint(x,y);
+        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
             pixelCursor.style.top = (y * scale) + "px";
-            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : (selectedColor || 'rgba(255,255,255,0.2)');
+            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : (currentTool === 'colorToAlpha' ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
             pixelCursor.classList.toggle('active', isDrawing);
             if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; }
             if (!isDrawing) cursorTimer = setTimeout(hideCursor, 500);
@@ -4160,6 +4522,11 @@ function setupDrawingEvents() {
         }
         const layer = activeLayer();
         if (!isPixelLike(layer)) return;
+        if (currentTool === 'colorToAlpha') {
+            performColorToAlpha(x,y);
+            g.suppressStroke = true;
+            return;
+        }
         if (currentTool === 'wand') {
             performWandSelection(x,y);
             g.suppressStroke = true;
@@ -4582,6 +4949,7 @@ function setupDrawingEvents() {
 // refreshHookedComposites()). Always use this, never layer.el directly,
 // wherever compositing needs the *real* unmodified content.
 function renderRawPixelLayer(layer) {
+    if (layer && layer.type === 'image') return layer.el;
     const c = document.createElement('canvas');
     c.width = layer.gridW; c.height = layer.gridH;
     const ctx = c.getContext('2d');
@@ -4799,7 +5167,8 @@ function handleImportImageClick() {
 // land correctly on the grid regardless of whether the canvas ended up
 // the image's native size or a downscaled version of it.
 function pixelLayerFromImage(name, img, w, h) {
-    const l = new PixelLayer(name, w, h);
+    const l = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
+    if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
     const tctx = tmp.getContext('2d');
@@ -4822,7 +5191,8 @@ function openPixelLayerImport(){
     document.getElementById('hubImageInput').click();
 }
 function pixelLayerFromImagePreserveCanvas(name, img) {
-    const l = new PixelLayer(name, gridW, gridH);
+    const l = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer(name, gridW, gridH) : new PixelLayer(name, gridW, gridH);
+    if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp=document.createElement('canvas'); tmp.width=gridW; tmp.height=gridH;
     const ctx=tmp.getContext('2d');
     const fit=Math.min(1, gridW/img.naturalWidth, gridH/img.naturalHeight);
@@ -4965,6 +5335,7 @@ async function copyToClipboard() {
 
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
+    if (l.type === 'image') return { type: 'image', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
     if (l.type === 'pixel') return { type: 'pixel', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
     if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
     if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, splines: l.splines };
@@ -5476,7 +5847,7 @@ function startNewProjectFromGallery(w, h) {
     currentProjectId = null; // new unsaved project
     hideGallery();
     revealMainApp();
-    const base = new PixelLayer('Layer 1', gridW, gridH);
+    const base = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -5766,5 +6137,69 @@ requestAnimationFrame(() => {
     showGallery();
 });
 </script>
+
+<!-- Pencil / Brush / Eraser controls -->
+<section id="pixel-tool-controls" aria-label="Brush and eraser controls">
+  <div class="pixel-tool-control" data-tool="brush softBrush">
+    <label>
+      Brush size
+      <input id="pixel-brush-size" type="range" min="1" max="100" value="8">
+      <output id="pixel-brush-size-value">8 px</output>
+    </label>
+    <label>
+      Brush softness
+      <input id="pixel-brush-softness" type="range" min="0" max="100" value="100">
+      <output id="pixel-brush-softness-value">100%</output>
+    </label>
+  </div>
+  <div class="pixel-tool-control" data-tool="softEraser">
+    <label>
+      Soft eraser size
+      <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8">
+      <output id="pixel-soft-eraser-size-value">8 px</output>
+    </label>
+    <label>
+      Soft eraser softness
+      <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35">
+      <output id="pixel-soft-eraser-softness-value">35%</output>
+    </label>
+  </div>
+</section>
+
+<script>
+(function () {
+  function bindRange(id, outputId, stateKey, suffix) {
+    const el = document.getElementById(id);
+    const out = document.getElementById(outputId);
+    if (!el) return;
+    const update = () => {
+      const value = Number(el.value);
+      window.pixelToolState[stateKey] = value;
+      if (out) out.textContent = value + suffix;
+    };
+    el.addEventListener('input', update);
+    update();
+  }
+
+  bindRange('pixel-brush-size', 'pixel-brush-size-value', 'brushSize', ' px');
+  bindRange('pixel-brush-softness', 'pixel-brush-softness-value', 'brushSoftness', '%');
+  bindRange('pixel-soft-eraser-size', 'pixel-soft-eraser-size-value', 'softEraserSize', ' px');
+  bindRange('pixel-soft-eraser-softness', 'pixel-soft-eraser-softness-value', 'softEraserSoftness', '%');
+})();
+</script>
+
+
+<script id="image-mode-layer-factory">
+window.createOptimizedLayer = function(name, width, height, mode) {
+  if (mode === 'image' && typeof window.ImageLayer === 'function') {
+    return new window.ImageLayer(name, width, height);
+  }
+  if (typeof window.PixelLayer === 'function') {
+    return new window.PixelLayer(name, width, height);
+  }
+  return null;
+};
+</script>
+
 </body>
 </html>
