@@ -562,6 +562,7 @@
             <div class="row">
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
                 <button class="btn tool-btn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
+                <button class="btn tool-btn" data-tool="colorMatch" onclick="uiAction(() => handleToolBtn('colorMatch'))">🎯 MATCH A COLOUR</button>
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
@@ -590,6 +591,13 @@
                 <div id="colorToAlphaControls" style="display:none;">
                     <div class="panel-subtitle">COLOUR TO ALPHA • BACKGROUND REMOVAL</div>
                     <div id="colorToAlphaTargetLabel" style="font-size:10px;color:#888;text-align:center;">Tap a pixel to sample the background colour</div>
+                </div>
+                <div id="colorMatchControls" style="display:none;">
+                    <div class="panel-subtitle">MATCH A COLOUR • EXACT PIXEL REPLACEMENT</div>
+                    <div id="colorMatchTargetLabel" style="font-size:10px;color:#888;text-align:center;line-height:1.45;">Tap the WRONG colour first, then tap the CORRECT colour.</div>
+                    <div class="row" style="gap:6px;">
+                        <button class="btn" id="colorMatchResetBtn" onclick="uiAction(resetColorMatch)">↺ RESET SAMPLES</button>
+                    </div>
                 </div>
                 <div id="wandControls" style="display:none;">
                     <div class="panel-subtitle">Wand Selection</div>
@@ -1579,6 +1587,8 @@ let wandGlobal = false;         // false = contiguous flood fill, true = global 
 let bucketFuzzy = false;
 let bucketTolerance = 10;
 let colorToAlphaTarget = null;
+let colorMatchSource = null;
+let colorMatchTarget = null;
 let bucketGlobal = false; // false = contiguous flood fill, true = global matching
 let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
 let pendingImportKind = 'pixel';
@@ -3025,7 +3035,7 @@ function updateToolVisibility() {
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
     updateSelectionToolsVisibility();
 
-    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse', 'colorToAlpha'];
+    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse', 'colorToAlpha', 'colorMatch'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
     // Prefer switching to the analogous drawing tool over falling back to
     // the eyedropper: brush<->pen mirror each other as each type's default
@@ -3346,6 +3356,8 @@ function registerBuiltInCommands(){
     registerCommand('tool.softEraser','Soft Eraser Tool',['soft eraser'],()=>handleToolBtn('softEraser'),'Tools');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
     registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools');
+    registerCommand('tool.colorMatch','Match a Colour',['match colour','match color','colour match','color match','replace colour','replace color','lineart colour','lineart color'],()=>handleToolBtn('colorMatch'),'Tools');
+    commandRegistry[commandRegistry.length-1].description='Replace every exact source colour in the active pixel layer with the sampled target colour';
     commandRegistry[commandRegistry.length-1].description='Background removal';
     registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
     registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
@@ -3897,6 +3909,77 @@ function rgbaString(r,g,b,a){
 function updateColorToAlphaTargetLabel(){
     const l=document.getElementById('colorToAlphaTargetLabel'); if(!l)return;
     l.textContent=colorToAlphaTarget ? ('Target: '+colorToAlphaTarget) : 'Tap a pixel to sample the background colour';
+}
+
+function updateColorMatchTargetLabel(){
+    const l=document.getElementById('colorMatchTargetLabel'); if(!l)return;
+    if(!colorMatchSource){
+        l.textContent='Tap the WRONG colour first, then tap the CORRECT colour.';
+        return;
+    }
+    if(!colorMatchTarget){
+        l.textContent='Wrong: '+colorMatchSource+' • Now tap the CORRECT colour.';
+        return;
+    }
+    l.textContent='Wrong: '+colorMatchSource+' → Correct: '+colorMatchTarget;
+}
+
+function resetColorMatch(){
+    colorMatchSource=null;
+    colorMatchTarget=null;
+    updateColorMatchTargetLabel();
+}
+
+// Exact colour harmonisation for raster/pixel artwork.
+// First sample the colour that is visually wrong (for example orange arm
+// lineart), then sample the colour that should replace it (for example the
+// head lineart). Every exact occurrence on the active pixel-like layer is
+// replaced in one history transaction, so matching toe gaps, toenails, and
+// other repeated lineart colours does not require manual repainting.
+//
+// This deliberately uses exact matching by default. A fuzzy replacement
+// would risk changing legitimate nearby body/shading colours, especially
+// on pixel art where several close colours can have distinct meanings.
+function performColorMatch(x,y){
+    const layer=activeLayer();
+    if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH) return;
+    const sampled=layer.pixelData[x][y];
+    if(sampled==null) return;
+
+    if(!colorMatchSource){
+        colorMatchSource=sampled;
+        colorMatchTarget=null;
+        updateColorMatchTargetLabel();
+        return;
+    }
+
+    if(!colorMatchTarget){
+        colorMatchTarget=sampled;
+        updateColorMatchTargetLabel();
+        if(colorMatchSource===colorMatchTarget) return;
+
+        const before=beginEdit();
+        let changed=false;
+        for(let ix=0;ix<layer.gridW;ix++){
+            for(let iy=0;iy<layer.gridH;iy++){
+                if(layer.pixelData[ix][iy]===colorMatchSource){
+                    layer.pixelData[ix][iy]=colorMatchTarget;
+                    changed=true;
+                }
+            }
+        }
+        if(changed){
+            layer.redrawFromData();
+            commitEdit(before);
+        }
+        return;
+    }
+
+    // After a completed replacement, a new tap starts another source/target
+    // pair instead of silently applying the old pair again.
+    colorMatchSource=sampled;
+    colorMatchTarget=null;
+    updateColorMatchTargetLabel();
 }
 
 // Colour-to-Alpha / background removal.
@@ -4544,6 +4627,7 @@ function handleToolBtn(t) {
     if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); return; }
     currentTool = t;
     if(t === 'colorToAlpha'){ colorToAlphaTarget=null; updateColorToAlphaTargetLabel(); }
+    if(t === 'colorMatch'){ resetColorMatch(); }
     updateUI(); updateToolVisibility(); updateVectorHandles();
 }
 
@@ -4555,9 +4639,10 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
-    if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
+    if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha','colorMatch'].includes(currentTool)) hideCursor();
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
     const ca = document.getElementById('colorToAlphaControls'); if (ca) ca.style.display = (currentTool === 'colorToAlpha' && isPixelLike(activeLayer())) ? '' : 'none';
+    const cm = document.getElementById('colorMatchControls'); if (cm) cm.style.display = (currentTool === 'colorMatch' && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
     const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
     const bs = document.getElementById('bucketScopeBtn'); if (bs) { bs.textContent = bucketGlobal ? 'GLOBAL' : 'CONTIGUOUS'; bs.classList.toggle('active', !bucketGlobal); }
@@ -4682,15 +4767,15 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool);
+        const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha','colorMatch'].includes(currentTool);
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
-        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
+        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha'||currentTool==='colorMatch') syncPortraitPaletteForPoint(x,y);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
             pixelCursor.style.top = (y * scale) + "px";
-            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : (currentTool === 'colorToAlpha' ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
+            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : ((currentTool === 'colorToAlpha' || currentTool === 'colorMatch') ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
             pixelCursor.classList.toggle('active', isDrawing);
             if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; }
             if (!isDrawing) cursorTimer = setTimeout(hideCursor, 500);
@@ -4750,6 +4835,11 @@ function setupDrawingEvents() {
         }
         if (currentTool === 'colorToAlpha') {
             performColorToAlpha(x,y);
+            g.suppressStroke = true;
+            return;
+        }
+        if (currentTool === 'colorMatch') {
+            performColorMatch(x,y);
             g.suppressStroke = true;
             return;
         }
