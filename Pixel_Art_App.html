@@ -579,6 +579,9 @@
                         <input type="range" id="bucketTolerance" min="0" max="100" step="1" value="10" oninput="uiAction(() => setBucketTolerance(this.value))" style="flex:1;">
                         <span id="bucketToleranceLabel" style="font-size:10px;color:#ccc;width:28px;text-align:right;">10</span>
                     </div>
+                    <div class="row">
+                        <button class="btn active" id="bucketScopeBtn" onclick="uiAction(toggleBucketScope)">CONTIGUOUS</button>
+                    </div>
                 </div>
                 <div id="wandControls" style="display:none;">
                     <div class="panel-subtitle">Wand Selection</div>
@@ -1362,6 +1365,7 @@ let wandTolerance = 10;
 let wandGlobal = false;         // false = contiguous flood fill, true = global matching
 let bucketFuzzy = false;
 let bucketTolerance = 10;
+let bucketGlobal = false; // false = contiguous flood fill, true = global matching
 let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
 let pendingImportKind = 'pixel';
 
@@ -2750,6 +2754,8 @@ function setActiveLayer(idx) {
     if (openPanelName === 'layers') renderLayersPanel();
     updateToolVisibility();
     const wr=document.getElementById('wandTolerance'); if(wr) wr.disabled=!wandFuzzy;
+    const br=document.getElementById('bucketTolerance'); if(br) br.disabled=!bucketFuzzy;
+    const bs=document.getElementById('bucketScopeBtn'); if(bs){bs.textContent=bucketGlobal?'GLOBAL':'CONTIGUOUS';bs.classList.toggle('active',!bucketGlobal);}
     updateVectorHandles();
 }
 
@@ -3781,6 +3787,7 @@ function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementByI
 function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementById('wandScopeBtn'); if(b){b.textContent=wandGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!wandGlobal);} }
 function setBucketTolerance(v){ bucketTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('bucketToleranceLabel'); if(l)l.textContent=bucketTolerance; }
 function toggleBucketMatch(){ bucketFuzzy=!bucketFuzzy; const b=document.getElementById('bucketMatchBtn'); if(b)b.textContent=bucketFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('bucketTolerance'); if(r)r.disabled=!bucketFuzzy; }
+function toggleBucketScope(){ bucketGlobal=!bucketGlobal; const b=document.getElementById('bucketScopeBtn'); if(b){b.textContent=bucketGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!bucketGlobal);} }
 
 function performWandSelection(x,y){
     const layer=activeLayer(); if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
@@ -4235,6 +4242,8 @@ function updateUI() {
     if (currentTool !== 'brush' && currentTool !== 'eyedrop' && currentTool !== 'wand') hideCursor();
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
+    const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
+    const bs = document.getElementById('bucketScopeBtn'); if (bs) { bs.textContent = bucketGlobal ? 'GLOBAL' : 'CONTIGUOUS'; bs.classList.toggle('active', !bucketGlobal); }
 }
 
 // Converts a CSS "rgb(r,g,b)" string (as read from an element's computed style) into "#RRGGBB".
@@ -4432,16 +4441,27 @@ function setupDrawingEvents() {
                 return wandColourDistance(c,target) <= (bucketTolerance/100)*maxDist;
             };
             if (target !== undefined && !matches(selectedColor)) {
-                const stack = [[x, y]];
-                const seen = new Uint8Array(gridW * gridH);
-                while (stack.length) {
-                    const [nx, ny] = stack.pop();
-                    if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
-                    const idx=ny*gridW+nx;
-                    if(seen[idx] || !matches(layer.pixelData[nx][ny])) continue;
-                    seen[idx]=1;
-                    plot(nx, ny);
-                    stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
+                if (bucketGlobal) {
+                    // GLOBAL mode: replace every pixel matching the sampled target,
+                    // regardless of whether it is connected to the tapped pixel.
+                    for (let fy = 0; fy < gridH; fy++) {
+                        for (let fx = 0; fx < gridW; fx++) {
+                            if (matches(layer.pixelData[fx][fy])) plot(fx, fy);
+                        }
+                    }
+                } else {
+                    // CONTIGUOUS mode: classic flood fill starting at the tapped pixel.
+                    const stack = [[x, y]];
+                    const seen = new Uint8Array(gridW * gridH);
+                    while (stack.length) {
+                        const [nx, ny] = stack.pop();
+                        if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
+                        const idx=ny*gridW+nx;
+                        if(seen[idx] || !matches(layer.pixelData[nx][ny])) continue;
+                        seen[idx]=1;
+                        plot(nx, ny);
+                        stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
+                    }
                 }
             }
         } else plot(x, y);
@@ -5109,7 +5129,7 @@ function setupImportImageInput() {
         const proceed = () => {
             try {
                 if (pendingImportKind === 'pixel-layer') {
-                    const layerName = file.name.replace(/\.[^.]+$/, '') || 'Imported Image';
+                    const layerName = currentProjectName || file.name.replace(/\.[^.]+$/, '') || 'Imported Image';
                     const before = captureTreeState();
                     const imported = pixelLayerFromImagePreserveCanvas(layerName, img);
                     addLayer(imported);
@@ -5135,6 +5155,7 @@ function setupImportImageInput() {
                 resetHistory();
                 selection = null; movingSelection = false; transformMode = false;
                 currentProjectId = null;
+                currentProjectName = file.name.replace(/\.[^.]+$/, '').trim() || 'Untitled';
 
                 // Portrait imports use the GIMP-inspired 15-colour palette, but the image
                 // itself may be larger than 40×40. A non-40×40 image is accepted when at least
@@ -5163,7 +5184,8 @@ function setupImportImageInput() {
                 closeNewCanvasModal(); // success: now safe to close
                 hideGallery();
                 revealMainApp();
-                const base = pendingImportKind === 'reference' ? new ReferenceLayer(file.name.replace(/\.[^.]+$/, '') || 'Reference', img) : pixelLayerFromImage('Layer 1', img, w, h);
+                const importedName = currentProjectName || 'Untitled';
+                const base = pendingImportKind === 'reference' ? new ReferenceLayer(importedName, img) : pixelLayerFromImage(importedName, img, w, h);
                 layers = [base];
                 frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
                 activeFrameIndex = 0;
@@ -5203,7 +5225,7 @@ function setupImportImageInput() {
 function saveImage() {
     const out = flattenToCanvas();
     const link = document.createElement('a');
-    link.download = 'pixel.png';
+    link.download = ((currentProjectName || 'pixel').trim() || 'pixel') + '.png';
     link.href = out.toDataURL();
     link.click();
 }
@@ -5242,6 +5264,7 @@ function serializeLayerTree(nodes, frameLayers) {
 function saveProject() {
     const data = {
         version: 6,
+        name: currentProjectName || 'Untitled',
         gridW, gridH, scale, profile: selectedProfile,
         activeFrameIndex, activeLayerIndex, activeLayerId,
         frames: frames.map(f => {
@@ -5271,6 +5294,7 @@ function loadProjectFile(file) {
         try { data = JSON.parse(reader.result); } catch (e) { alert('Invalid project file.'); return; }
 
         revealMainApp();
+        currentProjectName = (data.name || file.name.replace(/\.[^.]+$/, '') || 'Untitled').trim() || 'Untitled';
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         gridW = data.gridW; gridH = data.gridH;
         scale = data.scale || scale;
@@ -5415,7 +5439,7 @@ function saveCurrentStateToStore(existingId, nameOverride) {
     const thumb = generateThumbnailDataURL(frames, gridW, gridH);
     const entry = {
         id: existingId || nextProjectId++,
-        name: nameOverride || ('Untitled ' + (projectStore.length + 1)),
+        name: nameOverride || currentProjectName || ('Untitled ' + (projectStore.length + 1)),
         gridW, gridH,
         profile: selectedProfile,
         frames, // live reference -- the editor holds the same objects
@@ -5439,6 +5463,7 @@ function saveCurrentStateToStore(existingId, nameOverride) {
 function openProjectFromStore(id) {
     const proj = projectStore.find(p => p.id === id);
     if (!proj) return;
+    currentProjectName = proj.name || 'Untitled';
     // Tear down any live canvas elements from a previous session
     if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
     // Restore state
@@ -5472,6 +5497,7 @@ function openProjectFromStore(id) {
 
 // Which project is currently open in the editor (null = unsaved new)
 let currentProjectId = null;
+let currentProjectName = 'Untitled';
 
 // ── Gallery render ───────────────────────────────────────────
 function renderGallery() {
@@ -5733,6 +5759,7 @@ function startNewProjectFromGallery(w, h) {
     selection = null; movingSelection = false; transformMode = false;
     gridW = w; gridH = h;
     currentProjectId = null; // new unsaved project
+    currentProjectName = 'Untitled ' + (projectStore.length + 1);
     hideGallery();
     revealMainApp();
     const base = new PixelLayer('Layer 1', gridW, gridH);
@@ -5787,7 +5814,7 @@ document.getElementById('rename-cancel-btn').addEventListener('click', () => {
 document.getElementById('rename-ok-btn').addEventListener('click', () => {
     const newName = document.getElementById('gallery-rename-input').value.trim() || 'Untitled';
     const proj = projectStore.find(p => p.id === galleryRenameTargetId);
-    if (proj) { proj.name = newName; renderGallery(); }
+    if (proj) { proj.name = newName; if (currentProjectId === proj.id) currentProjectName = newName; renderGallery(); }
     document.getElementById('gallery-rename-modal').classList.remove('open');
     galleryRenameTargetId = null;
 });
@@ -5843,6 +5870,7 @@ document.getElementById('ctx-save-file').addEventListener('click', () => {
     try {
         const data = {
             version: 2,
+            name: proj.name || 'Untitled',
             gridW: proj.gridW, gridH: proj.gridH,
             scale: proj.scale, profile: proj.profile,
             activeFrameIndex: proj.activeFrameIndex,
@@ -5899,13 +5927,14 @@ function goToMainMenu() {
                 existingProj.thumbnailDataURL = generateThumbnailDataURL(frames, gridW, gridH);
                 existingProj.gridW = gridW; existingProj.gridH = gridH;
                 existingProj.profile = selectedProfile;
+                existingProj.name = currentProjectName || existingProj.name;
                 existingProj.frames = frames;
                 existingProj.activeFrameIndex = activeFrameIndex;
                 existingProj.activeLayerIndex = activeLayerIndex;
                 existingProj.scale = scale;
                 existingProj.updatedAt = Date.now();
             } else {
-                saveCurrentStateToStore(null, 'Untitled ' + (projectStore.length + 1));
+                saveCurrentStateToStore(null, currentProjectName || ('Untitled ' + (projectStore.length + 1)));
                 currentProjectId = projectStore[0].id;
             }
         }
