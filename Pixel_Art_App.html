@@ -659,13 +659,14 @@
 }
 </style>
 
+<style>#pixelToolControlsInline .pixel-tool-control{display:none;}#pixelToolControlsInline .pixel-tool-control.active{display:block;}#pixelToolControlsInline label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa;margin:4px 0;}#pixelToolControlsInline input[type=range]{flex:1;min-width:70px;}#pixelToolControlsInline output{width:42px;text-align:right;color:#ddd;}</style>
 </head>
 <body>
 
     <!-- ══════════ GALLERY SCREEN ══════════ -->
     <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
-            <h1>🎨 Pixel Art Hub</h1><div id="canvas-mode-choices" class="mode-choice-row" aria-label="Canvas mode"><button class="mode-choice" data-mode="photo">Photo</button><button class="mode-choice active" data-mode="pixelArt">Pixel Art</button><button class="mode-choice" data-mode="portrait">Portrait</button><button class="mode-choice" data-mode="sprite">Sprite</button></div><script>document.addEventListener('DOMContentLoaded',()=>document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(b=>b.onclick=()=>{setCanvasCreationMode(b.dataset.mode);document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(x=>x.classList.toggle('active',x===b));}));</script>
+            <h1>🎨 Pixel Art Hub</h1>
         </div>
         <div id="gallery-grid">
             <div class="gallery-card new-canvas-card"><div class="nc-icon">+</div><div class="nc-label">Pixel Art Hub</div><div class="nc-hint">Loading gallery…</div></div>
@@ -771,9 +772,27 @@
                 <button class="btn tool-btn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
-            <div id="pixelToolsSection">
+            <div id="pixelToolControlsInline" aria-label="Pencil brush and eraser controls">
+                    <div class="pixel-tool-control" data-tool="brush softBrush">
+                        <label>Brush size <input id="pixel-brush-size-inline" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-inline-value">8 px</output></label>
+                        <label>Brush softness <input id="pixel-brush-softness-inline" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-inline-value">100%</output></label>
+                    </div>
+                    <div class="pixel-tool-control" data-tool="softEraser">
+                        <label>Soft eraser size <input id="pixel-soft-eraser-size-inline" type="range" min="1" max="100" value="8"><output id="pixel-soft-eraser-size-inline-value">8 px</output></label>
+                        <label>Soft eraser softness <input id="pixel-soft-eraser-softness-inline" type="range" min="0" max="100" value="35"><output id="pixel-soft-eraser-softness-inline-value">35%</output></label>
+                    </div>
+                </div>
+<div id="pixelToolsSection">
                 <div class="row">
-                    <button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH</button>
+                    <button class="btn tool-btn" data-tool="pencil" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button>
+                    <button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button>
+                </div>
+                <div class="row">
+                    <button class="btn tool-btn" data-tool="softBrush" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH TOOL</button>
+                    <button class="btn tool-btn" data-tool="hardEraser" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER TOOL</button>
+                </div>
+                <div class="row">
+                    <button class="btn tool-btn" data-tool="softEraser" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER TOOL</button>
                     <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
                 </div>
                 <div class="row">
@@ -1087,7 +1106,7 @@
     if (name === 'pencil') return { size: 1, alpha: 1 };
     if (name === 'brush') return { size: s.brushSize, alpha: s.brushSoftness / 100 };
     if (name === 'softBrush') return { size: s.brushSize, alpha: s.brushSoftness / 100 };
-    if (name === 'hardEraser') return { size: s.softEraserSize, alpha: 1, erase: true };
+    if (name === 'hardEraser') return { size: 1, alpha: 1, erase: true };
     return { size: s.softEraserSize, alpha: s.softEraserSoftness / 100, erase: true };
   };
 })();
@@ -3044,7 +3063,7 @@ function updateToolVisibility() {
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
     updateSelectionToolsVisibility();
 
-    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse'];
+    const pixelOnlyTools = ['pencil','brush','softBrush','hardEraser','softEraser','bucket','wand','lasso','select','line','rect','ellipse'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
     // Prefer switching to the analogous drawing tool over falling back to
     // the eyedropper: brush<->pen mirror each other as each type's default
@@ -3358,7 +3377,11 @@ function closeGlobalCommandPalette(){const o=document.getElementById('globalComm
 function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.slice(0,20).map(c=>({type:'command',name:c.name,path:c.category,description:c.description,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.description || (r.type.toUpperCase()+' • '+r.path))+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
 function registerBuiltInCommands(){
     if(commandRegistry.length)return;
-    registerCommand('tool.brush','Pencil Tool',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
+    registerCommand('tool.pencil','Pencil Tool',['paint','draw','pencil'],()=>handleToolBtn('pencil'),'Tools');
+    registerCommand('tool.brush','Brush Tool',['brush','adjustable brush'],()=>handleToolBtn('brush'),'Tools');
+    registerCommand('tool.softBrush','Soft Brush Tool',['soft brush'],()=>handleToolBtn('softBrush'),'Tools');
+    registerCommand('tool.hardEraser','Hard Eraser Tool',['eraser','hard eraser'],()=>handleToolBtn('hardEraser'),'Tools');
+    registerCommand('tool.softEraser','Soft Eraser Tool',['soft eraser'],()=>handleToolBtn('softEraser'),'Tools');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
     registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools');
     commandRegistry[commandRegistry.length-1].description='Background removal';
@@ -4605,10 +4628,11 @@ function setupPaletteDragEvents() {
 let toolBeforeEyedrop = 'brush';
 // Selects a colour (or transparency) as the current drawing colour.
 function handleSwatchClick(c, isT = false) { selectedColor = isT ? null : c; updateUI(); }
+window.selectTransparentSwatch = function(){ selectedColor = null; updateUI(); };
 // Switches the active tool. Remembers the previous tool when switching to the eyedropper, so it can auto-restore after one sample.
 function handleToolBtn(t) {
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
-    if (t !== 'select') { /* leaving select tool keeps the selection, just stops editing it */ }
+    if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(t) && typeof window.selectPixelTool === 'function') window.selectPixelTool(t);
     currentTool = t;
     if(t === 'colorToAlpha'){ colorToAlphaTarget=null; updateColorToAlphaTargetLabel(); }
     updateUI();
@@ -4624,7 +4648,9 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
-    if (currentTool !== 'brush' && currentTool !== 'eyedrop' && currentTool !== 'wand' && currentTool !== 'lasso' && currentTool !== 'colorToAlpha') hideCursor();
+    const pixelDrawingTools = ['pencil','brush','softBrush','hardEraser','softEraser'];
+    if (!pixelDrawingTools.includes(currentTool) && !['eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
+    document.querySelectorAll('#pixelToolControlsInline .pixel-tool-control').forEach(el => { const tools=(el.dataset.tool||'').split(/\s+/).filter(Boolean); el.classList.toggle('active',tools.includes(currentTool)); });
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
 }
@@ -4746,22 +4772,32 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand' || currentTool === 'lasso' || currentTool === 'colorToAlpha';
+        const pixelDrawingTools = ['pencil','brush','softBrush','hardEraser','softEraser'];
+        const showsCursor = pixelDrawingTools.includes(currentTool) || ['eyedrop','wand','lasso','colorToAlpha'].includes(currentTool);
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
         if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
-            pixelCursor.style.left = (x * scale) + "px";
-            pixelCursor.style.top = (y * scale) + "px";
-            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : (currentTool === 'colorToAlpha' ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
+            const cursorStroke=(typeof window.getPixelToolStroke==='function')?window.getPixelToolStroke():{size:1};
+            const cursorSize=['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)?Math.max(1,cursorStroke.size||1):1;
+            pixelCursor.style.width=(cursorSize*scale)+'px'; pixelCursor.style.height=(cursorSize*scale)+'px';
+            pixelCursor.style.left=(x*scale)+'px'; pixelCursor.style.top=(y*scale)+'px';
+            pixelCursor.style.backgroundColor=currentTool==='eyedrop'?'rgba(255,255,255,0.4)':(currentTool==='colorToAlpha'?'rgba(255,220,120,0.45)':(selectedColor||'rgba(255,255,255,0.2)'));
             pixelCursor.classList.toggle('active', isDrawing);
             if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; }
             if (!isDrawing) cursorTimer = setTimeout(hideCursor, 500);
         } else { hideCursor(); }
     };
 
-    // -- one-shot tool actions (brush dot / bucket fill / eyedropper) --
+    // -- pixel brush/eraser raster helpers --------------------------------
+    const parseStoredRGBA=(value)=>{if(!value)return[0,0,0,0];let m=String(value).match(/^#([0-9a-f]{6})$/i);if(m)return[parseInt(m[1].slice(0,2),16),parseInt(m[1].slice(2,4),16),parseInt(m[1].slice(4,6),16),1];m=String(value).match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)$/i);return m?[+m[1],+m[2],+m[3],m[4]==null?1:+m[4]]:[0,0,0,0];};
+    const rgbaString=(r,g,b,a)=>a<=.0005?null:(a>=.9995?'#'+[r,g,b].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('').toUpperCase():`rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${Math.max(0,Math.min(1,a)).toFixed(4)})`);
+    const blendPixel=(layer,x,y,sr,sg,sb,sa,erase)=>{if(x<0||y<0||x>=layer.gridW||y>=layer.gridH)return;const[dr,dg,db,da]=parseStoredRGBA(layer.pixelData[x][y]);if(erase){layer.plot(x,y,rgbaString(dr,dg,db,da*(1-sa)));return;}const oa=sa+da*(1-sa);if(oa<=.0005){layer.plot(x,y,null);return;}layer.plot(x,y,rgbaString((sr*sa+dr*da*(1-sa))/oa,(sg*sa+dg*da*(1-sa))/oa,(sb*sa+db*da*(1-sa))/oa,oa));};
+    const applyPixelToolAt=(cx,cy)=>{const layer=activeLayer();if(!isPixelLike(layer))return;const stroke=window.getPixelToolStroke?window.getPixelToolStroke():{size:1,alpha:1};const name=currentTool;let colour=portraitStrokeColor!==null?portraitStrokeColor:selectedColor;const erase=name==='hardEraser'||name==='softEraser';if(erase)colour='#000000';const[sr,sg,sb]=parseStoredRGBA(colour||'#000000');const size=Math.max(1,Math.round(stroke.size||1));if(name==='pencil'){layer.plot(cx,cy,colour);return;}const radius=size/2;for(let y=Math.floor(cy-radius);y<=Math.ceil(cy+radius-1);y++)for(let x=Math.floor(cx-radius);x<=Math.ceil(cx+radius-1);x++){let a=stroke.alpha==null?1:stroke.alpha;if(name==='softBrush'||name==='softEraser'){const d=Math.hypot((x+.5)-(cx+.5),(y+.5)-(cy+.5))/Math.max(.5,radius);if(d>1)continue;a*=Math.pow(Math.max(0,1-d),2);}if(selectedProfile==='portrait'&&!erase&&colour!==null){const key=portraitTileKeyForPoint(x,y),pal=key?ensurePortraitTilePalette(key):[];if(!pal.includes(colour))continue;}blendPixel(layer,x,y,sr,sg,sb,a,erase);}if(activeLayerHasLiveHook())scheduleHookedCompositeRefresh();};
+    const drawPixelToolSegment=(x0,y0,x1,y1)=>linePixels(x0,y0,x1,y1).forEach(([x,y])=>applyPixelToolAt(x,y));
+
+    // -- one-shot tool actions (pixel tool / bucket fill / eyedropper) --
     const doToolAt = (x, y) => {
         if (currentTool === 'eyedrop') {
             const activeL = activeLayer();
@@ -4810,6 +4846,7 @@ function setupDrawingEvents() {
         }
         const layer = activeLayer();
         if (!isPixelLike(layer)) return;
+        if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) { applyPixelToolAt(x,y); return; }
         if (currentTool === 'colorToAlpha') {
             performColorToAlpha(x,y);
             g.suppressStroke = true;
@@ -4976,7 +5013,7 @@ function setupDrawingEvents() {
         }
         g.currentEditSnapshot = beginEdit();
         doToolAt(x, y);
-        g.lastBrushPos = (currentTool === 'brush') ? { x, y } : null;
+        g.lastBrushPos = ['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool) ? { x, y } : null;
     };
 
     const commitPendingTouch = () => {
@@ -5133,16 +5170,9 @@ function setupDrawingEvents() {
         if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
         if (isDrawing && (!g.suppressStroke || currentTool === 'lasso')) {
             const [x, y] = getPos(e);
-            if (currentTool === 'brush') {
-                // A fast drag can jump several grid cells between two
-                // consecutive move events -- plotting only the endpoint
-                // would leave gaps. Fill the path between the last plotted
-                // point and this one (same Bresenham walk the Line tool
-                // uses) so the stroke stays continuous at any drag speed.
-                if (g.lastBrushPos) linePixels(g.lastBrushPos.x, g.lastBrushPos.y, x, y).forEach(([lx, ly]) => plot(lx, ly));
-                else plot(x, y);
-                g.lastBrushPos = { x, y };
-                if (activeLayerHasLiveHook()) scheduleHookedCompositeRefresh();
+            if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) {
+                if (g.lastBrushPos) drawPixelToolSegment(g.lastBrushPos.x,g.lastBrushPos.y,x,y); else applyPixelToolAt(x,y);
+                g.lastBrushPos={x,y};
             }
             else if (currentTool === 'select') updateSelectionDrag(x, y);
             else if (currentTool === 'lasso' && g.lasso) { const p={x:x+.5,y:y+.5},last=g.lasso[g.lasso.length-1]; if(Math.hypot(p.x-last.x,p.y-last.y)>=.5) g.lasso.push(p); }
@@ -6424,7 +6454,7 @@ requestAnimationFrame(() => {
     // is an interface accent, not the default paint colour.
     selectedColor = "#000000";
     updateUI();
-    handleToolBtn('brush');
+    handleToolBtn('pencil');
     showGallery();
 });
 </script>
@@ -6480,6 +6510,7 @@ requestAnimationFrame(() => {
 </script>
 
 
+<script>(function(){const p=[['pixel-brush-size-inline','pixel-brush-size-inline-value','brushSize',' px'],['pixel-brush-softness-inline','pixel-brush-softness-inline-value','brushSoftness','%'],['pixel-soft-eraser-size-inline','pixel-soft-eraser-size-inline-value','softEraserSize',' px'],['pixel-soft-eraser-softness-inline','pixel-soft-eraser-softness-inline-value','softEraserSoftness','%']];p.forEach(([id,out,key,suf])=>{const e=document.getElementById(id),o=document.getElementById(out);if(!e)return;e.addEventListener('input',()=>{window.pixelToolState[key]=Number(e.value);if(o)o.textContent=e.value+suf;updateUI();});});const sync=()=>p.forEach(([id,out,key,suf])=>{const e=document.getElementById(id),o=document.getElementById(out);if(e){e.value=window.pixelToolState[key];if(o)o.textContent=e.value+suf;}});document.addEventListener('pixel-tool-changed',sync);sync();})();</script>
 <script id="image-mode-layer-factory">
 window.createOptimizedLayer = function(name, width, height, mode) {
   if (mode === 'photo' && typeof window.ImageLayer === 'function') {
