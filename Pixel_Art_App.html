@@ -435,13 +435,13 @@
 </style>
 <script>
 (function(){
-  const modes=[['image','Image'],['pixelArt','Pixel Art'],['portrait','Portrait'],['sprite','Sprite']];
-  window.canvasCreationModes=modes; window.currentCanvasMode='image';
-  window.setCanvasCreationMode=function(m){if(!modes.some(x=>x[0]===m))return;window.currentCanvasMode=m;document.dispatchEvent(new CustomEvent('canvas-mode-changed',{detail:{mode:m}}));};
-  window.getCanvasModeLimit=function(m=window.currentCanvasMode){return m==='pixelArt'?999:2000;};
+  const modes=[['photo','Photo'],['pixelArt','Pixel Art'],['portrait','Portrait'],['sprite','Sprite']];
+  window.canvasCreationModes=modes; window.currentCanvasMode='pixelArt';
+  window.setCanvasCreationMode=function(m){if(!modes.some(x=>x[0]===m))return;window.currentCanvasMode=m;if(typeof window.selectProfile==='function')window.selectProfile(m);document.dispatchEvent(new CustomEvent('canvas-mode-changed',{detail:{mode:m}}));};
+  window.getCanvasModeLimit=function(m=window.currentCanvasMode){return m==='pixelArt'?999:4096;};
   window.resizeCanvasWithAnchor=function(newW,newH,anchor){
     newW=Math.max(1,Math.floor(newW)); newH=Math.max(1,Math.floor(newH));
-    const limit=window.getCanvasModeLimit(); if(newW>limit||newH>limit) throw new Error('Canvas size exceeds the limit for this mode.');
+    const limit=Math.min(window.getCanvasModeLimit(), 4096); if(newW>limit||newH>limit) throw new Error('Canvas size exceeds the limit for this mode.');
     document.dispatchEvent(new CustomEvent('canvas-resize-request',{detail:{width:newW,height:newH,anchor:anchor||'center',mode:window.currentCanvasMode}}));
   };
   window.showCanvasResizeMenu=function(x,y){
@@ -459,9 +459,9 @@
 })();
 
 /* ============================================================
-   IMAGE MODE OPTIMIZATION
+   PHOTO MODE OPTIMIZATION
    ------------------------------------------------------------
-   Image mode uses a compact RGBA ImageData-backed layer instead
+   Photo mode uses a compact RGBA ImageData-backed layer instead
    of the Pixel Art mode's per-pixel JS arrays.
 
    Pixel Art mode remains unchanged. This is deliberately a
@@ -653,7 +653,7 @@
     <!-- ══════════ GALLERY SCREEN ══════════ -->
     <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
-            <h1>🎨 Pixel Art Hub</h1><div id="canvas-mode-choices" class="mode-choice-row" aria-label="Canvas mode"><button class="mode-choice active" data-mode="image">Image</button><button class="mode-choice" data-mode="pixelArt">Pixel Art</button><button class="mode-choice" data-mode="portrait">Portrait</button><button class="mode-choice" data-mode="sprite">Sprite</button></div><script>document.addEventListener('DOMContentLoaded',()=>document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(b=>b.onclick=()=>{setCanvasCreationMode(b.dataset.mode);document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(x=>x.classList.toggle('active',x===b));}));</script>
+            <h1>🎨 Pixel Art Hub</h1><div id="canvas-mode-choices" class="mode-choice-row" aria-label="Canvas mode"><button class="mode-choice" data-mode="photo">Photo</button><button class="mode-choice active" data-mode="pixelArt">Pixel Art</button><button class="mode-choice" data-mode="portrait">Portrait</button><button class="mode-choice" data-mode="sprite">Sprite</button></div><script>document.addEventListener('DOMContentLoaded',()=>document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(b=>b.onclick=()=>{setCanvasCreationMode(b.dataset.mode);document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(x=>x.classList.toggle('active',x===b));}));</script>
         </div>
         <div id="gallery-grid">
             <div class="gallery-card new-canvas-card"><div class="nc-icon">+</div><div class="nc-label">Pixel Art Hub</div><div class="nc-hint">Loading gallery…</div></div>
@@ -702,7 +702,8 @@
 
         <div class="picker-label" style="margin-top:6px;">New Project</div>
         <div id="profileRow">
-            <button class="profile-btn active" data-profile="standard" onclick="selectProfile('standard')">Standard</button>
+            <button class="profile-btn" data-profile="photo" onclick="selectProfile('photo')">Photo</button>
+            <button class="profile-btn active" data-profile="pixelArt" onclick="selectProfile('pixelArt')">Pixel Art</button>
             <button class="profile-btn" data-profile="portrait" onclick="selectProfile('portrait')">Portrait</button>
             <button class="profile-btn" data-profile="sprite" onclick="selectProfile('sprite')">Sprite</button>
         </div>
@@ -1217,7 +1218,7 @@ function refreshDebugStats() {
     const totalLayers = frames.reduce((n, f) => n + f.layers.length, 0);
     const mb = (estimateMemoryBytes() / (1024 * 1024)).toFixed(2);
     el.innerHTML =
-        'Profile: ' + selectedProfile + '<br>' +
+        'Profile: ' + ({photo:'Photo',pixelArt:'Pixel Art',portrait:'Portrait',sprite:'Sprite'}[selectedProfile] || selectedProfile) + '<br>' +
         'Canvas: ' + gridW + '&times;' + gridH + '<br>' +
         'Zoom: ' + scale + 'x<br>' +
         'Frames: ' + frames.length + ' (active #' + (activeFrameIndex + 1) + ')<br>' +
@@ -1258,7 +1259,7 @@ const commandRegistry = [];
 let openPanelName = null;
 let transformMode = false;
 
-let selectedProfile = 'standard'; // 'standard' | 'portrait' | 'sprite'
+let selectedProfile = 'pixelArt'; // 'photo' | 'pixelArt' | 'portrait' | 'sprite'
 // Portrait spritesheets are one document with independent 40×40 tile palettes.
 // Each tile owns up to 15 opaque colours; colours may be reused independently in other tiles.
 let portraitTilePalettes = new Map();
@@ -1268,6 +1269,12 @@ let portraitTileIsolationOpacity = 0.78;
 let portraitStrokeColor = null;
 let lastEnteredProfile = null;    // profile the current work (if any) was created/resumed under
 const PORTRAIT_PALETTE_LIMIT = 15;
+const MAX_CANVAS_SIDE = 4096;
+function normalizeProfileName(p) {
+    if (p === 'standard' || p === 'image') return 'photo';
+    if (p === 'pixel') return 'pixelArt';
+    return p || 'pixelArt';
+}
 
 let frames = [];                // [{ name, layerTree: [node,...], layers: [Layer,...] }]
 
@@ -1816,13 +1823,13 @@ function handleKeyboardPhysicalKeydown(e) {
 }
 window.addEventListener('keydown', handleKeyboardPhysicalKeydown);
 
-// Handles picking Standard/Portrait/Sprite on the hub: locks the size pickers for Portrait and updates the hint text for what each profile changes.
+// Handles picking Photo/Pixel Art/Portrait/Sprite on the hub: locks the size pickers for Portrait and updates the hint text for what each profile changes.
 function selectProfile(p) {
     selectedProfile = p;
+    window.currentCanvasMode = p;
     document.querySelectorAll('.profile-btn').forEach(b => b.classList.toggle('active', b.dataset.profile === p));
-    const lock = p === 'portrait';
+    const lock = false;
     document.querySelectorAll('#w-group select, #h-group select').forEach(s => s.disabled = lock);
-    if (lock) { setDigitGroup('w-group', 40); setDigitGroup('h-group', 40); }
     const hint = document.getElementById('profileHint');
     if (p === 'portrait') hint.innerText = '40×40 tile palette: each tile has its own 15-colour limit.';
     else if (p === 'sprite') hint.innerText = 'Adds a Frames strip to the Layers panel for simple flipbook animation.';
@@ -2490,16 +2497,19 @@ function continueEditing() {
 
 // "Create Canvas" on the hub: either resumes existing work in place (resized, profile-preserving) or starts a brand new canvas, depending on preserveProfile's rules above.
 function initApp() {
-    const newW = selectedProfile === 'portrait' ? 40 : readDigitGroup('w-group');
-    const newH = selectedProfile === 'portrait' ? 40 : readDigitGroup('h-group');
+    if (!Number.isFinite(readDigitGroup('w-group')) || !Number.isFinite(readDigitGroup('h-group'))) return;
+    const newW = readDigitGroup('w-group');
+    const newH = readDigitGroup('h-group');
+    if (newW > MAX_CANVAS_SIDE || newH > MAX_CANVAS_SIDE) { alert('Canvas size is limited to ' + MAX_CANVAS_SIDE + '×' + MAX_CANVAS_SIDE + ' per side for browser safety.'); return; }
+    if (selectedProfile === 'portrait' && (newW % 40 !== 0 || newH % 40 !== 0)) { alert('Portrait canvases must use dimensions that are multiples of 40.'); return; }
 
     // Preserve existing work only when the profile is unchanged, or when
-    // easing from Portrait down to Standard (that's just lifting the size
+    // easing from Portrait down to Photo (that's just lifting the size
     // lock/colour cap, not a different workflow). Any other profile
     // change (including Standard/Portrait <-> Sprite) starts fresh, since
     // Sprite's frame-based workflow doesn't carry over sensibly.
     const preserve = lastEnteredProfile === selectedProfile ||
-        (lastEnteredProfile === 'portrait' && selectedProfile === 'standard');
+        (lastEnteredProfile === 'portrait' && selectedProfile === 'photo');
 
     if (frames.length > 0 && preserve) {
         // Resuming work that Main Menu left intact: just resize in place
@@ -2526,7 +2536,7 @@ function initApp() {
     gridW = newW; gridH = newH;
     if(selectedProfile==='portrait'){ portraitTilePalettes=new Map([['0,0',[]]]); portraitActiveTileKey='0,0'; } else portraitTilePalettes=new Map();
     revealMainApp(); // needed now so `container` is assigned before we append the base layer
-    const base = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
+    const base = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -5167,7 +5177,7 @@ function handleImportImageClick() {
 // land correctly on the grid regardless of whether the canvas ended up
 // the image's native size or a downscaled version of it.
 function pixelLayerFromImage(name, img, w, h) {
-    const l = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
+    const l = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
     if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
@@ -5191,7 +5201,7 @@ function openPixelLayerImport(){
     document.getElementById('hubImageInput').click();
 }
 function pixelLayerFromImagePreserveCanvas(name, img) {
-    const l = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer(name, gridW, gridH) : new PixelLayer(name, gridW, gridH);
+    const l = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer(name, gridW, gridH) : new PixelLayer(name, gridW, gridH);
     if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp=document.createElement('canvas'); tmp.width=gridW; tmp.height=gridH;
     const ctx=tmp.getContext('2d');
@@ -5266,8 +5276,8 @@ function setupImportImageInput() {
                     samplePortraitTilePalettes(img);
                     syncPortraitPaletteForPoint(0,0,true);
                 } else {
-                    selectedProfile = 'standard';
-                    selectProfile('standard');
+                    selectedProfile = 'pixelArt';
+                    selectProfile('pixelArt');
                     updateColorPickerAvailability();
                 }
                 gridW = w; gridH = h;
@@ -5386,7 +5396,7 @@ function loadProjectFile(file) {
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         gridW = data.gridW; gridH = data.gridH;
         scale = data.scale || scale;
-        selectedProfile = data.profile || 'standard';
+        selectedProfile = normalizeProfileName(data.profile);
         zoomIndex = ZOOM_STEPS.indexOf(scale);
         if (zoomIndex === -1) zoomIndex = ZOOM_STEPS.indexOf(10);
         document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
@@ -5559,7 +5569,7 @@ function openProjectFromStore(id) {
     scale = proj.scale || 10;
     zoomIndex = ZOOM_STEPS.indexOf(scale);
     if (zoomIndex === -1) zoomIndex = ZOOM_STEPS.indexOf(10);
-    selectedProfile = proj.profile || 'standard';
+    selectedProfile = normalizeProfileName(proj.profile);
     portraitTilePalettes = new Map(Object.entries(proj.portraitTilePalettes || {}));
     portraitActiveTileKey = proj.portraitActiveTileKey || '0,0';
     lastEnteredProfile = selectedProfile;
@@ -5634,7 +5644,7 @@ function renderGallery() {
         const info = document.createElement('div');
         info.className = 'card-info';
         info.innerHTML = '<div class="card-name">' + escapeHtml(proj.name) + '</div>' +
-                         '<div class="card-dims">' + proj.gridW + ' \u00D7 ' + proj.gridH + 'px &middot; ' + (proj.profile || 'standard') + '</div>';
+                         '<div class="card-dims">' + proj.gridW + ' \u00D7 ' + proj.gridH + 'px &middot; ' + (normalizeProfileName(proj.profile) || 'photo') + '</div>';
 
         card.appendChild(thumbWrap);
         card.appendChild(info);
@@ -5694,7 +5704,7 @@ function openNewCanvasSheet() {
     // Clone the relevant parts of init-screen into the sheet
     const profileRow = document.createElement('div');
     profileRow.style.cssText = 'display:flex; gap:6px;';
-    ['standard','portrait','sprite'].forEach(p => {
+    ['photo','pixelArt','portrait','sprite'].forEach(p => {
         const btn = document.createElement('button');
         btn.className = 'profile-btn' + (selectedProfile === p ? ' active' : '');
         btn.textContent = p.charAt(0).toUpperCase() + p.slice(1);
@@ -5703,11 +5713,10 @@ function openNewCanvasSheet() {
             document.querySelectorAll('#new-canvas-sheet .ncm-profile-btn').forEach(b => { b.style.background = '#2a2a2a'; b.style.borderColor = '#444'; });
             btn.style.background = '#0078d4'; btn.style.borderColor = '#fff';
             selectProfile(p);
-            document.getElementById('ncm-hint').textContent = p === 'portrait' ? 'Locked 40\u00D740. Palette capped at 15 colours.'
+            document.getElementById('ncm-hint').textContent = p === 'portrait' ? '40×40 tiles. Each tile has its own 15-colour palette.'
                 : p === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : '';
-            const lock = p === 'portrait';
-            document.querySelectorAll('#ncm-pickers select').forEach(s => s.disabled = lock);
-            if (lock) { setDigitGroup('ncm-w-group', 40); setDigitGroup('ncm-h-group', 40); }
+            const lock = false;
+            document.querySelectorAll('#ncm-pickers select').forEach(s => s.disabled = false);
         };
         btn.className = 'ncm-profile-btn';
         btn.style.cssText = 'flex:1; height:40px; background:' + (selectedProfile === p ? '#0078d4' : '#2a2a2a') + '; border:1px solid ' + (selectedProfile === p ? '#fff' : '#444') + '; color:#fff; font-size:10px; font-weight:bold; cursor:pointer; border-radius:8px; text-transform:uppercase;';
@@ -5727,7 +5736,7 @@ function openNewCanvasSheet() {
     const hintEl = document.createElement('div');
     hintEl.id = 'ncm-hint';
     hintEl.style.cssText = 'font-size:9px; color:#888; text-align:center; min-height:18px;';
-    hintEl.textContent = selectedProfile === 'portrait' ? 'Locked 40\u00D740. Palette capped at 15 colours.'
+    hintEl.textContent = selectedProfile === 'portrait' ? '40×40 tiles. Each tile has its own 15-colour palette.'
         : selectedProfile === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : '';
     sheet.appendChild(hintEl);
 
@@ -5750,8 +5759,8 @@ function openNewCanvasSheet() {
         for (let i = 0; i < 4; i++) {
             const sel = document.createElement('select');
             sel.style.cssText = 'appearance:none; -webkit-appearance:none; background:#2a2a2a; border:2px solid #444; border-radius:10px; width:45px; height:55px; color:#0078d4; font-size:24px; font-weight:bold; text-align:center; cursor:pointer; outline:none;';
-            sel.disabled = selectedProfile === 'portrait';
-            const dv = selectedProfile === 'portrait' ? 40 : defaultVal;
+            sel.disabled = false;
+            const dv = defaultVal;
             const digits = String(dv).padStart(4,'0').split('');
             for (let d = 0; d <= 9; d++) {
                 const opt = document.createElement('option');
@@ -5772,8 +5781,10 @@ function openNewCanvasSheet() {
     createBtn.style.cssText = 'width:100%; height:50px; background:#0078d4; border:none; color:white; border-radius:25px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:15px;';
     createBtn.textContent = 'Create Canvas';
     createBtn.onclick = () => {
-        const w = selectedProfile === 'portrait' ? 40 : readNcmDigitGroup('ncm-w-group');
-        const h = selectedProfile === 'portrait' ? 40 : readNcmDigitGroup('ncm-h-group');
+        const w = readNcmDigitGroup('ncm-w-group');
+        const h = readNcmDigitGroup('ncm-h-group');
+        if (w > MAX_CANVAS_SIDE || h > MAX_CANVAS_SIDE) { alert('Canvas size is limited to ' + MAX_CANVAS_SIDE + '×' + MAX_CANVAS_SIDE + ' per side for browser safety.'); return; }
+        if (selectedProfile === 'portrait' && (w % 40 !== 0 || h % 40 !== 0)) { alert('Portrait canvases must use dimensions that are multiples of 40.'); return; }
         closeNewCanvasModal();
         startNewProjectFromGallery(w, h);
     };
@@ -5839,6 +5850,8 @@ document.getElementById('new-canvas-modal').addEventListener('click', (e) => {
 
 // ── Start new project from gallery ──────────────────────────
 function startNewProjectFromGallery(w, h) {
+    if (w > MAX_CANVAS_SIDE || h > MAX_CANVAS_SIDE) { alert('Canvas size is limited to ' + MAX_CANVAS_SIDE + '×' + MAX_CANVAS_SIDE + ' per side for browser safety.'); return; }
+    if (selectedProfile === 'portrait' && (w % 40 !== 0 || h % 40 !== 0)) { alert('Portrait canvases must use dimensions that are multiples of 40.'); return; }
     if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
     frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
     undoStack = []; redoStack = [];
@@ -5847,7 +5860,7 @@ function startNewProjectFromGallery(w, h) {
     currentProjectId = null; // new unsaved project
     hideGallery();
     revealMainApp();
-    const base = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
+    const base = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -6125,7 +6138,7 @@ document.getElementById('colorPicker').onchange = (e) => { uiAction(() => create
 // before the rest of the script finishes initializing.
 requestAnimationFrame(() => {
     setupPickers();
-    selectProfile('standard');
+    selectProfile('pixelArt');
     setupLayerFileInputs();
     setupImportImageInput();
     ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF"].forEach(c => createSwatch(c));
@@ -6191,7 +6204,7 @@ requestAnimationFrame(() => {
 
 <script id="image-mode-layer-factory">
 window.createOptimizedLayer = function(name, width, height, mode) {
-  if (mode === 'image' && typeof window.ImageLayer === 'function') {
+  if (mode === 'photo' && typeof window.ImageLayer === 'function') {
     return new window.ImageLayer(name, width, height);
   }
   if (typeof window.PixelLayer === 'function') {
