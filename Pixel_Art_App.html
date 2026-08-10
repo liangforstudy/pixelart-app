@@ -526,7 +526,7 @@
 
         <div class="picker-label" style="margin-top:14px;">Import Image</div>
         <button class="btn-start" id="hubImportImageBtn" style="width:260px; background:#2a2a2a;" onclick="handleImportImageClick()">🖼️ IMPORT AS NEW PROJECT</button>
-        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">Canvas is sized to match the image (capped at 2000px per side, scaled down proportionally if larger) and it's placed on a new pixel layer.</div>
+        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">Canvas is sized to match the image (capped at 2000px per side, scaled down proportionally if larger). Canvases over 999px on either side use Image mode rendering.</div>
         <input type="file" id="hubImageInput" accept="image/*" style="display:none">
 
         <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:10px;">No persistent storage yet -- projects only exist as files you save/load yourself.</div>
@@ -839,6 +839,37 @@
 
 
 <script>
+
+/* IMAGE_MODE_999_THRESHOLD_PATCH
+   Large-canvas rendering policy:
+   - Pixel mode is retained for canvases whose width AND height are <= 999.
+   - Image mode is selected when either dimension is > 999.
+   The renderer-selection helper is deliberately isolated so later
+   optimization work can replace the large-canvas renderer without
+   changing profile logic.
+*/
+const IMAGE_MODE_MAX_DIMENSION = 999;
+
+function shouldUseImageMode(width, height) {
+    return Number(width) > IMAGE_MODE_MAX_DIMENSION ||
+           Number(height) > IMAGE_MODE_MAX_DIMENSION;
+}
+
+function getCanvasRenderingMode(width, height) {
+    return shouldUseImageMode(width, height) ? 'image' : 'pixel';
+}
+
+function getCanvasRenderingModeLabel(width, height) {
+    return getCanvasRenderingMode(width, height) === 'image'
+        ? 'Image mode'
+        : 'Pixel mode';
+}
+window.getCurrentCanvasRenderingModeLabel = function(width, height) {
+    return getCanvasRenderingModeLabel(width, height);
+};
+
+
+
 /* ============================================================
    DEBUG CAPTURE (installed first, so it catches everything below)
    ============================================================ */
@@ -989,6 +1020,7 @@ function refreshDebugStats() {
     el.innerHTML =
         'Profile: ' + selectedProfile + '<br>' +
         'Canvas: ' + gridW + '&times;' + gridH + '<br>' +
+        'Rendering: ' + getCanvasRenderingModeLabel(gridW, gridH) + '<br>' +
         'Zoom: ' + scale + 'x<br>' +
         'Frames: ' + frames.length + ' (active #' + (activeFrameIndex + 1) + ')<br>' +
         'Layers this frame: ' + layers.length + ' (all frames: ' + totalLayers + ')<br>' +
@@ -2011,20 +2043,48 @@ class PixelLayer extends Layer {
         super('pixel', name);
         this.gridW = w; this.gridH = h;
         this.pixelData = Array(w).fill().map(() => Array(h).fill(null));
+        this.renderMode = 'pixel';
+        this.imageSource = null;
         this.el.width = w; this.el.height = h;
         this._lastPasteRect = null;
     }
     plot(x, y, color) {
         if (x < 0 || x >= this.gridW || y < 0 || y >= this.gridH) return;
+        // Large imported images start in image-render mode. The first actual
+        // pixel edit lazily materializes the pixel array, preserving the
+        // fast import/display path until editing is actually required.
+        if (this.renderMode === 'image' && this.imageSource) {
+            const source = this.imageSource;
+            this.switchToPixelRender();
+            this.loadFromImage(source);
+        }
         this.pixelData[x][y] = color;
         this.ctx.clearRect(x, y, 1, 1);
         if (color) { this.ctx.fillStyle = color; this.ctx.fillRect(x, y, 1, 1); }
     }
     redrawFromData() {
+        if (this.renderMode === 'image' && this.imageSource && this.imageSource.complete) {
+            this.ctx.clearRect(0, 0, this.gridW, this.gridH);
+            this.ctx.imageSmoothingEnabled = true;
+            this.ctx.drawImage(this.imageSource, 0, 0, this.gridW, this.gridH);
+            return;
+        }
         this.ctx.clearRect(0, 0, this.gridW, this.gridH);
         for (let x = 0; x < this.gridW; x++)
             for (let y = 0; y < this.gridH; y++)
                 if (this.pixelData[x][y]) { this.ctx.fillStyle = this.pixelData[x][y]; this.ctx.fillRect(x, y, 1, 1); }
+    }
+    setImageRenderSource(img) {
+        this.renderMode = 'image';
+        this.imageSource = img;
+        this.el.width = this.gridW;
+        this.el.height = this.gridH;
+        this.redrawFromData();
+    }
+    switchToPixelRender() {
+        this.renderMode = 'pixel';
+        this.imageSource = null;
+        this.redrawFromData();
     }
     resizeToCanvas(newW, newH) {
         const newData = Array(newW).fill().map(() => Array(newH).fill(null));
@@ -2055,6 +2115,8 @@ class PixelLayer extends Layer {
         this.el.style.height = (this.gridH * scale) + 'px';
     }
     loadFromImage(img) {
+        this.renderMode = 'pixel';
+        this.imageSource = null;
         const tmp = document.createElement('canvas');
         tmp.width = this.gridW; tmp.height = this.gridH;
         const tctx = tmp.getContext('2d');
@@ -5078,6 +5140,13 @@ function handleImportImageClick() {
 // the image's native size or a downscaled version of it.
 function pixelLayerFromImage(name, img, w, h) {
     const l = new PixelLayer(name, w, h);
+    if (shouldUseImageMode(w, h)) {
+        // Large imports use the browser's image-backed canvas renderer.
+        // Keep the layer object compatible with the existing pixel-layer
+        // machinery; the cached image is the display source.
+        l.setImageRenderSource(img);
+        return l;
+    }
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
     const tctx = tmp.getContext('2d');
