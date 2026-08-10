@@ -457,196 +457,7 @@
     document.addEventListener('contextmenu',e=>{const card=e.target.closest('[data-project-card],.gallery-card,.project-card');if(card){e.preventDefault();showCanvasResizeMenu(e.clientX,e.clientY);}});
   });
 })();
-
-/* ============================================================
-   IMAGE MODE OPTIMIZATION
-   ------------------------------------------------------------
-   Image mode uses a compact RGBA ImageData-backed layer instead
-   of the Pixel Art mode's per-pixel JS arrays.
-
-   Pixel Art mode remains unchanged. This is deliberately a
-   separate representation so future image-mode operations can
-   be optimized independently.
-   ============================================================ */
-(function () {
-  class ImageLayer {
-    constructor(name, width, height) {
-      this.name = name || 'Image Layer';
-      this.gridW = width;
-      this.gridH = height;
-      this.gw = width;
-      this.gh = height;
-      this.visible = true;
-      this.opacity = 1;
-      this.color = null;
-      this.type = 'image';
-      this.id = 'image_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-      this.el = document.createElement('canvas');
-      this.el.width = width;
-      this.el.height = height;
-      this.el.className = 'layer-canvas image-layer-canvas';
-      this.ctx = this.el.getContext('2d', { willReadFrequently: true });
-      this.imageData = this.ctx.createImageData(width, height);
-
-      // Compatibility facade: old pixel tools can access pixelData[x][y]
-      // without allocating a giant nested JS array. Reads/writes go directly
-      // to the RGBA ImageData buffer.
-      const self = this;
-      this.pixelData = new Proxy([], {
-        get(_, x) {
-          if (x === 'length') return self.gridW;
-          if (x === 'map') return function (fn) {
-            // Materialize only when legacy code explicitly asks for map().
-            const a = Array(self.gridW);
-            for (let ix = 0; ix < self.gridW; ix++) {
-              const col = Array(self.gridH);
-              for (let iy = 0; iy < self.gridH; iy++) col[iy] = self.getPixel(ix, iy);
-              a[ix] = col;
-            }
-            return a.map(fn);
-          };
-          if (!Number.isInteger(+x) || +x < 0 || +x >= self.gridW) return undefined;
-          const ix = +x;
-          return new Proxy([], {
-            get(_, y) {
-              if (y === 'length') return self.gridH;
-              if (!Number.isInteger(+y) || +y < 0 || +y >= self.gridH) return undefined;
-              return self.getPixel(ix, +y);
-            },
-            set(_, y, value) {
-              if (Number.isInteger(+y) && +y >= 0 && +y < self.gridH) {
-                self.setPixel(ix, +y, value);
-                return true;
-              }
-              return false;
-            }
-          });
-        }
-      });
-    }
-
-    _offset(x, y) { return ((y * this.gridW + x) << 2); }
-
-    getPixel(x, y) {
-      if (x < 0 || y < 0 || x >= this.gridW || y >= this.gridH) return null;
-      const d = this.imageData.data, i = this._offset(x, y);
-      return d[i + 3] === 0 ? null : rgbToHexBytes(d[i], d[i + 1], d[i + 2]);
-    }
-
-    setPixel(x, y, color) {
-      if (x < 0 || y < 0 || x >= this.gridW || y >= this.gridH) return;
-      const d = this.imageData.data, i = this._offset(x, y);
-      if (color == null) {
-        d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
-        return;
-      }
-      const m = String(color).match(/^#([0-9a-f]{6})$/i);
-      if (m) {
-        d[i] = parseInt(m[1].slice(0,2),16);
-        d[i+1] = parseInt(m[1].slice(2,4),16);
-        d[i+2] = parseInt(m[1].slice(4,6),16);
-        d[i+3] = 255;
-        return;
-      }
-      const rgba = String(color).match(/^rgba?\(([^)]+)\)$/i);
-      if (rgba) {
-        const p = rgba[1].split(',').map(v => Number(v.trim()));
-        d[i] = p[0] || 0; d[i+1] = p[1] || 0; d[i+2] = p[2] || 0;
-        d[i+3] = p.length > 3 ? Math.round((p[3] <= 1 ? p[3] * 255 : p[3])) : 255;
-      }
-    }
-
-    plot(x, y, color) {
-      this.setPixel(x, y, color);
-      this.ctx.putImageData(this.imageData, 0, 0);
-    }
-
-    redrawFromData() {
-      this.ctx.putImageData(this.imageData, 0, 0);
-    }
-
-    redraw() { this.redrawFromData(); }
-
-    loadFromImage(img) {
-      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
-      this.ctx.drawImage(img, 0, 0, this.gridW, this.gridH);
-      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
-    }
-
-    getImageData() { return this.imageData; }
-
-    setImageData(imageData) {
-      if (!imageData || imageData.width !== this.gridW || imageData.height !== this.gridH) return false;
-      this.imageData = imageData;
-      this.redrawFromData();
-      return true;
-    }
-
-    clear() {
-      this.imageData.data.fill(0);
-      this.redrawFromData();
-    }
-
-    resizeToCanvas(newW, newH) {
-      const copy = document.createElement('canvas');
-      copy.width = newW; copy.height = newH;
-      const c = copy.getContext('2d');
-      c.imageSmoothingEnabled = false;
-      c.drawImage(this.el, 0, 0);
-      this.gridW = this.gw = newW;
-      this.gridH = this.gh = newH;
-      this.el.width = newW; this.el.height = newH;
-      this.ctx = this.el.getContext('2d', { willReadFrequently: true });
-      this.imageData = this.ctx.createImageData(newW, newH);
-      this.ctx.drawImage(copy, 0, 0);
-      this.imageData = this.ctx.getImageData(0, 0, newW, newH);
-    }
-
-    flipHorizontal() {
-      const c = document.createElement('canvas');
-      c.width = this.gridW; c.height = this.gridH;
-      const x = c.getContext('2d');
-      x.translate(this.gridW, 0); x.scale(-1, 1); x.drawImage(this.el, 0, 0);
-      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
-      this.ctx.drawImage(c, 0, 0);
-      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
-    }
-
-    flipVertical() {
-      const c = document.createElement('canvas');
-      c.width = this.gridW; c.height = this.gridH;
-      const x = c.getContext('2d');
-      x.translate(0, this.gridH); x.scale(1, -1); x.drawImage(this.el, 0, 0);
-      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
-      this.ctx.drawImage(c, 0, 0);
-      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
-    }
-
-    layoutCSS() {
-      this.el.style.width = (this.gridW * scale) + 'px';
-      this.el.style.height = (this.gridH * scale) + 'px';
-    }
-
-    clone() {
-      const copy = new ImageLayer(this.name, this.gridW, this.gridH);
-      copy.visible = this.visible; copy.opacity = this.opacity; copy.color = this.color;
-      copy.imageData.data.set(this.imageData.data);
-      copy.redrawFromData();
-      return copy;
-    }
-  }
-  window.ImageLayer = ImageLayer;
-})();
-
 </script>
-
-<style id="image-mode-optimization-css">
-.image-layer-canvas {
-  image-rendering: auto !important;
-}
-</style>
-
 </head>
 <body>
 
@@ -1187,7 +998,7 @@ function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 function estimateMemoryBytes() {
     let bytes = 0;
     frames.forEach(f => f.layers.forEach(l => {
-        if (l.type === 'pixel' || l.type === 'image' || l.type === 'mask' || l.type === 'clip') bytes += l.gridW * l.gridH * 4;
+        if (l.type === 'pixel' || l.type === 'mask' || l.type === 'clip') bytes += l.gridW * l.gridH * 4;
         else if (l.image) bytes += (l.image.naturalWidth || 0) * (l.image.naturalHeight || 0) * 4;
     }));
     return bytes;
@@ -2375,13 +2186,6 @@ function rgbToHexBytes(r, g, b) {
 }
 // Deep-copies a layer (pixel data or reference geometry) into a brand new Layer object. Used when duplicating a sprite frame.
 function cloneLayer(l) {
-    if (l.type === 'image') {
-        const nl = new ImageLayer(l.name, l.gridW, l.gridH);
-        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
-        nl.imageData.data.set(l.imageData.data);
-        nl.redrawFromData();
-        return nl;
-    }
     if (l.type === 'pixel' || l.type === 'mask' || l.type === 'clip') {
         const nl = l.type === 'mask' ? new MaskLayer(l.name, l.gridW, l.gridH)
                  : l.type === 'clip' ? new ClipLayer(l.name, l.gridW, l.gridH)
@@ -2526,7 +2330,7 @@ function initApp() {
     gridW = newW; gridH = newH;
     if(selectedProfile==='portrait'){ portraitTilePalettes=new Map([['0,0',[]]]); portraitActiveTileKey='0,0'; } else portraitTilePalettes=new Map();
     revealMainApp(); // needed now so `container` is assigned before we append the base layer
-    const base = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
+    const base = new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -2803,7 +2607,7 @@ function updateToolVisibility() {
     const type = layer ? layer.type : 'pixel';
     const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
 
-    show('pixelToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip');
+    show('pixelToolsSection', type === 'pixel' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
     show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
@@ -2817,7 +2621,7 @@ function updateToolVisibility() {
     // "just start drawing" tool. Reference layers have no drawing tool of
     // their own, so those still fall back to the eyedropper.
     if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn('vpen');
-    else if ((type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn('brush');
+    else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn('brush');
     else if (type === 'reference' && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
 }
 
@@ -2837,7 +2641,7 @@ function activeLayer() {
 // only how they're combined with the layer below during compositing
 // differs from a plain pixel layer. Used everywhere a check used to be
 // pixel-only, so brush/bucket/select/shapes/undo/etc. all work on them too.
-function isPixelLike(layer) { return !!layer && (layer.type === 'pixel' || layer.type === 'image' || layer.type === 'mask' || layer.type === 'clip'); }
+function isPixelLike(layer) { return !!layer && (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip'); }
 
 // Creates a new blank pixel layer, makes it active, and records it on the undo stack.
 // Creates a new empty vector layer for splines.
@@ -2979,7 +2783,7 @@ function makeThumbnail(layer, size) {
         cx.fillStyle = '#4a4a4a';
         for (let yy = 0; yy < size; yy += 6) for (let xx = ((yy/6)%2)*6; xx < size; xx += 12) cx.fillRect(xx, yy, 6, 6);
         try {
-            if (layer.type === 'pixel' || layer.type === 'image' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
+            if (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') { cx.imageSmoothingEnabled = false; cx.drawImage(layer.el, 0, 0, size, size); }
             else if (layer.image && layer.image.complete) { cx.imageSmoothingEnabled = true; cx.drawImage(layer.image, 0, 0, size, size); }
         } catch (e) { console.warn('thumbnail draw skipped:', e && e.message); }
         return c.toDataURL();
@@ -4949,7 +4753,6 @@ function setupDrawingEvents() {
 // refreshHookedComposites()). Always use this, never layer.el directly,
 // wherever compositing needs the *real* unmodified content.
 function renderRawPixelLayer(layer) {
-    if (layer && layer.type === 'image') return layer.el;
     const c = document.createElement('canvas');
     c.width = layer.gridW; c.height = layer.gridH;
     const ctx = c.getContext('2d');
@@ -5167,8 +4970,7 @@ function handleImportImageClick() {
 // land correctly on the grid regardless of whether the canvas ended up
 // the image's native size or a downscaled version of it.
 function pixelLayerFromImage(name, img, w, h) {
-    const l = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
-    if (l.type === 'image') { l.loadFromImage(img); return l; }
+    const l = new PixelLayer(name, w, h);
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
     const tctx = tmp.getContext('2d');
@@ -5191,8 +4993,7 @@ function openPixelLayerImport(){
     document.getElementById('hubImageInput').click();
 }
 function pixelLayerFromImagePreserveCanvas(name, img) {
-    const l = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer(name, gridW, gridH) : new PixelLayer(name, gridW, gridH);
-    if (l.type === 'image') { l.loadFromImage(img); return l; }
+    const l = new PixelLayer(name, gridW, gridH);
     const tmp=document.createElement('canvas'); tmp.width=gridW; tmp.height=gridH;
     const ctx=tmp.getContext('2d');
     const fit=Math.min(1, gridW/img.naturalWidth, gridH/img.naturalHeight);
@@ -5335,7 +5136,6 @@ async function copyToClipboard() {
 
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
-    if (l.type === 'image') return { type: 'image', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
     if (l.type === 'pixel') return { type: 'pixel', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
     if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
     if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, splines: l.splines };
@@ -5847,7 +5647,7 @@ function startNewProjectFromGallery(w, h) {
     currentProjectId = null; // new unsaved project
     hideGallery();
     revealMainApp();
-    const base = (selectedProfile === 'image' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
+    const base = new PixelLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -6186,19 +5986,6 @@ requestAnimationFrame(() => {
   bindRange('pixel-soft-eraser-size', 'pixel-soft-eraser-size-value', 'softEraserSize', ' px');
   bindRange('pixel-soft-eraser-softness', 'pixel-soft-eraser-softness-value', 'softEraserSoftness', '%');
 })();
-</script>
-
-
-<script id="image-mode-layer-factory">
-window.createOptimizedLayer = function(name, width, height, mode) {
-  if (mode === 'image' && typeof window.ImageLayer === 'function') {
-    return new window.ImageLayer(name, width, height);
-  }
-  if (typeof window.PixelLayer === 'function') {
-    return new window.PixelLayer(name, width, height);
-  }
-  return null;
-};
 </script>
 
 </body>
