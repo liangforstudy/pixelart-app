@@ -457,7 +457,88 @@
     document.addEventListener('contextmenu',e=>{const card=e.target.closest('[data-project-card],.gallery-card,.project-card');if(card){e.preventDefault();showCanvasResizeMenu(e.clientX,e.clientY);}});
   });
 })();
+
+/* ============================================================
+   IMAGE MODE OPTIMIZATION
+   ------------------------------------------------------------
+   Image mode uses a compact RGBA ImageData-backed layer instead
+   of the Pixel Art mode's per-pixel JS arrays.
+
+   Pixel Art mode remains unchanged. This is deliberately a
+   separate representation so future image-mode operations can
+   be optimized independently.
+   ============================================================ */
+(function () {
+  class ImageLayer {
+    constructor(name, width, height) {
+      this.name = name || 'Image Layer';
+      this.gw = width;
+      this.gh = height;
+      this.visible = true;
+      this.opacity = 1;
+      this.type = 'image';
+      this.el = document.createElement('canvas');
+      this.el.width = width;
+      this.el.height = height;
+      this.el.className = 'layer-canvas image-layer-canvas';
+      this.ctx = this.el.getContext('2d', { willReadFrequently: true });
+      this.imageData = this.ctx.createImageData(width, height);
+    }
+
+    loadFromImage(img) {
+      const tmp = document.createElement('canvas');
+      tmp.width = this.gw;
+      tmp.height = this.gh;
+      const ctx = tmp.getContext('2d', { willReadFrequently: true });
+      ctx.clearRect(0, 0, this.gw, this.gh);
+      ctx.drawImage(img, 0, 0, this.gw, this.gh);
+      this.imageData = ctx.getImageData(0, 0, this.gw, this.gh);
+      this.redraw();
+    }
+
+    redraw() {
+      this.ctx.putImageData(this.imageData, 0, 0);
+    }
+
+    getImageData() {
+      return this.imageData;
+    }
+
+    setImageData(imageData) {
+      if (!imageData ||
+          imageData.width !== this.gw ||
+          imageData.height !== this.gh) return false;
+      this.imageData = imageData;
+      this.redraw();
+      return true;
+    }
+
+    clear() {
+      this.imageData.data.fill(0);
+      this.redraw();
+    }
+
+    clone() {
+      const copy = new ImageLayer(this.name, this.gw, this.gh);
+      copy.visible = this.visible;
+      copy.opacity = this.opacity;
+      copy.imageData.data.set(this.imageData.data);
+      copy.redraw();
+      return copy;
+    }
+  }
+
+  window.ImageLayer = ImageLayer;
+})();
+
 </script>
+
+<style id="image-mode-optimization-css">
+.image-layer-canvas {
+  image-rendering: auto !important;
+}
+</style>
+
 </head>
 <body>
 
@@ -5986,6 +6067,19 @@ requestAnimationFrame(() => {
   bindRange('pixel-soft-eraser-size', 'pixel-soft-eraser-size-value', 'softEraserSize', ' px');
   bindRange('pixel-soft-eraser-softness', 'pixel-soft-eraser-softness-value', 'softEraserSoftness', '%');
 })();
+</script>
+
+
+<script id="image-mode-layer-factory">
+window.createOptimizedLayer = function(name, width, height, mode) {
+  if (mode === 'image' && typeof window.ImageLayer === 'function') {
+    return new window.ImageLayer(name, width, height);
+  }
+  if (typeof window.PixelLayer === 'function') {
+    return new window.PixelLayer(name, width, height);
+  }
+  return null;
+};
 </script>
 
 </body>
