@@ -302,6 +302,18 @@
         .floating-panel.open { display: flex; }
         .panel-title { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; text-align: center; }
         .panel-subtitle { font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+        .history-entry {
+            width: 100%; min-height: 34px; padding: 7px 9px; box-sizing: border-box;
+            background: #252525; border: 1px solid #444; color: #ddd;
+            border-radius: 7px; text-align: left; font-size: 11px; font-weight: bold;
+        }
+        .history-entry.current { background: #0078d4; border-color: #fff; color: #fff; }
+        .history-entry.redo { color: #aaa; opacity: .75; }
+        .history-entry.branch { position: relative; }
+        .history-divider { height: 1px; background: #444; margin: 4px 0; }
+        .history-empty { color: #777; text-align: center; font-size: 11px; padding: 14px 6px; }
+        .history-controls { display:flex; gap:6px; width:100%; }
+
 
         .row { display: flex; gap: 6px; width: 100%; position: relative; }
 
@@ -967,8 +979,20 @@
             </div>
             <input type="file" id="projectInput" accept="application/json,.json" style="display:none">
             <div class="row">
+                <button class="btn" onclick="uiAction(() => togglePanel('history'))">↩️ UNDO HISTORY</button>
+            </div>
+            <div class="row">
                 <button class="btn btn-clear" id="mainMenuBtn" onclick="handleMainMenuClick()">🏠 MAIN MENU</button>
             </div>
+        </div>
+
+        <div class="floating-panel" id="panel-history">
+            <div class="panel-title">Undo History</div>
+            <div class="history-controls">
+                <button class="btn" id="historyViewToggle" onclick="uiAction(toggleHistoryView)">BRANCH VIEW</button>
+                <button class="btn" onclick="uiAction(resetHistoryToCurrent)">CLEAR HISTORY</button>
+            </div>
+            <div id="historyList"></div>
         </div>
 
         <div class="side-drawer right" id="debugDrawer">
@@ -1389,9 +1413,17 @@ function getNodeStack(nodes, targetId, path){
 function captureTreeState(){
     const f=frames[activeFrameIndex];
     if(!f) return null;
-    const cloneNodes=nodes=>(nodes||[]).map(n=>n.kind==='group'
-        ? {ref:n, children:cloneNodes(n.children)}
-        : {ref:n});
+    const cloneNodes=nodes=>(nodes||[]).map(n=>{
+        if(n.kind==='group'){
+            // Groups are structural history state, so clone the group node itself.
+            // Leaf layer objects remain shared because their actual pixel content
+            // has its own history entries.
+            const ref={...n};
+            ref.children=[];
+            return {ref, children:cloneNodes(n.children)};
+        }
+        return {ref:n};
+    });
     return {frameIndex:activeFrameIndex, tree:cloneNodes(f.layerTree), activeLayerId, activeGroupId, activeLayerIndex};
 }
 function restoreTreeState(state){
@@ -1579,7 +1611,195 @@ let pendingImportKind = 'pixel';
 
 let undoStack = [], redoStack = [];
 const MAX_UNDO = 40;
+
+// History is a persistent tree, not just two linear stacks.
+// undoStack/redoStack remain as compatibility views for the existing UI/debug code.
+let historyRoot = { id: 'root', entry: null, parent: null, children: [], lastVisitedChild: null };
+let historyCurrent = historyRoot;
+let historyBranchView = false;
+let historyTransitioning = false;
+
+function historyNodeId() {
+    return 'h_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+}
+
+function resetHistory() {
+    historyRoot = { id: 'root', entry: null, parent: null, children: [], lastVisitedChild: null };
+    historyCurrent = historyRoot;
+    undoStack = [];
+    redoStack = [];
+    if (typeof updateUndoRedoFabs === 'function') updateUndoRedoFabs();
+    if (typeof renderUndoHistory === 'function' && typeof openPanelName !== 'undefined' && openPanelName === 'history') renderUndoHistory();
+}
+
+function historyPathTo(node) {
+    const path = [];
+    let n = node;
+    while (n && n !== historyRoot) {
+        path.push(n);
+        n = n.parent;
+    }
+    return path.reverse();
+}
+
+function historyPreferredChild(node) {
+    if (!node || !node.children || !node.children.length) return null;
+    if (node.lastVisitedChild && node.children.includes(node.lastVisitedChild)) return node.lastVisitedChild;
+    return node.children[node.children.length - 1];
+}
+
+function syncHistoryStacks() {
+    const path = historyPathTo(historyCurrent);
+    undoStack = path.map(n => n.entry);
+
+    const future = [];
+    let n = historyCurrent;
+    let child = historyPreferredChild(n);
+    while (child) {
+        future.push(child.entry);
+        n = child;
+        child = historyPreferredChild(n);
+    }
+    redoStack = future;
+}
+
+function historyEntryLabel(entry, index) {
+    if (!entry) return 'Initial state';
+    if (entry.label) return entry.label;
+    const names = {
+        pixels:'Draw / edit pixels',
+        selection:'Selection change',
+        tree:'Layer / group change',
+        deleteLayer:'Delete layer',
+        addLayer:'Add layer',
+        addSpline:'Add vector shape',
+        editSplinePoints:'Edit vector points',
+        clearVectorLayer:'Clear vector layer'
+    };
+    let label = names[entry.type] || 'Edit';
+    if (entry.layer && entry.layer.name) label += ': ' + entry.layer.name;
+    if (entry.layerId) {
+        const layer = findLayerById(entry.frameIndex, entry.layerId);
+        if (layer) label += ': ' + layer.name;
+    }
+    return label + ' #' + (index + 1);
+}
+
+function renderUndoHistory() {
+    const list = document.getElementById('historyList');
+    if (!list) return;
+    list.innerHTML = '';
+    const toggle = document.getElementById('historyViewToggle');
+    if (toggle) toggle.textContent = historyBranchView ? 'LINEAR VIEW' : 'BRANCH VIEW';
+
+    if (historyBranchView) {
+        const renderNode = (node, depth) => {
+            const b = document.createElement('button');
+            b.className = 'history-entry' + (node === historyCurrent ? ' current' : '');
+            b.style.marginLeft = Math.min(depth * 12, 120) + 'px';
+            b.style.width = 'calc(100% - ' + Math.min(depth * 12, 120) + 'px)';
+            b.textContent = (node === historyCurrent ? '✓ ' : '') + historyEntryLabel(node.entry, depth);
+            b.onclick = () => jumpToHistoryNode(node);
+            list.appendChild(b);
+            (node.children || []).forEach(ch => renderNode(ch, depth + 1));
+        };
+        renderNode(historyRoot, 0);
+        return;
+    }
+
+    const applied = historyPathTo(historyCurrent);
+    const initial = document.createElement('button');
+    initial.className = 'history-entry' + (historyCurrent === historyRoot ? ' current' : '');
+    initial.textContent = (historyCurrent === historyRoot ? '✓ ' : '') + 'Initial state';
+    initial.onclick = () => jumpToHistoryNode(historyRoot);
+    list.appendChild(initial);
+
+    applied.forEach((node, i) => {
+        const b = document.createElement('button');
+        b.className = 'history-entry' + (node === historyCurrent ? ' current' : '');
+        b.textContent = (node === historyCurrent ? '✓ ' : '') + historyEntryLabel(node.entry, i);
+        b.onclick = () => jumpToHistoryNode(node);
+        list.appendChild(b);
+    });
+
+    if (redoStack.length) {
+        const divider = document.createElement('div');
+        divider.className = 'history-divider';
+        list.appendChild(divider);
+        redoStack.forEach((entry, i) => {
+            const b = document.createElement('button');
+            b.className = 'history-entry redo';
+            b.textContent = '↪ ' + historyEntryLabel(entry, i);
+            const path = [];
+            let n = historyCurrent;
+            for (const candidate of redoStack) {
+                const child = historyPreferredChild(n);
+                if (!child) break;
+                path.push(child);
+                n = child;
+            }
+            const target = path[i];
+            b.onclick = () => target && jumpToHistoryNode(target);
+            list.appendChild(b);
+        });
+    }
+}
+
+function toggleHistoryView() {
+    historyBranchView = !historyBranchView;
+    renderUndoHistory();
+}
+
+function resetHistoryToCurrent() {
+    // Keep the artwork exactly as it is, but discard historical navigation.
+    historyRoot = { id: 'root', entry: null, parent: null, children: [], lastVisitedChild: null };
+    historyCurrent = historyRoot;
+    undoStack = [];
+    redoStack = [];
+    updateUndoRedoFabs();
+    renderUndoHistory();
+}
+
+function jumpToHistoryNode(target) {
+    if (!target || !historyRoot || historyTransitioning || target === historyCurrent) return;
+    historyTransitioning = true;
+    try {
+        const ancestors = new Set();
+        let n = target;
+        while (n) { ancestors.add(n); n = n.parent; }
+
+        // First walk backwards to the nearest common ancestor.
+        while (historyCurrent && !ancestors.has(historyCurrent)) {
+            const node = historyCurrent;
+            applyHistoryEntry(node.entry, false);
+            historyCurrent = node.parent || historyRoot;
+            if (historyCurrent) historyCurrent.lastVisitedChild = node;
+        }
+
+        // Then walk forward along the exact target branch.
+        const forward = [];
+        n = target;
+        while (n && n !== historyCurrent) { forward.push(n); n = n.parent; }
+        forward.reverse();
+        for (const node of forward) {
+            applyHistoryEntry(node.entry, true);
+            if (historyCurrent) historyCurrent.lastVisitedChild = node;
+            historyCurrent = node;
+        }
+        syncHistoryStacks();
+        refreshHistoryUI();
+    } finally {
+        historyTransitioning = false;
+    }
+}
+
+function refreshHistoryUI() {
+    updateUndoRedoFabs();
+    if (typeof renderUndoHistory === 'function' && typeof openPanelName !== 'undefined' && openPanelName === 'history') renderUndoHistory();
+}
+
 let eventsInitialized = false;
+resetHistory();
 
 /* ============================================================
    SPLASH SCREEN PROFILES
@@ -1932,8 +2152,11 @@ function openPanel(name) {
     closeDrawer();
     document.querySelectorAll('.floating-panel').forEach(p => p.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
-    document.getElementById('panel-' + name).classList.add('open');
-    document.getElementById('tab-' + name).classList.add('active');
+    const panel = document.getElementById('panel-' + name);
+    if (!panel) return;
+    panel.classList.add('open');
+    const tab = document.getElementById('tab-' + name);
+    if (tab) tab.classList.add('active');
     document.getElementById('panelBackdrop').classList.add('open');
     openPanelName = name;
     try {
@@ -1942,6 +2165,7 @@ function openPanel(name) {
             document.getElementById('resizeH').value = gridH;
         }
         if (name === 'layers') { renderLayersPanel(); renderFramesPanel(); }
+        if (name === 'history') renderUndoHistory();
     } catch (err) {
         console.error('openPanel(' + name + ') content failed:', err && err.message);
     }
@@ -2530,7 +2754,7 @@ function initApp() {
     if (frames.length > 0) {
         traceLog('initApp(): profile changed (' + lastEnteredProfile + ' -> ' + selectedProfile + '), discarding previous work');
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
-        undoStack = []; redoStack = [];
+        resetHistory();
     }
 
     gridW = newW; gridH = newH;
@@ -3515,12 +3739,47 @@ function exportSpritesheet() {
    ============================================================ */
 function cloneGrid(pixelData) { return pixelData.map(col => col.slice()); }
 
-// Adds an entry to the undo stack, capping its size, and clears the redo stack (a new action invalidates old redo history).
+// Records an action as a child of the current history node. Existing children are
+// deliberately retained: editing after undo creates a real branch.
 function pushUndo(entry) {
-    undoStack.push(entry);
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
-    redoStack = [];
-    updateUndoRedoFabs();
+    if (historyTransitioning) return;
+    const node = {
+        id: historyNodeId(),
+        entry,
+        parent: historyCurrent,
+        children: [],
+        lastVisitedChild: null
+    };
+    historyCurrent.children.push(node);
+    historyCurrent.lastVisitedChild = node;
+    entry.__historyNode = node;
+    historyCurrent = node;
+    syncHistoryStacks();
+    pruneHistoryTree();
+    refreshHistoryUI();
+}
+
+function pruneHistoryTree() {
+    const path = historyPathTo(historyCurrent);
+    if (path.length > MAX_UNDO) {
+        const keepFrom = path[path.length - MAX_UNDO];
+        if (keepFrom.parent) keepFrom.parent.children = keepFrom.parent.children.filter(n => n !== keepFrom);
+        keepFrom.parent = null;
+        historyRoot = keepFrom;
+    }
+    // Also cap abandoned branches by depth from the retained root.
+    const trim = (node, depth) => {
+        if (depth >= MAX_UNDO) {
+            node.children = [];
+            node.lastVisitedChild = null;
+            return;
+        }
+        (node.children || []).forEach(ch => trim(ch, depth + 1));
+        if (node.lastVisitedChild && !node.children.includes(node.lastVisitedChild))
+            node.lastVisitedChild = node.children[node.children.length - 1] || null;
+    };
+    trim(historyRoot, 0);
+    syncHistoryStacks();
 }
 
 // Snapshots the active pixel layer's content before an edit starts, so commitEdit() can later diff and record what changed.
@@ -3548,89 +3807,108 @@ function findLayerById(frameIndex, layerId) {
     if (!f) return null;
     return f.layers.find(l => l.id === layerId) || null;
 }
-// Steps one entry back in history: restores pixel content, or un-deletes/un-adds a layer, depending on the entry type.
-function undo() {
-    const entry = undoStack.pop();
+
+function applyHistoryEntry(entry, forward) {
     if (!entry) return;
-    if (entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex);
+    if (entry.frameIndex != null && entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex);
+
     if (entry.type === 'pixels') {
         const layer = findLayerById(entry.frameIndex, entry.layerId);
-        if (layer) { layer.pixelData = cloneGrid(entry.before); layer.redrawFromData(); }
+        if (layer) {
+            layer.pixelData = cloneGrid(forward ? entry.after : entry.before);
+            layer.redrawFromData();
+        }
     } else if (entry.type === 'selection') {
-        setSelectionRaw(entry.beforeMask ? entry.beforeMask.slice() : null, entry.beforeCount || 0, entry.beforeRect ? {...entry.beforeRect} : null);
+        setSelectionRaw(
+            forward ? (entry.afterMask ? entry.afterMask.slice() : null) : (entry.beforeMask ? entry.beforeMask.slice() : null),
+            forward ? (entry.afterCount || 0) : (entry.beforeCount || 0),
+            forward ? (entry.afterRect ? {...entry.afterRect} : null) : (entry.beforeRect ? {...entry.beforeRect} : null)
+        );
     } else if (entry.type === 'tree') {
-        restoreTreeState(entry.before);
-        traceLog('Undo tree operation: ' + entry.label);
+        restoreTreeState(forward ? entry.after : entry.before);
+        traceLog((forward ? 'Redo' : 'Undo') + ' tree operation: ' + entry.label);
     } else if (entry.type === 'deleteLayer') {
-        layers.splice(entry.index, 0, entry.layer);
-        container.appendChild(entry.layer.el);
-        reindexDom();
-        entry.layer.applyVisualState();
-        if (activeLayerIndex >= entry.index) activeLayerIndex++;
-        traceLog('Undo restored deleted layer: ' + entry.layer.name);
+        if (forward) {
+            const idx = layers.indexOf(entry.layer);
+            if (idx !== -1) { entry.layer.el.remove(); layers.splice(idx, 1); }
+            if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
+        } else {
+            if (!layers.includes(entry.layer)) {
+                layers.splice(Math.min(entry.index, layers.length), 0, entry.layer);
+                container.appendChild(entry.layer.el);
+                reindexDom();
+                entry.layer.applyVisualState();
+                if (activeLayerIndex >= entry.index) activeLayerIndex++;
+            }
+        }
     } else if (entry.type === 'addLayer') {
-        entry.layer.el.remove();
-        const idx = layers.indexOf(entry.layer);
-        if (idx !== -1) layers.splice(idx, 1);
-        if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
+        if (forward) {
+            if (!layers.includes(entry.layer)) {
+                layers.splice(Math.min(entry.index, layers.length), 0, entry.layer);
+                container.appendChild(entry.layer.el);
+                reindexDom();
+                entry.layer.applyVisualState();
+            }
+        } else {
+            entry.layer.el.remove();
+            const idx = layers.indexOf(entry.layer);
+            if (idx !== -1) layers.splice(idx, 1);
+            if (activeLayerIndex >= layers.length) activeLayerIndex = Math.max(0, layers.length - 1);
+        }
     } else if (entry.type === 'addSpline') {
         const layer = findLayerById(entry.frameIndex, entry.layerId);
         if (layer) {
-            const idx = layer.splines.indexOf(entry.spline);
-            if (idx !== -1) layer.splines.splice(idx, 1);
+            if (forward) {
+                if (!layer.splines.includes(entry.spline))
+                    layer.splines.splice(Math.min(entry.index, layer.splines.length), 0, entry.spline);
+            } else {
+                const idx = layer.splines.indexOf(entry.spline);
+                if (idx !== -1) layer.splines.splice(idx, 1);
+            }
             layer.layoutCSS();
         }
     } else if (entry.type === 'editSplinePoints') {
         const layer = findLayerById(entry.frameIndex, entry.layerId);
-        if (layer) { entry.spline.points = entry.before.map(p => ({ x: p.x, y: p.y })); layer.layoutCSS(); }
-    } else if (entry.type === 'clearVectorLayer') {
-        const layer = findLayerById(entry.frameIndex, entry.layerId);
-        if (layer) { layer.splines = entry.before.map(cloneSpline); layer.layoutCSS(); }
-    }
-    redoStack.push(entry);
-    if (openPanelName === 'layers') renderLayersPanel();
-    updateUndoRedoFabs();
-    updateVectorHandles();
-    refreshHookedComposites();
-}
-// Re-applies whatever the last undo() just reverted.
-function redo() {
-    const entry = redoStack.pop();
-    if (!entry) return;
-    if (entry.frameIndex !== activeFrameIndex) switchFrame(entry.frameIndex);
-    if (entry.type === 'pixels') {
-        const layer = findLayerById(entry.frameIndex, entry.layerId);
-        if (layer) { layer.pixelData = cloneGrid(entry.after); layer.redrawFromData(); }
-    } else if (entry.type === 'selection') {
-        setSelectionRaw(entry.afterMask ? entry.afterMask.slice() : null, entry.afterCount || 0, entry.afterRect ? {...entry.afterRect} : null);
-    } else if (entry.type === 'deleteLayer') {
-        const idx = layers.indexOf(entry.layer);
-        if (idx !== -1) { layers[idx].el.remove(); layers.splice(idx, 1); }
-        if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
-    } else if (entry.type === 'addLayer') {
-        layers.splice(entry.index, 0, entry.layer);
-        container.appendChild(entry.layer.el);
-        reindexDom();
-        entry.layer.applyVisualState();
-    } else if (entry.type === 'addSpline') {
-        const layer = findLayerById(entry.frameIndex, entry.layerId);
-        if (layer) {
-            layer.splines.splice(Math.min(entry.index, layer.splines.length), 0, entry.spline);
+        if (layer && entry.spline) {
+            entry.spline.points = (forward ? entry.after : entry.before).map(p => ({x:p.x,y:p.y}));
             layer.layoutCSS();
         }
-    } else if (entry.type === 'editSplinePoints') {
-        const layer = findLayerById(entry.frameIndex, entry.layerId);
-        if (layer) { entry.spline.points = entry.after.map(p => ({ x: p.x, y: p.y })); layer.layoutCSS(); }
     } else if (entry.type === 'clearVectorLayer') {
         const layer = findLayerById(entry.frameIndex, entry.layerId);
-        if (layer) { layer.splines = []; layer.layoutCSS(); }
+        if (layer) {
+            layer.splines = forward ? [] : entry.before.map(cloneSpline);
+            layer.layoutCSS();
+        }
     }
-    undoStack.push(entry);
+
     if (openPanelName === 'layers') renderLayersPanel();
-    updateUndoRedoFabs();
     updateVectorHandles();
     refreshHookedComposites();
 }
+
+// Move exactly one history node backwards.
+function undo() {
+    if (!historyCurrent || historyCurrent === historyRoot) return;
+    const node = historyCurrent;
+    applyHistoryEntry(node.entry, false);
+    historyCurrent = node.parent || historyRoot;
+    historyCurrent.lastVisitedChild = node;
+    syncHistoryStacks();
+    refreshHistoryUI();
+}
+
+// Move exactly one history node forwards along the preferred branch.
+function redo(targetNode) {
+    if (!historyCurrent) return;
+    const node = targetNode || historyPreferredChild(historyCurrent);
+    if (!node || node.parent !== historyCurrent) return;
+    applyHistoryEntry(node.entry, true);
+    historyCurrent.lastVisitedChild = node;
+    historyCurrent = node;
+    syncHistoryStacks();
+    refreshHistoryUI();
+}
+
 // Deep-copies one spline (including its point list) for undo snapshots.
 function cloneSpline(sp) { return { closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }; }
 
@@ -3750,7 +4028,7 @@ function sameSelectionSnapshot(a,b) {
 }
 function recordSelectionUndo(before, after) {
     if (!before || !after || sameSelectionSnapshot(before, after)) return;
-    pushUndo({type:'selection', beforeMask:before.mask, beforeCount:before.count, beforeRect:before.rect,
+    pushUndo({type:'selection', frameIndex:activeFrameIndex, beforeMask:before.mask, beforeCount:before.count, beforeRect:before.rect,
         afterMask:after.mask, afterCount:after.count, afterRect:after.rect});
 }
 function setSelectionRaw(mask, count, rect) {
@@ -5146,7 +5424,7 @@ const startFreshConfirm = makeTapTwiceConfirm({
     onConfirm: () => {
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
-        undoStack = []; redoStack = [];
+        resetHistory();
         selection = null; movingSelection = false; transformMode = false;
         lastEnteredProfile = null;
         initApp();
@@ -5253,7 +5531,7 @@ function setupImportImageInput() {
 
                 frames.forEach(f => f.layers.forEach(l => l.el.remove()));
                 frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
-                undoStack = []; redoStack = [];
+                resetHistory();
                 selection = null; movingSelection = false; transformMode = false;
                 currentProjectId = null;
 
@@ -5575,7 +5853,7 @@ function openProjectFromStore(id) {
     lastEnteredProfile = selectedProfile;
     activeFrameIndex = proj.activeFrameIndex || 0;
     layers = frames[activeFrameIndex].layers;
-    undoStack = []; redoStack = [];
+    resetHistory();
     selection = null; movingSelection = false; transformMode = false;
     hideGallery();
     revealMainApp();
@@ -5854,7 +6132,7 @@ function startNewProjectFromGallery(w, h) {
     if (selectedProfile === 'portrait' && (w % 40 !== 0 || h % 40 !== 0)) { alert('Portrait canvases must use dimensions that are multiples of 40.'); return; }
     if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
     frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
-    undoStack = []; redoStack = [];
+    resetHistory();
     selection = null; movingSelection = false; transformMode = false;
     gridW = w; gridH = h;
     currentProjectId = null; // new unsaved project
