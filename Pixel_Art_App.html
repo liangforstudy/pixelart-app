@@ -459,16 +459,9 @@
     <!-- ══════════ GALLERY SCREEN ══════════ -->
     <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
-            <h1>🎨 Pixel Art Hub</h1><div id="canvas-mode-choices" class="mode-choice-row" aria-label="Canvas mode"><button class="mode-choice" data-mode="photo">Photo</button><button class="mode-choice active" data-mode="pixelArt">Pixel Art</button><button class="mode-choice" data-mode="portrait">Portrait</button><button class="mode-choice" data-mode="sprite">Sprite</button></div>
+            <h1>🎨 Pixel Art Hub</h1>
         </div>
-        <script>
-document.addEventListener('DOMContentLoaded',()=>{
-  const sync=()=>document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(b=>b.classList.toggle('active',b.dataset.mode===window.currentCanvasMode));
-  document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(b=>b.onclick=()=>{setCanvasCreationMode(b.dataset.mode);sync();});
-  document.addEventListener('canvas-mode-changed',sync);
-  sync();
-});
-</script>
+
         <div id="gallery-grid">
             <div class="gallery-card new-canvas-card"><div class="nc-icon">+</div><div class="nc-label">Pixel Art Hub</div><div class="nc-hint">Loading gallery…</div></div>
         </div>
