@@ -429,42 +429,13 @@
         .log-touch { color: #6ab7ff; }
         .log-trace { color: #b98aff; }
     </style>
-
-<style id="mode-resize-ui">
-.mode-choice-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.mode-choice{padding:10px 14px;border:1px solid #777;border-radius:10px;background:#eee}.mode-choice.active{outline:2px solid #555}.resize-anchor-grid{display:grid;grid-template-columns:repeat(3,42px);gap:4px}.resize-anchor-grid button{width:42px;height:42px}.canvas-resize-menu{position:fixed;z-index:99999;background:#fff;border:1px solid #777;border-radius:10px;padding:10px;box-shadow:0 5px 25px #0004}
-</style>
-<script>
-(function(){
-  const modes=[['image','Image'],['pixelArt','Pixel Art'],['portrait','Portrait'],['sprite','Sprite']];
-  window.canvasCreationModes=modes; window.currentCanvasMode='image';
-  window.setCanvasCreationMode=function(m){if(!modes.some(x=>x[0]===m))return;window.currentCanvasMode=m;document.dispatchEvent(new CustomEvent('canvas-mode-changed',{detail:{mode:m}}));};
-  window.getCanvasModeLimit=function(m=window.currentCanvasMode){return m==='pixelArt'?999:2000;};
-  window.resizeCanvasWithAnchor=function(newW,newH,anchor){
-    newW=Math.max(1,Math.floor(newW)); newH=Math.max(1,Math.floor(newH));
-    const limit=window.getCanvasModeLimit(); if(newW>limit||newH>limit) throw new Error('Canvas size exceeds the limit for this mode.');
-    document.dispatchEvent(new CustomEvent('canvas-resize-request',{detail:{width:newW,height:newH,anchor:anchor||'center',mode:window.currentCanvasMode}}));
-  };
-  window.showCanvasResizeMenu=function(x,y){
-    const old=document.querySelector('.canvas-resize-menu'); if(old)old.remove();
-    const d=document.createElement('div'); d.className='canvas-resize-menu'; d.style.left=x+'px'; d.style.top=y+'px';
-    d.innerHTML='<strong>Change canvas size</strong><div style="margin-top:8px"><label>Width <input id="resizeW" type="number" min="1" value="'+(window.canvasWidth||1)+'"></label></div><div><label>Height <input id="resizeH" type="number" min="1" value="'+(window.canvasHeight||1)+'"></label></div><div style="margin-top:8px">Anchor</div><div class="resize-anchor-grid">'+['nw','n','ne','w','center','e','sw','s','se'].map(a=>'<button data-anchor="'+a+'">'+({nw:'↖',n:'↑',ne:'↗',w:'←',center:'•',e:'→',sw:'↙',s:'↓',se:'↘'}[a])+'</button>').join('')+'</div><button id="resizeCancel" style="margin-top:8px">Cancel</button>';
-    document.body.appendChild(d);
-    d.querySelectorAll('[data-anchor]').forEach(b=>b.onclick=()=>{try{resizeCanvasWithAnchor(+d.querySelector('#resizeW').value,+d.querySelector('#resizeH').value,b.dataset.anchor);d.remove()}catch(e){alert(e.message)}});
-    d.querySelector('#resizeCancel').onclick=()=>d.remove();
-  };
-  document.addEventListener('DOMContentLoaded',()=>{
-    // Long press a project/card in the hub can call this menu; existing card handlers can delegate here.
-    document.addEventListener('contextmenu',e=>{const card=e.target.closest('[data-project-card],.gallery-card,.project-card');if(card){e.preventDefault();showCanvasResizeMenu(e.clientX,e.clientY);}});
-  });
-})();
-</script>
 </head>
 <body>
 
     <!-- ══════════ GALLERY SCREEN ══════════ -->
     <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
-            <h1>🎨 Pixel Art Hub</h1><div id="canvas-mode-choices" class="mode-choice-row" aria-label="Canvas mode"><button class="mode-choice active" data-mode="image">Image</button><button class="mode-choice" data-mode="pixelArt">Pixel Art</button><button class="mode-choice" data-mode="portrait">Portrait</button><button class="mode-choice" data-mode="sprite">Sprite</button></div><script>document.addEventListener('DOMContentLoaded',()=>document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(b=>b.onclick=()=>{setCanvasCreationMode(b.dataset.mode);document.querySelectorAll('#canvas-mode-choices .mode-choice').forEach(x=>x.classList.toggle('active',x===b));}));</script>
+            <h1>🎨 Pixel Art Hub</h1>
         </div>
         <div id="gallery-grid">
             <div class="gallery-card new-canvas-card"><div class="nc-icon">+</div><div class="nc-label">Pixel Art Hub</div><div class="nc-hint">Loading gallery…</div></div>
