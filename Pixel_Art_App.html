@@ -561,6 +561,7 @@
             </div>
             <div class="row">
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
+                <button class="btn tool-btn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
@@ -585,6 +586,10 @@
                     <div class="row">
                         <button class="btn active" id="bucketScopeBtn" onclick="uiAction(toggleBucketScope)">CONTIGUOUS</button>
                     </div>
+                </div>
+                <div id="colorToAlphaControls" style="display:none;">
+                    <div class="panel-subtitle">COLOUR TO ALPHA • BACKGROUND REMOVAL</div>
+                    <div id="colorToAlphaTargetLabel" style="font-size:10px;color:#888;text-align:center;">Tap a pixel to sample the background colour</div>
                 </div>
                 <div id="wandControls" style="display:none;">
                     <div class="panel-subtitle">Wand Selection</div>
@@ -1404,6 +1409,7 @@ let wandTolerance = 10;
 let wandGlobal = false;         // false = contiguous flood fill, true = global matching
 let bucketFuzzy = false;
 let bucketTolerance = 10;
+let colorToAlphaTarget = null;
 let bucketGlobal = false; // false = contiguous flood fill, true = global matching
 let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
 let pendingImportKind = 'pixel';
@@ -2850,7 +2856,7 @@ function updateToolVisibility() {
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
     updateSelectionToolsVisibility();
 
-    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse'];
+    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse', 'colorToAlpha'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
     // Prefer switching to the analogous drawing tool over falling back to
     // the eyedropper: brush<->pen mirror each other as each type's default
@@ -3170,6 +3176,8 @@ function registerBuiltInCommands(){
     registerCommand('tool.hardEraser','Hard Eraser Tool',['hard eraser','erase'],()=>handleToolBtn('hardEraser'),'Tools');
     registerCommand('tool.softEraser','Soft Eraser Tool',['soft eraser'],()=>handleToolBtn('softEraser'),'Tools');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
+    registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools');
+    commandRegistry[commandRegistry.length-1].description='Background removal';
     registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
     registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
     registerCommand('tool.line','Line',['straight line'],()=>handleToolBtn('line'),'Tools');
@@ -3702,6 +3710,73 @@ function wandKey(x,y){ return x + ',' + y; }
 // This RGB metric is simple and fast, but it is not a perceptual colour metric
 // such as Lab/Delta-E; that can be considered later if closer human-perceived
 // colour matching is desired.
+// Parse stored pixel colours. Normal pixels are #RRGGBB; Colour to Alpha
+// also uses rgba(...) so anti-aliased transparency can be represented.
+function parseStoredColor(c){
+    if(c==null) return {r:0,g:0,b:0,a:0};
+    if(typeof c!=='string') return null;
+    const hex=c.replace('#','');
+    if(/^[0-9a-fA-F]{6}$/.test(hex)) return {r:parseInt(hex.slice(0,2),16),g:parseInt(hex.slice(2,4),16),b:parseInt(hex.slice(4,6),16),a:1};
+    const m=c.match(/^rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i);
+    if(m){ let a=m[4]==null?1:parseFloat(m[4]); if(String(m[4]||'').includes('%')) a/=100; return {r:parseFloat(m[1]),g:parseFloat(m[2]),b:parseFloat(m[3]),a:Math.max(0,Math.min(1,a))}; }
+    return null;
+}
+function rgbaString(r,g,b,a){
+    return `rgba(${Math.round(Math.max(0,Math.min(255,r)))},${Math.round(Math.max(0,Math.min(255,g)))},${Math.round(Math.max(0,Math.min(255,b)))},${Math.max(0,Math.min(1,a)).toFixed(4)})`;
+}
+
+function updateColorToAlphaTargetLabel(){
+    const l=document.getElementById('colorToAlphaTargetLabel'); if(!l)return;
+    l.textContent=colorToAlphaTarget ? ('Target: '+colorToAlphaTarget) : 'Tap a pixel to sample the background colour';
+}
+
+// Colour-to-Alpha / background removal.
+// Given a sampled background B and pixel C, solve for the smallest foreground
+// opacity that can explain C as a mixture of B and an unknown foreground F.
+// This preserves anti-aliased edges instead of merely deleting exact matches.
+function colorToAlphaPixel(c,target){
+    const C=parseStoredColor(c), B=parseStoredColor(target);
+    if(!C || !B) return {changed:false,value:c};
+    if(C.a<=0) return {changed:false,value:c};
+    let alpha=0;
+    const cb=[C.r,C.g,C.b], bb=[B.r,B.g,B.b];
+    for(let k=0;k<3;k++){
+        const cv=cb[k]/255, bv=bb[k]/255;
+        let need=0;
+        if(cv>bv) need=(cv-bv)/(1-bv || 1);
+        else if(cv<bv) need=(bv-cv)/(bv || 1);
+        alpha=Math.max(alpha,need);
+    }
+    alpha=Math.max(0,Math.min(1,alpha))*C.a;
+    if(alpha<=0.00001) return {changed:true,value:null};
+    const effectiveAlpha=Math.max(0.00001,alpha);
+    const recovered=[];
+    for(let k=0;k<3;k++){
+        const cv=cb[k]/255, bv=bb[k]/255;
+        const v=(cv-(1-effectiveAlpha/C.a)*bv)/(effectiveAlpha/C.a);
+        recovered.push(Math.max(0,Math.min(1,v))*255);
+    }
+    return {changed:true,value:rgbaString(recovered[0],recovered[1],recovered[2],alpha)};
+}
+function performColorToAlpha(x,y){
+    const layer=activeLayer();
+    if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH) return;
+    const source=layer.pixelData[x][y];
+    if(source==null) return;
+    colorToAlphaTarget=source;
+    updateColorToAlphaTargetLabel();
+    const before=beginEdit();
+    let changed=false;
+    for(let ix=0;ix<layer.gridW;ix++){
+        for(let iy=0;iy<layer.gridH;iy++){
+            const old=layer.pixelData[ix][iy];
+            const result=colorToAlphaPixel(old,colorToAlphaTarget);
+            if(result.changed && result.value!==old){ layer.pixelData[ix][iy]=result.value; changed=true; }
+        }
+    }
+    if(changed) { layer.redrawFromData(); commitEdit(before); }
+}
+
 function wandColourDistance(a,b){
     if (a === b) return 0;
     if (a == null || b == null) return Infinity;
@@ -4298,7 +4373,9 @@ function handleSwatchClick(c, isT = false) { selectedColor = isT ? null : c; upd
 function handleToolBtn(t) {
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
     if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); return; }
-    currentTool = t; updateUI(); updateToolVisibility(); updateVectorHandles();
+    currentTool = t;
+    if(t === 'colorToAlpha'){ colorToAlphaTarget=null; updateColorToAlphaTargetLabel(); }
+    updateUI(); updateToolVisibility(); updateVectorHandles();
 }
 
 // Refreshes which swatch/tool button shows as "selected" to match current state.
@@ -4311,6 +4388,7 @@ function updateUI() {
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
     if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
+    const ca = document.getElementById('colorToAlphaControls'); if (ca) ca.style.display = (currentTool === 'colorToAlpha' && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
     const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
     const bs = document.getElementById('bucketScopeBtn'); if (bs) { bs.textContent = bucketGlobal ? 'GLOBAL' : 'CONTIGUOUS'; bs.classList.toggle('active', !bucketGlobal); }
@@ -4435,15 +4513,15 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = currentTool === 'brush' || currentTool === 'eyedrop' || currentTool === 'wand' || currentTool === 'lasso';
+        const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool);
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
-        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop') syncPortraitPaletteForPoint(x,y);
+        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
             pixelCursor.style.top = (y * scale) + "px";
-            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : (selectedColor || 'rgba(255,255,255,0.2)');
+            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : (currentTool === 'colorToAlpha' ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
             pixelCursor.classList.toggle('active', isDrawing);
             if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; }
             if (!isDrawing) cursorTimer = setTimeout(hideCursor, 500);
@@ -4499,6 +4577,11 @@ function setupDrawingEvents() {
         if (currentTool === 'vpen' || currentTool === 'vshape') {
             // Placement goes through the freehand start/move/end functions
             // below instead, not through doToolAt.
+            return;
+        }
+        if (currentTool === 'colorToAlpha') {
+            performColorToAlpha(x,y);
+            g.suppressStroke = true;
             return;
         }
         const layer = activeLayer();
