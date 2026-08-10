@@ -798,58 +798,6 @@
     </div>
 
 
-
-<script>
-/* Tool expansion: Pencil, adjustable Brush, Hard Eraser, Soft Eraser.
-   Soft tools use alpha-weighted strokes; hard tools use full-opacity pixels. */
-(function () {
-  const TOOL_DEFS = {
-    pencil: { label: '✏️ Pencil Tool', size: 1, softness: 100, soft: false },
-    brush: { label: '🖌️ Brush Tool', size: 8, softness: 100, soft: false },
-    softBrush: { label: '🖌️ Soft Brush Tool', size: 8, softness: 35, soft: true },
-    hardEraser: { label: '🧹 Hard Eraser Tool', size: 1, softness: 100, soft: false },
-    softEraser: { label: '🧹 Soft Eraser Tool', size: 8, softness: 35, soft: true }
-  };
-
-  window.pixelToolDefs = TOOL_DEFS;
-  window.pixelToolState = {
-    current: 'pencil',
-    brushSize: 8,
-    brushSoftness: 100,
-    softEraserSize: 8,
-    softEraserSoftness: 35
-  };
-
-  window.selectPixelTool = function (name) {
-    if (!TOOL_DEFS[name]) return;
-    window.pixelToolState.current = name;
-
-    // Hard eraser intentionally selects the transparent swatch.
-    // Soft eraser does not, because it produces partial alpha.
-    if (name === 'hardEraser') {
-      try {
-        if (typeof window.selectTransparentSwatch === 'function')
-          window.selectTransparentSwatch();
-      } catch (_) {}
-    }
-
-    document.dispatchEvent(new CustomEvent('pixel-tool-changed', {
-      detail: { name, definition: TOOL_DEFS[name] }
-    }));
-  };
-
-  window.getPixelToolStroke = function () {
-    const s = window.pixelToolState;
-    const name = s.current;
-    if (name === 'pencil') return { size: 1, alpha: 1 };
-    if (name === 'brush') return { size: s.brushSize, alpha: s.brushSoftness / 100 };
-    if (name === 'softBrush') return { size: s.brushSize, alpha: s.brushSoftness / 100 };
-    if (name === 'hardEraser') return { size: s.softEraserSize, alpha: 1, erase: true };
-    return { size: s.softEraserSize, alpha: s.softEraserSoftness / 100, erase: true };
-  };
-})();
-</script>
-
 <script>
 /* ============================================================
    DEBUG CAPTURE (installed first, so it catches everything below)
@@ -2899,7 +2847,7 @@ function closeGlobalCommandPalette(){const o=document.getElementById('globalComm
 function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.slice(0,20).map(c=>({type:'command',name:c.name,path:c.category,description:c.description,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.description || (r.type.toUpperCase()+' • '+r.path))+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
 function registerBuiltInCommands(){
     if(commandRegistry.length)return;
-    registerCommand('tool.brush','Pencil Tool',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
+    registerCommand('tool.brush','Brush',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
     registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools');
     commandRegistry[commandRegistry.length-1].description='Background removal';
@@ -5908,56 +5856,5 @@ requestAnimationFrame(() => {
     showGallery();
 });
 </script>
-
-<!-- Pencil / Brush / Eraser controls -->
-<section id="pixel-tool-controls" aria-label="Brush and eraser controls">
-  <div class="pixel-tool-control" data-tool="brush softBrush">
-    <label>
-      Brush size
-      <input id="pixel-brush-size" type="range" min="1" max="100" value="8">
-      <output id="pixel-brush-size-value">8 px</output>
-    </label>
-    <label>
-      Brush softness
-      <input id="pixel-brush-softness" type="range" min="0" max="100" value="100">
-      <output id="pixel-brush-softness-value">100%</output>
-    </label>
-  </div>
-  <div class="pixel-tool-control" data-tool="softEraser">
-    <label>
-      Soft eraser size
-      <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8">
-      <output id="pixel-soft-eraser-size-value">8 px</output>
-    </label>
-    <label>
-      Soft eraser softness
-      <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35">
-      <output id="pixel-soft-eraser-softness-value">35%</output>
-    </label>
-  </div>
-</section>
-
-<script>
-(function () {
-  function bindRange(id, outputId, stateKey, suffix) {
-    const el = document.getElementById(id);
-    const out = document.getElementById(outputId);
-    if (!el) return;
-    const update = () => {
-      const value = Number(el.value);
-      window.pixelToolState[stateKey] = value;
-      if (out) out.textContent = value + suffix;
-    };
-    el.addEventListener('input', update);
-    update();
-  }
-
-  bindRange('pixel-brush-size', 'pixel-brush-size-value', 'brushSize', ' px');
-  bindRange('pixel-brush-softness', 'pixel-brush-softness-value', 'brushSoftness', '%');
-  bindRange('pixel-soft-eraser-size', 'pixel-soft-eraser-size-value', 'softEraserSize', ' px');
-  bindRange('pixel-soft-eraser-softness', 'pixel-soft-eraser-softness-value', 'softEraserSoftness', '%');
-})();
-</script>
-
 </body>
 </html>
