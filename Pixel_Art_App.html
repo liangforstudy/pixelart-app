@@ -582,6 +582,11 @@
                     <div class="row">
                         <button class="btn active" id="bucketScopeBtn" onclick="uiAction(toggleBucketScope)">CONTIGUOUS</button>
                     </div>
+                    <div class="panel-subtitle">FEATHER</div>
+                    <div class="row" style="align-items:center;">
+                        <input type="range" id="bucketFeather" min="0" max="20" step="1" value="0" oninput="uiAction(() => setBucketFeather(this.value))" style="flex:1;">
+                        <span id="bucketFeatherLabel" style="font-size:10px;color:#ccc;width:42px;text-align:right;">0 px</span>
+                    </div>
                 </div>
                 <div id="wandControls" style="display:none;">
                     <div class="panel-subtitle">Wand Selection</div>
@@ -593,6 +598,11 @@
                     </div>
                     <div class="row">
                         <button class="btn active" id="wandScopeBtn" onclick="uiAction(toggleWandScope)">CONTIGUOUS</button>
+                    </div>
+                    <div class="panel-subtitle">FEATHER</div>
+                    <div class="row" style="align-items:center;">
+                        <input type="range" id="wandFeather" min="0" max="20" step="1" value="0" oninput="uiAction(() => setWandFeather(this.value))" style="flex:1;">
+                        <span id="wandFeatherLabel" style="font-size:10px;color:#ccc;width:42px;text-align:right;">0 px</span>
                     </div>
                     <div class="row" style="gap:4px;">
                         <button class="btn active" id="wandSelModeReplace" onclick="uiAction(() => setPixelSelectionMode('replace'))">REPLACE</button>
@@ -1363,9 +1373,11 @@ let wandSelectionCount = 0;
 let wandFuzzy = false;
 let wandTolerance = 10;
 let wandGlobal = false;         // false = contiguous flood fill, true = global matching
+let wandFeather = 0;            // selection feather radius in pixels; independent from Bucket
 let bucketFuzzy = false;
 let bucketTolerance = 10;
 let bucketGlobal = false; // false = contiguous flood fill, true = global matching
+let bucketFeather = 0; // fill-edge feather radius in pixels; independent from Wand
 let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
 let pendingImportKind = 'pixel';
 
@@ -2756,6 +2768,8 @@ function setActiveLayer(idx) {
     const wr=document.getElementById('wandTolerance'); if(wr) wr.disabled=!wandFuzzy;
     const br=document.getElementById('bucketTolerance'); if(br) br.disabled=!bucketFuzzy;
     const bs=document.getElementById('bucketScopeBtn'); if(bs){bs.textContent=bucketGlobal?'GLOBAL':'CONTIGUOUS';bs.classList.toggle('active',!bucketGlobal);}
+    const wf=document.getElementById('wandFeather'); if(wf){wf.value=wandFeather;} const wfl=document.getElementById('wandFeatherLabel'); if(wfl)wfl.textContent=wandFeather+' px';
+    const bf=document.getElementById('bucketFeather'); if(bf){bf.value=bucketFeather;} const bfl=document.getElementById('bucketFeatherLabel'); if(bfl)bfl.textContent=bucketFeather+' px';
     updateVectorHandles();
 }
 
@@ -3702,7 +3716,7 @@ function selectionBoundsFromMask(mask) {
     if (!mask) return null;
     let x0=gridW, y0=gridH, x1=-1, y1=-1, count=0;
     for(let y=0;y<gridH;y++) for(let x=0;x<gridW;x++){
-        if(mask[y*gridW+x]){
+        if(mask[y*gridW+x] > 0.001){
             count++; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
         }
     }
@@ -3712,7 +3726,7 @@ function buildSelectionBoundary(mask) {
     if(!mask) return null;
     const boundary = [];
     for(let y=0;y<gridH;y++) for(let x=0;x<gridW;x++){
-        const i=y*gridW+x; if(!mask[i]) continue;
+        const i=y*gridW+x; if(mask[i] <= 0.001) continue;
         if(x===0||!mask[i-1]||x===gridW-1||!mask[i+1]||y===0||!mask[i-gridW]||y===gridH-1||!mask[i+gridW]) boundary.push([x,y]);
     }
     return boundary;
@@ -3728,7 +3742,7 @@ function updateSelectionOverlay(){
     ov.style.width=(gridW*scale)+'px'; ov.style.height=(gridH*scale)+'px'; ov.style.display='block';
     const ctx=ov.getContext('2d');
     const image=ctx.createImageData(gridW,gridH), data=image.data, mask=wandSelection;
-    for(let p=0,i=0;p<mask.length;p++,i+=4) if(mask[p]){data[i]=0;data[i+1]=120;data[i+2]=212;data[i+3]=72;}
+    for(let p=0,i=0;p<mask.length;p++,i+=4) if(mask[p] > 0.001){data[i]=0;data[i+1]=120;data[i+2]=212;data[i+3]=Math.round(72*mask[p]);}
     ctx.putImageData(image,0,0);
     selectionBoundary=buildSelectionBoundary(mask);
     drawSelectionAnts();
@@ -3788,6 +3802,78 @@ function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementB
 function setBucketTolerance(v){ bucketTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('bucketToleranceLabel'); if(l)l.textContent=bucketTolerance; }
 function toggleBucketMatch(){ bucketFuzzy=!bucketFuzzy; const b=document.getElementById('bucketMatchBtn'); if(b)b.textContent=bucketFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('bucketTolerance'); if(r)r.disabled=!bucketFuzzy; }
 function toggleBucketScope(){ bucketGlobal=!bucketGlobal; const b=document.getElementById('bucketScopeBtn'); if(b){b.textContent=bucketGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!bucketGlobal);} }
+function setWandFeather(v){ wandFeather=Math.max(0,Math.min(20,parseInt(v,10)||0)); const l=document.getElementById('wandFeatherLabel'); if(l)l.textContent=wandFeather+' px'; }
+function setBucketFeather(v){ bucketFeather=Math.max(0,Math.min(20,parseInt(v,10)||0)); const l=document.getElementById('bucketFeatherLabel'); if(l)l.textContent=bucketFeather+' px'; }
+
+// Feather a binary selection mask using a compact two-pass box blur. The result is
+// a fractional coverage mask (0..1), so the feather is part of the actual selection
+// rather than a visual-only effect. Repeating the box blur three times gives a smooth
+// Gaussian-like falloff while staying practical for large pixel canvases.
+function featherSelectionMask(mask, radius){
+    if(!mask || !radius || radius<=0) return mask;
+    const w=gridW,h=gridH,n=w*h;
+    let a=new Float32Array(n);
+    for(let i=0;i<n;i++) a[i]=mask[i]?1:0;
+    const r=Math.max(1,Math.min(20,Math.round(radius)));
+    const span=r*2+1;
+    for(let pass=0;pass<3;pass++){
+        let hbuf=new Float32Array(n), vbuf=new Float32Array(n);
+        for(let y=0;y<h;y++){
+            let sum=0;
+            for(let x=-r;x<w+r;x++){
+                const add=x+r, rem=x-r-1;
+                if(add>=0 && add<w) sum+=a[y*w+add];
+                if(rem>=0 && rem<w) sum-=a[y*w+rem];
+                if(x>=0 && x<w) hbuf[y*w+x]=sum/span;
+            }
+        }
+        for(let x=0;x<w;x++){
+            let sum=0;
+            for(let y=-r;y<h+r;y++){
+                const add=y+r, rem=y-r-1;
+                if(add>=0 && add<h) sum+=hbuf[add*w+x];
+                if(rem>=0 && rem<h) sum-=hbuf[rem*w+x];
+                if(y>=0 && y<h) vbuf[y*w+x]=Math.max(0,Math.min(1,sum/span));
+            }
+        }
+        a=vbuf;
+    }
+    return a;
+}
+function makeHardMaskFromSelection(mask){
+    const out=new Float32Array(mask.length);
+    for(let i=0;i<mask.length;i++) out[i]=mask[i]>0.001?1:0;
+    return out;
+}
+function selectionMaskCount(mask){
+    if(!mask)return 0; let n=0; for(let i=0;i<mask.length;i++) if(mask[i]>0.001)n++; return n;
+}
+function parseColorCached(c){
+    if(c==null)return null;
+    if(parseColorCached.cache.has(c)) return parseColorCached.cache.get(c);
+    let m=String(c).match(/^#([0-9a-f]{6})$/i);
+    let v=m?[parseInt(m[1].slice(0,2),16),parseInt(m[1].slice(2,4),16),parseInt(m[1].slice(4,6),16),1]:null;
+    if(!v){ const mm=String(c).match(/^rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:[, /]+\s*([\d.]+))?\s*\)$/i); if(mm)v=[+mm[1],+mm[2],+mm[3],mm[4]===undefined?1:+mm[4]]; }
+    parseColorCached.cache.set(c,v); return v;
+}
+parseColorCached.cache=new Map();
+function colorWithAlpha(c,a){
+    if(c==null)return null;
+    const v=parseColorCached(c); if(!v)return c;
+    return `rgba(${Math.round(v[0])},${Math.round(v[1])},${Math.round(v[2])},${Math.max(0,Math.min(1,a*v[3]))})`;
+}
+function blendFillColor(base, fill, amount){
+    amount=Math.max(0,Math.min(1,amount));
+    if(amount>=0.999)return fill;
+    if(amount<=0.001)return base;
+    const b=parseColorCached(base), f=parseColorCached(fill);
+    if(!f)return base;
+    if(!b)return colorWithAlpha(fill,amount);
+    const ba=b[3], fa=f[3]*amount, oa=fa+ba*(1-fa);
+    if(oa<=0.001)return null;
+    const r=(f[0]*fa+b[0]*ba*(1-fa))/oa, g=(f[1]*fa+b[1]*ba*(1-fa))/oa, bl=(f[2]*fa+b[2]*ba*(1-fa))/oa;
+    return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(bl)},${oa})`;
+}
 
 function performWandSelection(x,y){
     const layer=activeLayer(); if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
@@ -3802,17 +3888,20 @@ function performWandSelection(x,y){
         while(stack.length){const [cx,cy]=stack.pop();const k=wandKey(cx,cy);if(seen.has(k)||cx<0||cy<0||cx>=gridW||cy>=gridH)continue;seen.add(k);if(!wandMatches(layer.pixelData[cx][cy],target))continue;mark(cx,cy);stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);}
     }
     const before=selectionSnapshot();
-    applySelectionMask(out,pixelSelectionMode);
+    const feathered = wandFeather > 0 ? featherSelectionMask(out, wandFeather) : out;
+    applySelectionMask(feathered,pixelSelectionMode);
     recordSelectionUndo(before,selectionSnapshot());
 }
 function applySelectionMask(incoming, mode){
     const size=gridW*gridH;
-    if(!wandSelection || wandSelection.length!==size || mode==='replace'){ wandSelection=new Uint8Array(size); wandSelectionCount=0; }
+    if(!wandSelection || wandSelection.length!==size || mode==='replace'){ wandSelection=new Float32Array(size); wandSelectionCount=0; }
     for(let i=0;i<size;i++){
-        if(mode==='add'){ if(incoming[i]&&!wandSelection[i]){wandSelection[i]=1;wandSelectionCount++;} }
-        else if(mode==='subtract'){ if(incoming[i]&&wandSelection[i]){wandSelection[i]=0;wandSelectionCount--;} }
-        else if(incoming[i]&&!wandSelection[i]){wandSelection[i]=1;wandSelectionCount++;}
+        const v=Math.max(0,Math.min(1,incoming[i]||0));
+        if(mode==='add') wandSelection[i]=Math.max(wandSelection[i],v);
+        else if(mode==='subtract') wandSelection[i]=Math.max(0,wandSelection[i]-v);
+        else wandSelection[i]=Math.max(wandSelection[i],v);
     }
+    wandSelectionCount=selectionMaskCount(wandSelection);
     selection=selectionBoundsFromMask(wandSelection);
     renderWandSelection();
 }
@@ -3844,7 +3933,16 @@ function confirmWandDelete(){
     if(!confirm('Delete '+wandSelectionCount.toLocaleString()+' selected pixels?'))return;
     const snap=beginEdit();
     const mask=wandSelection;
-    for(let x=0;x<gridW;x++) for(let y=0;y<gridH;y++) if(mask[y*gridW+x]) layer.plot(x,y,null);
+    // Feathered selections erase proportionally: a pixel at 100% selection becomes
+    // transparent, while a partially selected pixel keeps the remaining opacity.
+    // PixelLayer stores colours as CSS strings, so partial erasure is represented
+    // as an rgba() colour rather than throwing away the pixel entirely.
+    for(let x=0;x<gridW;x++) for(let y=0;y<gridH;y++){
+        const a=mask[y*gridW+x]||0; if(a<=0.001) continue;
+        const old=layer.pixelData[x][y]; if(!old) continue;
+        if(a>=0.999) layer.plot(x,y,null);
+        else { const c=parseColorCached(old); if(c) layer.plot(x,y,`rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${Math.max(0,c[3]*(1-a))})`); }
+    }
     commitEdit(snap); clearWandSelection();
 }
 
@@ -4244,6 +4342,8 @@ function updateUI() {
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
     const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
     const bs = document.getElementById('bucketScopeBtn'); if (bs) { bs.textContent = bucketGlobal ? 'GLOBAL' : 'CONTIGUOUS'; bs.classList.toggle('active', !bucketGlobal); }
+    const wf = document.getElementById('wandFeather'); if (wf) wf.value = wandFeather; const wfl=document.getElementById('wandFeatherLabel'); if(wfl)wfl.textContent=wandFeather+' px';
+    const bf = document.getElementById('bucketFeather'); if (bf) bf.value = bucketFeather; const bfl=document.getElementById('bucketFeatherLabel'); if(bfl)bfl.textContent=bucketFeather+' px';
 }
 
 // Converts a CSS "rgb(r,g,b)" string (as read from an element's computed style) into "#RRGGBB".
@@ -4411,11 +4511,14 @@ function setupDrawingEvents() {
                 selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
                 if (selectedColor) createSwatch(selectedColor); else updateUI();
             }
-            // Reference layers only have the dropper -- it should stay
-            // selected there rather than bouncing back to whatever tool
-            // was active before, which would otherwise undo the auto-
-            // switch-to-dropper logic after every single tap.
-            if (!activeL || activeL.type !== 'reference') currentTool = toolBeforeEyedrop;
+            // Reference layers keep the colour tool active because their
+            // image is sampled directly; editable pixel art returns to Brush
+            // after a successful colour sample.
+            // Sampling a colour is a one-shot operation for editable pixel art:
+            // after choosing a colour, return to the BRUSH rather than restoring
+            // whatever tool happened to be active before the colour tool. This
+            // prevents e.g. Wand/Lasso/Fill remaining armed after sampling.
+            if (!activeL || activeL.type !== 'reference') currentTool = 'brush';
             updateUI();
             g.suppressStroke = true;
             return;
@@ -4441,28 +4544,29 @@ function setupDrawingEvents() {
                 return wandColourDistance(c,target) <= (bucketTolerance/100)*maxDist;
             };
             if (target !== undefined && !matches(selectedColor)) {
+                const fillMask = new Uint8Array(gridW * gridH);
                 if (bucketGlobal) {
-                    // GLOBAL mode: replace every pixel matching the sampled target,
-                    // regardless of whether it is connected to the tapped pixel.
-                    for (let fy = 0; fy < gridH; fy++) {
-                        for (let fx = 0; fx < gridW; fx++) {
-                            if (matches(layer.pixelData[fx][fy])) plot(fx, fy);
-                        }
-                    }
+                    // GLOBAL mode: replace every matching pixel across the layer.
+                    for (let fy = 0; fy < gridH; fy++) for (let fx = 0; fx < gridW; fx++)
+                        if (matches(layer.pixelData[fx][fy])) fillMask[fy*gridW+fx]=1;
                 } else {
-                    // CONTIGUOUS mode: classic flood fill starting at the tapped pixel.
-                    const stack = [[x, y]];
-                    const seen = new Uint8Array(gridW * gridH);
+                    // CONTIGUOUS mode: classic flood fill from the tapped pixel.
+                    const stack = [[x, y]], seen = new Uint8Array(gridW * gridH);
                     while (stack.length) {
                         const [nx, ny] = stack.pop();
                         if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
                         const idx=ny*gridW+nx;
                         if(seen[idx] || !matches(layer.pixelData[nx][ny])) continue;
-                        seen[idx]=1;
-                        plot(nx, ny);
+                        seen[idx]=1; fillMask[idx]=1;
                         stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
                     }
                 }
+                const softMask=bucketFeather>0 ? featherSelectionMask(fillMask,bucketFeather) : fillMask;
+                for(let fy=0;fy<gridH;fy++) for(let fx=0;fx<gridW;fx++){
+                    const a=softMask[fy*gridW+fx]||0;
+                    if(a>0.001) layer.plot(fx,fy,blendFillColor(layer.pixelData[fx][fy],selectedColor,a));
+                }
+                layer.redrawFromData();
             }
         } else plot(x, y);
     };
