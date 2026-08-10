@@ -564,6 +564,9 @@
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
+<div class="row"><button class="btn tool-btn" data-tool="pencil" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button><button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button></div>
+<div class="row"><button class="btn tool-btn" data-tool="softBrush" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" data-tool="hardEraser" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" data-tool="softEraser" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
+<div id="pixelToolControls" style="display:none;padding:6px 0"><label>Brush size <input id="pixel-brush-size" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-value">8 px</output></label><label>Brush softness <input id="pixel-brush-softness" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-value">100%</output></label><label>Soft eraser size <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8"><output id="pixel-soft-eraser-size-value">8 px</output></label><label>Soft eraser softness <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35"><output id="pixel-soft-eraser-softness-value">35%</output></label></div>
                 <div class="row">
                     <button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH</button>
                     <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
@@ -1041,7 +1044,11 @@ const ZOOM_STEPS = [0.1,0.16,0.25,0.35,0.5,0.75,1,2,3,4,5,6,8,10,12,16,20,24,32,
 let zoomIndex = ZOOM_STEPS.indexOf(10);
 
 let viewport, container, pixelCursor;
-let currentTool = 'brush', isDrawing = false, isEditing = false;
+let currentTool = 'pencil', isDrawing = false, isEditing = false;
+window.pixelToolState={current:'pencil',brushSize:8,brushSoftness:100,softEraserSize:8,softEraserSoftness:35};
+window.pixelToolDefs={pencil:{label:'✏️ PENCIL TOOL'},brush:{label:'🖌️ BRUSH TOOL'},softBrush:{label:'🖌️ SOFT BRUSH TOOL'},hardEraser:{label:'🧹 HARD ERASER TOOL'},softEraser:{label:'🧹 SOFT ERASER TOOL'}};
+window.selectPixelTool=function(n){if(!window.pixelToolDefs[n])return;window.pixelToolState.current=n;currentTool=n;if(n==='hardEraser'){try{if(typeof window.selectTransparentSwatch==='function')window.selectTransparentSwatch();else selectedColor=null;}catch(e){selectedColor=null;}}updateUI();updateToolVisibility();};
+window.getPixelToolStroke=function(){const s=window.pixelToolState,n=s.current;if(n==='pencil')return{size:1,alpha:1,erase:false,soft:false};if(n==='brush')return{size:s.brushSize,alpha:1,erase:false,soft:false};if(n==='softBrush')return{size:s.brushSize,alpha:s.brushSoftness/100,erase:false,soft:true};if(n==='hardEraser')return{size:1,alpha:1,erase:true,soft:false};return{size:s.softEraserSize,alpha:s.softEraserSoftness/100,erase:true,soft:true};};
 let isConfirmingClear = false, selectedColor = "#000000";
 let holdTimer, dragTarget = null, cursorTimer;
 
@@ -2836,7 +2843,7 @@ function updateToolVisibility() {
     const type = layer ? layer.type : 'pixel';
     const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
 
-    show('pixelToolsSection', type === 'pixel' || type === 'mask' || type === 'clip');
+    show('pixelToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
     show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
@@ -3157,7 +3164,11 @@ function closeGlobalCommandPalette(){const o=document.getElementById('globalComm
 function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.slice(0,20).map(c=>({type:'command',name:c.name,path:c.category,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
 function registerBuiltInCommands(){
     if(commandRegistry.length)return;
-    registerCommand('tool.brush','Brush',['paint','draw','pencil'],()=>handleToolBtn('brush'),'Tools');
+    registerCommand('tool.pencil','Pencil Tool',['pencil','draw'],()=>handleToolBtn('pencil'),'Tools');
+    registerCommand('tool.brush','Brush Tool',['brush','paint'],()=>handleToolBtn('brush'),'Tools');
+    registerCommand('tool.softBrush','Soft Brush Tool',['soft brush'],()=>handleToolBtn('softBrush'),'Tools');
+    registerCommand('tool.hardEraser','Hard Eraser Tool',['hard eraser','erase'],()=>handleToolBtn('hardEraser'),'Tools');
+    registerCommand('tool.softEraser','Soft Eraser Tool',['soft eraser'],()=>handleToolBtn('softEraser'),'Tools');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
     registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
     registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
@@ -4286,11 +4297,8 @@ function handleSwatchClick(c, isT = false) { selectedColor = isT ? null : c; upd
 // Switches the active tool. Remembers the previous tool when switching to the eyedropper, so it can auto-restore after one sample.
 function handleToolBtn(t) {
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
-    if (t !== 'select') { /* leaving select tool keeps the selection, just stops editing it */ }
-    currentTool = t;
-    updateUI();
-    updateToolVisibility();
-    updateVectorHandles();
+    if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); return; }
+    currentTool = t; updateUI(); updateToolVisibility(); updateVectorHandles();
 }
 
 // Refreshes which swatch/tool button shows as "selected" to match current state.
@@ -4301,11 +4309,13 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
-    if (currentTool !== 'brush' && currentTool !== 'eyedrop' && currentTool !== 'wand') hideCursor();
+    if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
     const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
     const bs = document.getElementById('bucketScopeBtn'); if (bs) { bs.textContent = bucketGlobal ? 'GLOBAL' : 'CONTIGUOUS'; bs.classList.toggle('active', !bucketGlobal); }
+    const pt=document.getElementById('pixelToolControls'); if(pt)pt.style.display=['brush','softBrush','softEraser'].includes(currentTool)?'block':'none';
+    [['pixel-brush-size','brushSize','px'],['pixel-brush-softness','brushSoftness','%'],['pixel-soft-eraser-size','softEraserSize','px'],['pixel-soft-eraser-softness','softEraserSoftness','%']].forEach(([id,k,s])=>{const e=document.getElementById(id),o=document.getElementById(id+'-value');if(e){e.value=window.pixelToolState[k];if(o)o.textContent=e.value+s;}});
 }
 
 // Converts a CSS "rgb(r,g,b)" string (as read from an element's computed style) into "#RRGGBB".
@@ -4441,6 +4451,10 @@ function setupDrawingEvents() {
     };
 
     // -- one-shot tool actions (brush dot / bucket fill / eyedropper) --
+    const parseStoredRGBA=(v)=>{if(!v)return[0,0,0,0];let m=String(v).match(/^#([0-9a-f]{6})$/i);if(m)return[parseInt(m[1].slice(0,2),16),parseInt(m[1].slice(2,4),16),parseInt(m[1].slice(4,6),16),1];m=String(v).match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)$/i);return m?[+m[1],+m[2],+m[3],m[4]==null?1:+m[4]]:[0,0,0,0];};
+    const rgbaString=(r,g,b,a)=>a<=.0005?null:(a>=.9995?'#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('').toUpperCase():`rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${a.toFixed(4)})`);
+    const blendPixel=(l,x,y,sr,sg,sb,sa,erase)=>{if(x<0||y<0||x>=l.gridW||y>=l.gridH)return;const[dr,dg,db,da]=parseStoredRGBA(l.pixelData[x][y]);if(erase){l.plot(x,y,rgbaString(dr,dg,db,da*(1-sa)));return;}const oa=sa+da*(1-sa);l.plot(x,y,rgbaString((sr*sa+dr*da*(1-sa))/oa,(sg*sa+dg*da*(1-sa))/oa,(sb*sa+db*da*(1-sa))/oa,oa));};
+    const applyPixelToolAt=(cx,cy)=>{const l=activeLayer();if(!isPixelLike(l))return;const s=window.getPixelToolStroke();let c=portraitStrokeColor!==null?portraitStrokeColor:selectedColor;const erase=!!s.erase;if(erase)c='#000000';const[sr,sg,sb]=parseStoredRGBA(c||'#000000');if(s.size===1&&!s.soft){l.plot(cx,cy,erase?null:c);return;}const r=s.size/2;for(let y=Math.floor(cy-r);y<=Math.ceil(cy+r-1);y++)for(let x=Math.floor(cx-r);x<=Math.ceil(cx+r-1);x++){let a=s.alpha;if(s.soft){const d=Math.hypot(x+.5-(cx+.5),y+.5-(cy+.5))/Math.max(.5,r);if(d>1)continue;a*=Math.pow(Math.max(0,1-d),2);}blendPixel(l,x,y,sr,sg,sb,a,erase);}};
     const doToolAt = (x, y) => {
         if (currentTool === 'eyedrop') {
             const activeL = activeLayer();
@@ -4489,6 +4503,7 @@ function setupDrawingEvents() {
         }
         const layer = activeLayer();
         if (!isPixelLike(layer)) return;
+        if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) { applyPixelToolAt(x,y); return; }
         if (currentTool === 'wand') {
             performWandSelection(x,y);
             g.suppressStroke = true;
@@ -4661,7 +4676,7 @@ function setupDrawingEvents() {
         }
         g.currentEditSnapshot = beginEdit();
         doToolAt(x, y);
-        g.lastBrushPos = (currentTool === 'brush') ? { x, y } : null;
+        g.lastBrushPos = ['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool) ? {x,y} : null;
     };
 
     const commitPendingTouch = () => {
@@ -4818,16 +4833,9 @@ function setupDrawingEvents() {
         if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
         if (isDrawing && (!g.suppressStroke || currentTool === 'lasso')) {
             const [x, y] = getPos(e);
-            if (currentTool === 'brush') {
-                // A fast drag can jump several grid cells between two
-                // consecutive move events -- plotting only the endpoint
-                // would leave gaps. Fill the path between the last plotted
-                // point and this one (same Bresenham walk the Line tool
-                // uses) so the stroke stays continuous at any drag speed.
-                if (g.lastBrushPos) linePixels(g.lastBrushPos.x, g.lastBrushPos.y, x, y).forEach(([lx, ly]) => plot(lx, ly));
-                else plot(x, y);
-                g.lastBrushPos = { x, y };
-                if (activeLayerHasLiveHook()) scheduleHookedCompositeRefresh();
+            if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) {
+                if(g.lastBrushPos) linePixels(g.lastBrushPos.x,g.lastBrushPos.y,x,y).forEach(([lx,ly])=>applyPixelToolAt(lx,ly)); else applyPixelToolAt(x,y);
+                g.lastBrushPos={x,y}; if(activeLayerHasLiveHook())scheduleHookedCompositeRefresh();
             }
             else if (currentTool === 'select') updateSelectionDrag(x, y);
             else if (currentTool === 'lasso' && g.lasso) { const p={x:x+.5,y:y+.5},last=g.lasso[g.lasso.length-1]; if(Math.hypot(p.x-last.x,p.y-last.y)>=.5) g.lasso.push(p); }
@@ -6123,6 +6131,8 @@ requestAnimationFrame(() => {
     selectedColor = "#000000";
     updateUI();
     handleToolBtn('brush');
+    [['pixel-brush-size','brushSize'],['pixel-brush-softness','brushSoftness'],['pixel-soft-eraser-size','softEraserSize'],['pixel-soft-eraser-softness','softEraserSoftness']].forEach(([id,k])=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{window.pixelToolState[k]=Number(e.value);updateUI();});});
+    handleToolBtn('pencil');
     showGallery();
 });
 </script>
