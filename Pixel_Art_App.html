@@ -5337,8 +5337,8 @@ function setupDrawingEvents() {
         // rotation preserves the centroid), so we can un-rotate around it.
         const centerX = r.left + r.width / 2;
         const centerY = r.top + r.height / 2;
-        const dx = (cx - centerX - cameraPanX) / cameraScale;
-        const dy = (cy - centerY - cameraPanY) / cameraScale;
+        const dx = (cx - centerX) / cameraScale;
+        const dy = (cy - centerY) / cameraScale;
         const rad = -cameraRotation * Math.PI / 180;
         const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
         const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
@@ -5358,7 +5358,7 @@ function setupDrawingEvents() {
         const rad = cameraRotation * Math.PI / 180;
         const rx = localX * Math.cos(rad) - localY * Math.sin(rad);
         const ry = localX * Math.sin(rad) + localY * Math.cos(rad);
-        return [centerX + cameraPanX + rx * cameraScale, centerY + cameraPanY + ry * cameraScale];
+        return [centerX + rx * cameraScale, centerY + ry * cameraScale];
     };
     const getPos = (e) => {
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
