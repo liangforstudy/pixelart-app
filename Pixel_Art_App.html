@@ -206,6 +206,7 @@
         }
         #gallery-ctx-menu.open { display: block; }
         .ctx-item {
+            touch-action: manipulation;
             padding: 11px 18px; font-size: 13px; color: #e0e0e0; cursor: pointer;
             display: flex; align-items: center; gap: 10px;
         }
@@ -249,10 +250,10 @@
 
         /* Rename inline overlay */
         #gallery-rename-modal {
-            position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,0.6);
+            position: fixed; inset: 0; z-index: 1800; pointer-events: none; background: rgba(0,0,0,0.6);
             display: none; align-items: center; justify-content: center;
         }
-        #gallery-rename-modal.open { display: flex; }
+        #gallery-rename-modal.open { display: flex; pointer-events: auto; }
         #gallery-rename-box {
             background: #1c1c1e; border-radius: 14px; padding: 20px;
             width: min(320px, 90vw); box-sizing: border-box;
@@ -267,6 +268,47 @@
         .rename-actions button { flex: 1; height: 40px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; border: none; }
         #rename-cancel-btn { background: #2a2a2a; color: #aaa; }
         #rename-ok-btn { background: #0078d4; color: #fff; }
+
+        /* Canvas resize sheet */
+        #resize-canvas-modal {
+            position: fixed; inset: 0; z-index: 1850; display: none; align-items: flex-end; justify-content: center;
+            background: rgba(0,0,0,.72);
+        }
+        #resize-canvas-modal.open { display: flex; }
+        #resize-canvas-sheet {
+            width: 100%; max-width: 480px; background:#161616; border-radius:20px 20px 0 0;
+            padding:20px 20px max(20px,env(safe-area-inset-bottom)); box-sizing:border-box;
+            display:flex; flex-direction:column; gap:12px;
+        }
+        .resize-size-row { display:flex; gap:8px; }
+        .resize-size-field {
+            flex:1; height:48px; background:#2a2a2a; border:2px solid #444; border-radius:10px;
+            color:#fff; font-size:22px; font-weight:800; text-align:center; cursor:pointer;
+        }
+        .resize-size-field.active { border-color:#0078d4; }
+        #resize-anchor-grid {
+            width:180px; height:180px; margin:0 auto; display:grid; grid-template-columns:repeat(3,1fr);
+            grid-template-rows:repeat(3,1fr); border:1px solid #444; border-radius:8px; overflow:hidden;
+        }
+        .resize-anchor-btn {
+            border:1px solid #333; background:#2a2a2a; color:#fff; font-size:22px; cursor:pointer;
+        }
+        .resize-anchor-btn.active { background:#0078d4; }
+        .resize-anchor-btn:active { filter:brightness(1.25); }
+        #numericKeyboardBackdrop { position:fixed; inset:0; z-index:2090; display:none; background:rgba(0,0,0,.28); }
+        #numericKeyboardBackdrop.open { display:block; pointer-events:auto; }
+        #numericKeyboard {
+            position:fixed; left:0; right:0; bottom:0; z-index:2100; background:#1c1c1e; border-top:1px solid #333;
+            padding:8px; padding-bottom:max(8px,env(safe-area-inset-bottom)); box-sizing:border-box;
+            transform:translateY(100%); transition:transform .2s ease-out; display:flex; flex-direction:column; gap:6px;
+        }
+        #numericKeyboard.open { transform:translateY(0); }
+        #numericPreviewRow { display:flex; align-items:center; gap:10px; padding:2px 4px 8px; }
+        #numericPreviewText { flex:1; font-size:22px; color:#fff; text-align:center; border-bottom:1px solid #444; padding-bottom:6px; min-height:28px; }
+        #numericDoneBtn { background:#0078d4; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:bold; }
+        #numericKeys { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; max-width:420px; width:100%; margin:0 auto; }
+        .numeric-key { height:52px; background:#3a3a3c; border:none; border-radius:7px; color:#fff; font-size:21px; font-weight:700; box-shadow:0 1px 0 rgba(0,0,0,.4); }
+        .numeric-key.special { background:#232325; }
 
         #panelBackdrop {
             position: fixed; inset: 0; z-index: 800; display: none;
@@ -338,6 +380,8 @@
         .btn.active { background: #0078d4; border-color: #fff; }
         .btn:disabled { opacity: 0.35; cursor: default; }
 
+        .flip-action-btn { touch-action: manipulation; pointer-events: auto; position: relative; z-index: 960; }
+
         .btn-clear { background: #631e1e; }
         .btn-clear.confirming { background: #ff3b30; color: #fff; border-color: white; }
 
@@ -408,10 +452,10 @@
         .layer-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
         .layer-name-input { flex: 1; font-size: 11px; background: #1c1c1c; border: 1px solid #0078d4; border-radius: 4px; color: #fff; padding: 2px 4px; min-width: 0; }
 
-        #keyboardBackdrop { position: fixed; inset: 0; z-index: 960; display: none; background: rgba(0,0,0,0.3); }
-        #keyboardBackdrop.open { display: block; }
+        #keyboardBackdrop { position: fixed; inset: 0; z-index: 1990; display: none; background: rgba(0,0,0,0.3); }
+        #keyboardBackdrop.open { display: block; pointer-events: auto; }
         #customKeyboard {
-            position: fixed; left: 0; right: 0; bottom: 0; z-index: 970;
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000;
             background: #1c1c1e; border-top: 1px solid #333;
             padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom));
             box-sizing: border-box; transform: translateY(100%);
@@ -479,9 +523,10 @@
     <div id="gallery-ctx-menu">
         <div class="ctx-item" id="ctx-rename">✏️ Rename</div>
         <div class="ctx-item" id="ctx-duplicate">📋 Duplicate</div>
+        <div class="ctx-item" id="ctx-resize">📐 Resize Canvas</div>
         <div class="ctx-divider"></div>
         <div class="ctx-item" id="ctx-export">🖼️ Export PNG</div>
-        <div class="ctx-item" id="ctx-save-file">💾 Save as file</div>
+        <div class="ctx-item" id="ctx-save-file">💾 Export Project</div>
         <div class="ctx-divider"></div>
         <div class="ctx-item danger" id="ctx-delete">🗑️ Delete</div>
     </div>
@@ -498,6 +543,35 @@
         </div>
     </div>
 
+    <!-- Canvas resize sheet. Size fields open the built-in numeric keypad. -->
+    <div id="resize-canvas-modal">
+        <div id="resize-canvas-sheet">
+            <div class="sheet-title">Resize Canvas</div>
+            <div class="sheet-hint" id="resize-current-size">Current: 1 × 1</div>
+            <div class="resize-size-row">
+                <button type="button" class="resize-size-field" id="resize-new-w">1</button>
+                <div style="display:flex;align-items:center;color:#888;font-size:20px;">×</div>
+                <button type="button" class="resize-size-field" id="resize-new-h">1</button>
+            </div>
+            <div class="panel-subtitle" style="text-align:center;">Anchor Artwork</div>
+            <div id="resize-anchor-grid">
+                <button class="resize-anchor-btn" data-anchor="0,0">↖</button><button class="resize-anchor-btn" data-anchor=".5,0">↑</button><button class="resize-anchor-btn" data-anchor="1,0">↗</button>
+                <button class="resize-anchor-btn" data-anchor="0,.5">←</button><button class="resize-anchor-btn active" data-anchor=".5,.5">•</button><button class="resize-anchor-btn" data-anchor="1,.5">→</button>
+                <button class="resize-anchor-btn" data-anchor="0,1">↙</button><button class="resize-anchor-btn" data-anchor=".5,1">↓</button><button class="resize-anchor-btn" data-anchor="1,1">↘</button>
+            </div>
+            <div class="sheet-hint">The selected anchor keeps that point of the existing artwork fixed while the canvas grows or crops around it.</div>
+            <button class="btn-start" id="resize-apply-btn" style="width:100%;height:48px;background:#0078d4;border:none;color:#fff;border-radius:24px;font-weight:bold;font-size:14px;">Resize Canvas</button>
+            <button id="resize-cancel-btn" style="width:100%;height:44px;background:#2a2a2a;border:1px solid #3a3a3a;color:#aaa;border-radius:10px;font-weight:700;font-size:13px;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Built-in numeric keypad for canvas dimensions. -->
+    <div id="numericKeyboardBackdrop"></div>
+    <div id="numericKeyboard">
+        <div id="numericPreviewRow"><div id="numericPreviewText">0</div><button id="numericDoneBtn">Done</button></div>
+        <div id="numericKeys"></div>
+    </div>
+
     <div id="init-screen" style="display:none;">
         <div style="font-size:20px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px;">🎨 Pixel Art Hub</div>
 
@@ -509,7 +583,6 @@
 
         <div class="picker-label" style="margin-top:6px;">New Project</div>
         <div id="profileRow">
-            <button class="profile-btn" data-profile="photo" onclick="selectProfile('photo')">Photo</button>
             <button class="profile-btn active" data-profile="pixelArt" onclick="selectProfile('pixelArt')">Pixel Art</button>
             <button class="profile-btn" data-profile="portrait" onclick="selectProfile('portrait')">Portrait</button>
             <button class="profile-btn" data-profile="sprite" onclick="selectProfile('sprite')">Sprite</button>
@@ -528,7 +601,7 @@
 
         <div class="picker-label" style="margin-top:14px;">Import Image</div>
         <button class="btn-start" id="hubImportImageBtn" style="width:260px; background:#2a2a2a;" onclick="handleImportImageClick()">🖼️ IMPORT AS NEW PROJECT</button>
-        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">Canvas is sized to match the image (capped at 2000px per side, scaled down proportionally if larger). Canvases over 999px on either side use Image mode rendering.</div>
+        <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:4px;">Canvas is sized to match the image (capped at 2000px per side, scaled down proportionally if larger). Canvases over 999px on either side use image rendering automatically.</div>
         <input type="file" id="hubImageInput" accept="image/*" style="display:none">
 
         <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:10px;">No persistent storage yet -- projects only exist as files you save/load yourself.</div>
@@ -564,7 +637,6 @@
             <div class="row">
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
                 <button class="btn tool-btn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
-                <button class="btn tool-btn" data-tool="colorMatch" onclick="uiAction(() => handleToolBtn('colorMatch'))">🎯 MATCH A COLOUR</button>
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
@@ -594,13 +666,7 @@
                     <div class="panel-subtitle">COLOUR TO ALPHA • BACKGROUND REMOVAL</div>
                     <div id="colorToAlphaTargetLabel" style="font-size:10px;color:#888;text-align:center;">Tap a pixel to sample the background colour</div>
                 </div>
-                <div id="colorMatchControls" style="display:none;">
-                    <div class="panel-subtitle">MATCH A COLOUR • EXACT PIXEL REPLACEMENT</div>
-                    <div id="colorMatchTargetLabel" style="font-size:10px;color:#888;text-align:center;line-height:1.45;">Tap the WRONG colour first, then tap the CORRECT colour.</div>
-                    <div class="row" style="gap:6px;">
-                        <button class="btn" id="colorMatchResetBtn" onclick="uiAction(resetColorMatch)">↺ RESET SAMPLES</button>
-                    </div>
-                </div>
+                
                 <div id="wandControls" style="display:none;">
                     <div class="panel-subtitle">Wand Selection</div>
                     <div class="row" style="align-items:center; gap:6px;">
@@ -654,8 +720,8 @@
             <div id="flipToolsSection">
                 <div class="panel-subtitle">Flip Active Layer</div>
                 <div class="row">
-                    <button class="btn" onclick="uiAction(flipActiveLayerH)">↔️ FLIP HORIZONTAL</button>
-                    <button class="btn" onclick="uiAction(flipActiveLayerV)">↕️ FLIP VERTICAL</button>
+                    <button type="button" class="btn flip-action-btn" id="flipHorizontalBtn">↔️ FLIP HORIZONTAL</button>
+                    <button type="button" class="btn flip-action-btn" id="flipVerticalBtn">↕️ FLIP VERTICAL</button>
                 </div>
             </div>
             <div class="panel-subtitle">History</div>
@@ -667,19 +733,11 @@
         </div>
 
         <div class="floating-panel" id="panel-view">
-            <div class="panel-title">View &amp; Canvas Size</div>
+            <div class="panel-title">View</div>
             <div class="row">
                 <button class="btn btn-small" onclick="uiAction(zoomOut)">-</button>
                 <div id="zoomLabel">10x</div>
                 <button class="btn btn-small" onclick="uiAction(zoomIn)">+</button>
-            </div>
-            <div class="row">
-                <input type="number" class="num-input" id="resizeW" min="1" max="2000">
-                <div class="x-sep">×</div>
-                <input type="number" class="num-input" id="resizeH" min="1" max="2000">
-            </div>
-            <div class="row">
-                <button class="btn" onclick="uiAction(applyResize)">📐 APPLY SIZE</button>
             </div>
             <div class="panel-subtitle">Canvas Rotation (2-finger twist)</div>
             <div class="row">
@@ -849,12 +907,14 @@
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
 
-        <div id="keyboardBackdrop"></div>
-        <div id="customKeyboard"></div>
         <button id="undoFab" onclick="uiAction(undo)">↩️</button>
         <button id="redoFab" onclick="uiAction(redo)">↪️</button>
     </div>
 
+
+    <!-- Global on-screen keyboard: kept outside #main-app so it remains usable from the Hub. -->
+    <div id="keyboardBackdrop"></div>
+    <div id="customKeyboard"></div>
 
 <script>
 /* Restored ImageLayer */
@@ -882,6 +942,189 @@ function sameImageTile(a,b){
     return true;
 }
 
+/* ============================================================
+   IMAGE RENDERERS
+   Image/Photo layers keep their authoritative pixels on the CPU so
+   undo/redo never depends on GPU state. The visible canvas can be
+   rendered by WebGL2 when available, with a Canvas2D fallback.
+   ============================================================ */
+class Canvas2DImageRenderer {
+    constructor(layer) {
+        this.layer = layer;
+        this.canvas = layer.el;
+        this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+        this.kind = 'canvas2d';
+    }
+    resize(w, h) {
+        this.canvas.width = w;
+        this.canvas.height = h;
+    }
+    render(imageData) {
+        if (this.canvas.width !== imageData.width || this.canvas.height !== imageData.height) this.resize(imageData.width, imageData.height);
+        this.ctx.putImageData(imageData, 0, 0);
+    }
+    renderFromCanvas(source) {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.drawImage(source, 0, 0, this.canvas.width, this.canvas.height);
+    }
+    destroy() {}
+}
+
+class WebGL2ImageRenderer {
+    constructor(layer) {
+        this.layer = layer;
+        this.canvas = layer.el;
+        this.gl = this.canvas.getContext('webgl2', {
+            alpha: true,
+            antialias: false,
+            depth: false,
+            stencil: false,
+            premultipliedAlpha: false,
+            preserveDrawingBuffer: false
+        });
+        if (!this.gl) throw new Error('WebGL2 unavailable');
+        this.kind = 'webgl2';
+        this.texture = null;
+        this.program = null;
+        this.positionBuffer = null;
+        this.aPosition = -1;
+        this.aTexCoord = -1;
+        this.uTexture = null;
+        this._buildPipeline();
+        this.canvas.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            this.contextLost = true;
+        }, { passive: false });
+        this.canvas.addEventListener('webglcontextrestored', () => {
+            this.contextLost = false;
+            try {
+                this._buildPipeline();
+                this.render(this.layer.imageData);
+            } catch (err) {
+                console.warn('WebGL2 image renderer could not restore context:', err);
+            }
+        });
+    }
+    _compile(type, source) {
+        const gl = this.gl;
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            const info = gl.getShaderInfoLog(shader) || 'unknown shader error';
+            gl.deleteShader(shader);
+            throw new Error(info);
+        }
+        return shader;
+    }
+    _buildPipeline() {
+        const gl = this.gl;
+        const vs = this._compile(gl.VERTEX_SHADER, `#version 300 es
+            in vec2 aPosition;
+            in vec2 aTexCoord;
+            out vec2 vTexCoord;
+            void main(){
+                gl_Position = vec4(aPosition, 0.0, 1.0);
+                vTexCoord = aTexCoord;
+            }`);
+        const fs = this._compile(gl.FRAGMENT_SHADER, `#version 300 es
+            precision mediump float;
+            uniform sampler2D uTexture;
+            in vec2 vTexCoord;
+            out vec4 outColor;
+            void main(){ outColor = texture(uTexture, vTexCoord); }`);
+        const program = gl.createProgram();
+        gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
+        gl.deleteShader(vs); gl.deleteShader(fs);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            const info = gl.getProgramInfoLog(program) || 'unknown program link error';
+            gl.deleteProgram(program);
+            throw new Error(info);
+        }
+        this.program = program;
+        this.aPosition = gl.getAttribLocation(program, 'aPosition');
+        this.aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
+        this.uTexture = gl.getUniformLocation(program, 'uTexture');
+        if (!this.positionBuffer) this.positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        // Two triangles. Texture coordinates are flipped vertically once
+        // during texture upload so the ImageData orientation remains natural.
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1,-1, 0,0,   1,-1, 1,0,  -1,1, 0,1,
+            -1,1,  0,1,   1,-1, 1,0,   1,1, 1,1
+        ]), gl.STATIC_DRAW);
+        if (!this.texture) this.texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    resize(w, h) {
+        this.canvas.width = w;
+        this.canvas.height = h;
+        if (this.gl) this.gl.viewport(0, 0, w, h);
+    }
+    render(imageData) {
+        if (this.contextLost) return;
+        const gl = this.gl;
+        if (this.canvas.width !== imageData.width || this.canvas.height !== imageData.height) this.resize(imageData.width, imageData.height);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.useProgram(this.program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.enableVertexAttribArray(this.aPosition);
+        gl.vertexAttribPointer(this.aPosition, 2, gl.FLOAT, false, 16, 0);
+        gl.enableVertexAttribArray(this.aTexCoord);
+        gl.vertexAttribPointer(this.aTexCoord, 2, gl.FLOAT, false, 16, 8);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, imageData.width, imageData.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, imageData.data);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.uniform1i(this.uTexture, 0);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+    renderFromCanvas(source) {
+        if (this.contextLost) return;
+        const gl = this.gl;
+        if (this.canvas.width !== source.width || this.canvas.height !== source.height) this.resize(source.width, source.height);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.useProgram(this.program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.enableVertexAttribArray(this.aPosition); gl.vertexAttribPointer(this.aPosition, 2, gl.FLOAT, false, 16, 0);
+        gl.enableVertexAttribArray(this.aTexCoord); gl.vertexAttribPointer(this.aTexCoord, 2, gl.FLOAT, false, 16, 8);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.uniform1i(this.uTexture, 0);
+        gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES,0,6);
+    }
+    destroy() {
+        if (!this.gl) return;
+        if (this.texture) this.gl.deleteTexture(this.texture);
+        if (this.positionBuffer) this.gl.deleteBuffer(this.positionBuffer);
+        if (this.program) this.gl.deleteProgram(this.program);
+        this.texture = null; this.positionBuffer = null; this.program = null;
+    }
+}
+
+const IMAGE_RENDERER_PREFERENCE = 'auto'; // 'auto' | 'webgl2' | 'canvas2d'
+window.getImageRendererInfo = function(layer) {
+    return layer && layer instanceof ImageLayer ? { mode: layer.rendererMode, preference: IMAGE_RENDERER_PREFERENCE } : null;
+};
+function createImageRenderer(layer) {
+    if (IMAGE_RENDERER_PREFERENCE !== 'canvas2d') {
+        try { return new WebGL2ImageRenderer(layer); }
+        catch (err) {
+            if (IMAGE_RENDERER_PREFERENCE === 'webgl2') console.warn('WebGL2 image renderer unavailable; using Canvas2D fallback:', err);
+        }
+    }
+    return new Canvas2DImageRenderer(layer);
+}
+
 class ImageLayer {
     constructor(name, width, height) {
       this.name = name || 'Image Layer';
@@ -895,22 +1138,26 @@ class ImageLayer {
       this.type = 'image';
       this.id = 'image_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+      // el is always the visible layer canvas. For WebGL2 rendering the
+      // authoritative CPU canvas is kept separately so tools and undo can
+      // continue using normal Canvas2D/ImageData operations.
       this.el = document.createElement('canvas');
       this.el.width = width;
       this.el.height = height;
       this.el.className = 'layer-canvas image-layer-canvas';
-      this.ctx = this.el.getContext('2d', { willReadFrequently: true });
+      this.cpuCanvas = document.createElement('canvas');
+      this.cpuCanvas.width = width;
+      this.cpuCanvas.height = height;
+      this.ctx = this.cpuCanvas.getContext('2d', { willReadFrequently: true });
       this.imageData = this.ctx.createImageData(width, height);
+      this.renderer = createImageRenderer(this);
+      this.rendererMode = this.renderer.kind;
 
-      // Compatibility facade: old pixel tools can access pixelData[x][y]
-      // without allocating a giant nested JS array. Reads/writes go directly
-      // to the RGBA ImageData buffer.
       const self = this;
       this.pixelData = new Proxy([], {
         get(_, x) {
           if (x === 'length') return self.gridW;
           if (x === 'map') return function (fn) {
-            // Materialize only when legacy code explicitly asks for map().
             const a = Array(self.gridW);
             for (let ix = 0; ix < self.gridW; ix++) {
               const col = Array(self.gridH);
@@ -929,8 +1176,7 @@ class ImageLayer {
             },
             set(_, y, value) {
               if (Number.isInteger(+y) && +y >= 0 && +y < self.gridH) {
-                self.setPixel(ix, +y, value);
-                return true;
+                self.setPixel(ix, +y, value); return true;
               }
               return false;
             }
@@ -938,39 +1184,22 @@ class ImageLayer {
         }
       });
     }
-
     _offset(x, y) { return ((y * this.gridW + x) << 2); }
-
     getPixel(x, y) {
       if (x < 0 || y < 0 || x >= this.gridW || y >= this.gridH) return null;
       const d = this.imageData.data, i = this._offset(x, y);
       return d[i + 3] === 0 ? null : rgbToHexBytes(d[i], d[i + 1], d[i + 2]);
     }
-
     setPixel(x, y, color) {
       if (x < 0 || y < 0 || x >= this.gridW || y >= this.gridH) return;
       if(this._historyCapture && this._historyCapture.mode==='tiles') this.captureHistoryTile(x,y);
       const d = this.imageData.data, i = this._offset(x, y);
-      if (color == null) {
-        d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
-        return;
-      }
+      if (color == null) { d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0; return; }
       const m = String(color).match(/^#([0-9a-f]{6})$/i);
-      if (m) {
-        d[i] = parseInt(m[1].slice(0,2),16);
-        d[i+1] = parseInt(m[1].slice(2,4),16);
-        d[i+2] = parseInt(m[1].slice(4,6),16);
-        d[i+3] = 255;
-        return;
-      }
+      if (m) { d[i] = parseInt(m[1].slice(0,2),16); d[i+1] = parseInt(m[1].slice(2,4),16); d[i+2] = parseInt(m[1].slice(4,6),16); d[i+3] = 255; return; }
       const rgba = String(color).match(/^rgba?\(([^)]+)\)$/i);
-      if (rgba) {
-        const p = rgba[1].split(',').map(v => Number(v.trim()));
-        d[i] = p[0] || 0; d[i+1] = p[1] || 0; d[i+2] = p[2] || 0;
-        d[i+3] = p.length > 3 ? Math.round((p[3] <= 1 ? p[3] * 255 : p[3])) : 255;
-      }
+      if (rgba) { const p = rgba[1].split(',').map(v => Number(v.trim())); d[i] = p[0] || 0; d[i+1] = p[1] || 0; d[i+2] = p[2] || 0; d[i+3] = p.length > 3 ? Math.round((p[3] <= 1 ? p[3] * 255 : p[3])) : 255; }
     }
-
     captureHistoryTile(x,y) {
       const c=this._historyCapture; if(!c || c.mode!=='tiles') return;
       const tx=Math.floor(x/PHOTO_HISTORY_TILE_SIZE), ty=Math.floor(y/PHOTO_HISTORY_TILE_SIZE), key=tx+','+ty;
@@ -980,33 +1209,22 @@ class ImageLayer {
       const c=this._historyCapture; if(!c || c.mode!=='full' || c.before) return;
       c.before=new Uint8ClampedArray(this.imageData.data);
     }
-
     setPixelData(data) {
-        const w=this.gridW, h=this.gridH;
-        if (this._historyCapture) {
-            for(let x=0;x<w;x++) for(let y=0;y<h;y++) if(!this._historyCapture.before.has(x+','+y)) this._historyCapture.before.set(x+','+y,this.pixelData[x][y]);
-        }
-        this.pixelData=makeTrackedPixelData(this,w,h,data);
+      const w=this.gridW, h=this.gridH;
+      if (this._historyCapture) for(let x=0;x<w;x++) for(let y=0;y<h;y++) if(!this._historyCapture.before.has(x+','+y)) this._historyCapture.before.set(x+','+y,this.pixelData[x][y]);
+      this.pixelData=makeTrackedPixelData(this,w,h,data);
+      this.redrawFromData();
     }
-    plot(x, y, color) {
-      this.setPixel(x, y, color);
-      this.ctx.putImageData(this.imageData, 0, 0);
-    }
-
-    redrawFromData() {
-      this.ctx.putImageData(this.imageData, 0, 0);
-    }
-
+    plot(x, y, color) { this.setPixel(x, y, color); this.redrawFromData(); }
+    redrawFromData() { invalidateRenderer(this, 'image-document-state', true); }
     redraw() { this.redrawFromData(); }
-
     loadFromImage(img) {
       this.ctx.clearRect(0, 0, this.gridW, this.gridH);
       this.ctx.drawImage(img, 0, 0, this.gridW, this.gridH);
       this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
+      this.renderer.render(this.imageData);
     }
-
     getImageData() { return this.imageData; }
-
     setImageData(imageData) {
       if (!imageData || imageData.width !== this.gridW || imageData.height !== this.gridH) return false;
       if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
@@ -1014,72 +1232,66 @@ class ImageLayer {
       this.redrawFromData();
       return true;
     }
-
     clear() {
       if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
-      this.imageData.data.fill(0);
-      this.redrawFromData();
+      this.imageData.data.fill(0); this.redrawFromData();
     }
-
     resizeToCanvas(newW, newH) {
-      const copy = document.createElement('canvas');
-      copy.width = newW; copy.height = newH;
-      const c = copy.getContext('2d');
-      c.imageSmoothingEnabled = false;
-      c.drawImage(this.el, 0, 0);
-      this.gridW = this.gw = newW;
-      this.gridH = this.gh = newH;
-      this.el.width = newW; this.el.height = newH;
-      this.ctx = this.el.getContext('2d', { willReadFrequently: true });
-      this.imageData = this.ctx.createImageData(newW, newH);
-      this.ctx.drawImage(copy, 0, 0);
-      this.imageData = this.ctx.getImageData(0, 0, newW, newH);
+      const copy = document.createElement('canvas'); copy.width = newW; copy.height = newH;
+      const c = copy.getContext('2d'); c.imageSmoothingEnabled = false; c.drawImage(this.cpuCanvas, 0, 0);
+      this.gridW = this.gw = newW; this.gridH = this.gh = newH;
+      this.cpuCanvas.width = newW; this.cpuCanvas.height = newH;
+      this.ctx = this.cpuCanvas.getContext('2d', { willReadFrequently: true });
+      this.imageData = this.ctx.createImageData(newW, newH); this.ctx.drawImage(copy, 0, 0); this.imageData = this.ctx.getImageData(0, 0, newW, newH);
+      this.renderer.resize(newW, newH); this.renderer.render(this.imageData);
     }
-
     flipHorizontal() {
       if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
-      const c = document.createElement('canvas');
-      c.width = this.gridW; c.height = this.gridH;
-      const x = c.getContext('2d');
-      x.translate(this.gridW, 0); x.scale(-1, 1); x.drawImage(this.el, 0, 0);
-      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
-      this.ctx.drawImage(c, 0, 0);
-      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
+      const src = this.imageData.data;
+      const out = new Uint8ClampedArray(src.length);
+      for(let y=0; y<this.gridH; y++) {
+        for(let x=0; x<this.gridW; x++) {
+          const si = (y*this.gridW + x)*4;
+          const di = (y*this.gridW + (this.gridW-1-x))*4;
+          out[di]=src[si]; out[di+1]=src[si+1]; out[di+2]=src[si+2]; out[di+3]=src[si+3];
+        }
+      }
+      this.imageData = new ImageData(out, this.gridW, this.gridH);
+      this.ctx.putImageData(this.imageData, 0, 0);
+      this.renderer.render(this.imageData);
     }
-
     flipVertical() {
       if(this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
-      const c = document.createElement('canvas');
-      c.width = this.gridW; c.height = this.gridH;
-      const x = c.getContext('2d');
-      x.translate(0, this.gridH); x.scale(1, -1); x.drawImage(this.el, 0, 0);
-      this.ctx.clearRect(0, 0, this.gridW, this.gridH);
-      this.ctx.drawImage(c, 0, 0);
-      this.imageData = this.ctx.getImageData(0, 0, this.gridW, this.gridH);
+      const src = this.imageData.data;
+      const out = new Uint8ClampedArray(src.length);
+      for(let y=0; y<this.gridH; y++) {
+        for(let x=0; x<this.gridW; x++) {
+          const si = (y*this.gridW + x)*4;
+          const di = ((this.gridH-1-y)*this.gridW + x)*4;
+          out[di]=src[si]; out[di+1]=src[si+1]; out[di+2]=src[si+2]; out[di+3]=src[si+3];
+        }
+      }
+      this.imageData = new ImageData(out, this.gridW, this.gridH);
+      this.ctx.putImageData(this.imageData, 0, 0);
+      this.renderer.render(this.imageData);
     }
-
-    layoutCSS() {
-      this.el.style.width = (this.gridW * scale) + 'px';
-      this.el.style.height = (this.gridH * scale) + 'px';
-    }
-
+    layoutCSS() { this.el.style.width = (this.gridW * scale) + 'px'; this.el.style.height = (this.gridH * scale) + 'px'; }
     clone() {
       const copy = new ImageLayer(this.name, this.gridW, this.gridH);
       copy.visible = this.visible; copy.opacity = this.opacity; copy.color = this.color;
-      copy.imageData.data.set(this.imageData.data);
-      copy.redrawFromData();
-      return copy;
+      copy.imageData.data.set(this.imageData.data); copy.redrawFromData(); return copy;
     }
   }
-
 
 /* IMAGE_MODE_999_THRESHOLD_PATCH
    Large-canvas rendering policy:
    - Pixel mode is retained for canvases whose width AND height are <= 999.
    - Image mode is selected when either dimension is > 999.
-   The renderer-selection helper is deliberately isolated so later
-   optimization work can replace the large-canvas renderer without
-   changing profile logic.
+   The renderer-selection helper is deliberately isolated so the Photo/Image
+   profile can use WebGL2 without changing the document or undo model.
+   Pixel Art continues to use Canvas2D; ImageLayer uses WebGL2 when available
+   and falls back to Canvas2D. The CPU-side ImageData remains authoritative
+   for editing and undo/redo.
 */
 const IMAGE_MODE_MAX_DIMENSION = 999;
 
@@ -1251,7 +1463,7 @@ function refreshDebugStats() {
     const totalLayers = frames.reduce((n, f) => n + f.layers.length, 0);
     const mb = (estimateMemoryBytes() / (1024 * 1024)).toFixed(2);
     el.innerHTML =
-        'Profile: ' + selectedProfile + '<br>' +
+        'Profile: ' + (selectedProfile === 'photo' ? 'Pixel Art' : selectedProfile) + '<br>' +
         'Canvas: ' + gridW + '&times;' + gridH + '<br>' +
         'Rendering: ' + getCanvasRenderingModeLabel(gridW, gridH) + '<br>' +
         'Zoom: ' + scale + 'x<br>' +
@@ -1297,7 +1509,7 @@ const commandRegistry = [];
 let openPanelName = null;
 let transformMode = false;
 
-let selectedProfile = 'pixelArt'; // 'pixelArt' | 'photo' | 'portrait' | 'sprite'
+let selectedProfile = 'pixelArt'; // 'pixelArt' | 'portrait' | 'sprite' (legacy 'photo' projects remain load-compatible)
 // Portrait spritesheets are one document with independent 40×40 tile palettes.
 // Each tile owns up to 15 opaque colours; colours may be reused independently in other tiles.
 let portraitTilePalettes = new Map();
@@ -1635,8 +1847,6 @@ let wandGlobal = false;         // false = contiguous flood fill, true = global 
 let bucketFuzzy = false;
 let bucketTolerance = 10;
 let colorToAlphaTarget = null;
-let colorMatchSource = null;
-let colorMatchTarget = null;
 let bucketGlobal = false; // false = contiguous flood fill, true = global matching
 let pixelSelectionMode = 'replace'; // replace | add | subtract, shared by Wand and Lasso
 let pendingImportKind = 'pixel';
@@ -1679,6 +1889,21 @@ function estimateHistoryEntryBytes(entry) {
             bytes += 32;
             bytes += String(entry.changes[i+2] ?? '').length * 2;
             bytes += String(entry.changes[i+3] ?? '').length * 2;
+        }
+        return bytes;
+    }
+    if (entry.type === 'canvasResize' && entry.before && entry.after) {
+        let bytes = 256;
+        for (const state of [entry.before, entry.after]) {
+            for (const frame of (state.layers || [])) {
+                for (const layer of (frame.layers || [])) {
+                    if (!layer) continue;
+                    if (layer.type === 'image') bytes += (layer.data?.byteLength || 0);
+                    else if (layer.type === 'pixel') {
+                        for (const col of (layer.data || [])) bytes += (col?.length || 0) * 16;
+                    }
+                }
+            }
         }
         return bytes;
     }
@@ -1916,6 +2141,14 @@ function renderCustomKeyboardPreview() {
 // what was typed).
 function openCustomKeyboard(initialValue, onCommit, onChange) {
     buildCustomKeyboard();
+    // The custom keyboard is also used by the Gallery (for project rename).
+    // In the original layout it lives inside #main-app, which is display:none
+    // while the Gallery is visible. Move the fixed keyboard elements to body
+    // once so iOS can actually display and receive their touch events.
+    const kb = document.getElementById('customKeyboard');
+    const backdrop = document.getElementById('keyboardBackdrop');
+    if (kb && kb.parentElement !== document.body) document.body.appendChild(kb);
+    if (backdrop && backdrop.parentElement !== document.body) document.body.appendChild(backdrop);
     const v = initialValue || '';
     customKeyboardState = { value: v, cursorPos: v.length, shift: false, onCommit, onChange };
     renderCustomKeyboardPreview();
@@ -1934,11 +2167,61 @@ function closeCustomKeyboard(commit) {
     if (commit && onCommit) onCommit(value);
 }
 
+/* ============================================================
+   BUILT-IN NUMERIC KEYPAD
+   Used by New Canvas and Resize Canvas. Touch users tap these keys;
+   physical keyboards feed the same state through keydown.
+   ============================================================ */
+let numericKeyboardState = null; // {value, onCommit, maxLength}
+function buildNumericKeyboard(){
+    const area=document.getElementById('numericKeys'); if(!area || area.childElementCount) return;
+    const keys=['1','2','3','4','5','6','7','8','9','⌫','0','Clear'];
+    keys.forEach(k=>{
+        const b=document.createElement('button'); b.type='button'; b.className='numeric-key'+((k==='⌫'||k==='Clear')?' special':'');
+        b.textContent=k; b.onclick=()=>{ if(k==='⌫') numericBackspace(); else if(k==='Clear') numericSetValue(''); else numericInsert(k); };
+        area.appendChild(b);
+    });
+}
+function numericSetValue(v){
+    if(!numericKeyboardState)return;
+    let s=String(v).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
+    if(!s)s='';
+    s=s.slice(0,numericKeyboardState.maxLength||4);
+    numericKeyboardState.value=s;
+    document.getElementById('numericPreviewText').textContent=s||'0';
+}
+function numericInsert(ch){ numericSetValue((numericKeyboardState?.value||'')+ch); }
+function numericBackspace(){ numericSetValue((numericKeyboardState?.value||'').slice(0,-1)); }
+function openNumericKeyboard(initialValue,onCommit){
+    buildNumericKeyboard();
+    numericKeyboardState={value:String(initialValue||''),onCommit,maxLength:4};
+    numericSetValue(numericKeyboardState.value);
+    document.getElementById('numericKeyboard').classList.add('open');
+    document.getElementById('numericKeyboardBackdrop').classList.add('open');
+}
+function closeNumericKeyboard(commit=true){
+    if(!numericKeyboardState)return;
+    const state=numericKeyboardState; numericKeyboardState=null;
+    document.getElementById('numericKeyboard').classList.remove('open');
+    document.getElementById('numericKeyboardBackdrop').classList.remove('open');
+    if(commit && state.onCommit) state.onCommit(Math.max(1,parseInt(state.value,10)||1));
+}
+function handleNumericPhysicalKeydown(e){
+    if(!numericKeyboardState)return false;
+    if(/^\d$/.test(e.key)){e.preventDefault();numericInsert(e.key);return true;}
+    if(e.key==='Backspace'){e.preventDefault();numericBackspace();return true;}
+    if(e.key==='Delete'){e.preventDefault();numericSetValue('');return true;}
+    if(e.key==='Enter'){e.preventDefault();closeNumericKeyboard(true);return true;}
+    if(e.key==='Escape'){e.preventDefault();closeNumericKeyboard(false);return true;}
+    return false;
+}
+
 // Lets a physical keyboard drive the custom on-screen keyboard directly
 // (typing, arrow keys, backspace, Enter/Escape) and adds real clipboard
 // copy/paste -- something tapping on-screen keys alone can't offer. Only
 // intercepts input while the custom keyboard is actually open.
 function handleKeyboardPhysicalKeydown(e) {
+    if (numericKeyboardState && handleNumericPhysicalKeydown(e)) return;
     if (!customKeyboardState) return;
     if (e.key === 'Enter') { e.preventDefault(); closeCustomKeyboard(true); return; }
     if (e.key === 'Escape') { e.preventDefault(); closeCustomKeyboard(false); return; }
@@ -1961,26 +2244,74 @@ function handleKeyboardPhysicalKeydown(e) {
 window.addEventListener('keydown', handleKeyboardPhysicalKeydown);
 
 // Handles picking Standard/Portrait/Sprite on the hub: locks the size pickers for Portrait and updates the hint text for what each profile changes.
-function selectProfile(p) {
-    if (p === 'standard') p = 'pixelArt';
+function getProfilePickerDimensions() {
+    const ncm = document.getElementById('ncm-w-group');
+    const wh = ncm ? 'ncm' : '';
+    if (wh) return { w: readNcmDigitGroup('ncm-w-group'), h: readNcmDigitGroup('ncm-h-group') };
+    return { w: readDigitGroup('w-group'), h: readDigitGroup('h-group') };
+}
+
+function portraitDimensionsCompatible(w, h) {
+    return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 && w % 40 === 0 && h % 40 === 0;
+}
+
+function fallbackProfileForDimensions(w, h) {
+    // The separate Image profile no longer exists. Pixel Art automatically
+    // selects the renderer from the canvas dimensions instead.
+    return 'pixelArt';
+}
+
+// Handles picking Pixel Art/Image/Portrait/Sprite on the hub. Portrait is only
+// selected when the current dimensions fit its 40×40 tile grid. Otherwise the
+// most appropriate raster profile is selected silently: Pixel Art up to 999px,
+// Image for larger canvases.
+function selectProfile(p, forcedWidth = null, forcedHeight = null) {
+    if (p === 'standard' || p === 'photo') p = 'pixelArt';
     selectedProfile = p;
     if (window.currentCanvasMode !== undefined) window.currentCanvasMode = p;
-    document.querySelectorAll('.profile-btn').forEach(b => b.classList.toggle('active', b.dataset.profile === p));
+
+    // Portrait selection is itself valid: it uses the portrait tile profile
+    // and its canonical 40x40 canvas. Do not silently fall back merely because
+    // the previous profile happened to have incompatible dimensions. Fallback
+    // is handled when a canvas is actually created/imported.
+    if (p === 'portrait') {
+        setDigitGroup('w-group', 40);
+        setDigitGroup('h-group', 40);
+    } else if (forcedWidth != null && forcedHeight != null) {
+        setDigitGroup('w-group', forcedWidth);
+        setDigitGroup('h-group', forcedHeight);
+    }
+
+    document.querySelectorAll('.profile-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.profile === p)
+    );
+    document.querySelectorAll('.ncm-profile-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.profile === p)
+    );
+
     const lock = p === 'portrait';
-    document.querySelectorAll('#w-group select, #h-group select').forEach(s => s.disabled = lock);
-    if (lock) { setDigitGroup('w-group', 40); setDigitGroup('h-group', 40); }
+    document.querySelectorAll('#w-group select, #h-group select, #ncm-pickers select')
+        .forEach(s => s.disabled = lock);
+
     const hint = document.getElementById('profileHint');
-    if (hint) hint.innerText = p === 'photo'
-        ? 'Photo mode: full RGBA ImageLayers with smooth image rendering.'
-        : p === 'portrait'
+    if (hint) hint.innerText = p === 'portrait'
         ? '40×40 tile palette: each tile has its own 15-colour limit.'
         : p === 'sprite'
         ? 'Adds a Frames strip to the Layers panel for simple flipbook animation.'
-        : 'Pixel Art mode: grid-snapped PixelLayers with per-pixel editing.';
+        : 'Pixel Art mode: ≤999px uses pixel rendering; larger canvases use image rendering.';
+
+    const ncmHint = document.getElementById('ncm-hint');
+    if (ncmHint) ncmHint.textContent = p === 'portrait'
+        ? '40×40 tile palette: each tile has its own 15-colour limit.'
+        : p === 'sprite'
+        ? 'Adds a Frames strip for flipbook animation.'
+        : '≤999px uses pixel rendering; larger canvases use image rendering.';
+
     if (p !== 'portrait') { portraitTileIsolation = false; hidePortraitTileIsolationOverlay(); }
     updateColorPickerAvailability();
     if (p === 'portrait' && gridW && gridH) syncPortraitPaletteForPoint(0,0,true);
     updatePortraitTileControls();
+    return p;
 }
 
 function portraitTileKeyForPoint(x,y){
@@ -2051,7 +2382,7 @@ function updatePortraitTileControls(){
     if(selectedProfile!=='portrait'||portraitTileCount()<=1)return;
     const box=document.createElement('div'); box.id='portraitTileControls'; box.style.cssText='padding:8px 6px;border-bottom:1px solid #333;';
     const b=document.createElement('button'); b.className='btn'; b.style.width='100%'; b.innerText=portraitTileIsolation?'SHOW OTHER TILES':'ISOLATE PORTRAIT TILE';
-    b.onclick=()=>{portraitTileIsolation=!portraitTileIsolation;updatePortraitTileOverlay();updatePortraitTileControls();}; box.appendChild(b);
+    b.onclick=()=>{portraitTileIsolation=!portraitTileIsolation;invalidateDocumentRender('portrait-isolation',true);}; box.appendChild(b);
     if(portraitTileIsolation){ const label=document.createElement('div');label.style.cssText='font-size:9px;color:#888;margin-top:6px;';label.innerText='other tiles opacity';box.appendChild(label); const sl=document.createElement('input');sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(portraitTileIsolationOpacity*100);sl.style.width='100%';sl.oninput=()=>{portraitTileIsolationOpacity=sl.value/100;updatePortraitTileOverlay();};box.appendChild(sl);}
     list.prepend(box);
 }
@@ -2123,7 +2454,7 @@ function applyPanelVisibility() {
 }
 function historyEntryLabel(entry, index) {
     if (entry.label) return entry.label;
-    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', tree:'Layer / group change', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
+    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', tree:'Layer / group change', canvasResize:'Resize Canvas', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
     let label = names[entry.type] || 'Edit';
     if (entry.layer && entry.layer.name) label += ': ' + entry.layer.name;
     if (entry.layerId) { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer) label += ': ' + layer.name; }
@@ -2189,10 +2520,6 @@ function openPanel(name) {
     document.getElementById('panelBackdrop').classList.add('open');
     openPanelName = name;
     try {
-        if (name === 'view') {
-            document.getElementById('resizeW').value = gridW;
-            document.getElementById('resizeH').value = gridH;
-        }
         if (name === 'layers') { renderLayersPanel(); renderFramesPanel(); }
         if (name === 'panel') renderPanelManager();
         if (name === 'history') renderUndoHistory();
@@ -2262,6 +2589,59 @@ function setupEdgeSwipe(zoneId, drawerName, expectDirection) {
    render()/resizeToCanvas() (if applicable), and add a creator
    function + a button in the layers panel.
    ============================================================ */
+/* ============================================================
+   DOCUMENT STATE -> RENDERER INVALIDATION -> RENDER
+   V12 centralizes the final presentation step after document state changes.
+   Document data remains authoritative; Canvas2D/WebGL2 are render targets.
+   ============================================================ */
+const rendererInvalidationQueue = new Set();
+let rendererInvalidationFrame = 0;
+function invalidateRenderer(layer, reason = 'document-state', immediate = true) {
+    if (layer) rendererInvalidationQueue.add(layer);
+    if (immediate) { flushRendererInvalidation(); return; }
+    if (rendererInvalidationFrame) return;
+    rendererInvalidationFrame = requestAnimationFrame(() => {
+        rendererInvalidationFrame = 0;
+        flushRendererInvalidation();
+    });
+}
+function renderLayerFromDocumentState(layer) {
+    if (!layer) return;
+    if (layer.type === 'image' && layer.imageData && layer.renderer) {
+        layer.ctx.putImageData(layer.imageData, 0, 0);
+        layer.renderer.render(layer.imageData);
+        return;
+    }
+    if (layer.type === 'pixel' || layer.type === 'mask' || layer.type === 'clip') {
+        layer.ctx.clearRect(0, 0, layer.gridW, layer.gridH);
+        if (layer.renderMode === 'image' && layer.imageSource && layer.imageSource.complete) {
+            layer.ctx.imageSmoothingEnabled = true;
+            layer.ctx.drawImage(layer.imageSource, 0, 0, layer.gridW, layer.gridH);
+            return;
+        }
+        for (let x = 0; x < layer.gridW; x++) for (let y = 0; y < layer.gridH; y++) {
+            const color = layer.pixelData[x][y];
+            if (color) { layer.ctx.fillStyle = color; layer.ctx.fillRect(x, y, 1, 1); }
+        }
+    }
+}
+function flushRendererInvalidation() {
+    if (rendererInvalidationFrame) { cancelAnimationFrame(rendererInvalidationFrame); rendererInvalidationFrame = 0; }
+    if (!rendererInvalidationQueue.size) return;
+    const dirty = Array.from(rendererInvalidationQueue);
+    rendererInvalidationQueue.clear();
+    dirty.forEach(renderLayerFromDocumentState);
+}
+function invalidateDocumentRender(reason = 'document-state', immediate = true) {
+    const targets = layers.filter(l => l && (l.type === 'pixel' || l.type === 'image'));
+    targets.forEach(l => invalidateRenderer(l, reason, false));
+    if (selectedProfile === 'portrait') {
+        updatePortraitTileOverlay();
+        updatePortraitTileControls();
+    }
+    if (immediate) flushRendererInvalidation();
+}
+
 class Layer {
     constructor(type, name) {
         this.id = nextLayerId++;
@@ -2349,18 +2729,7 @@ class PixelLayer extends Layer {
         this.ctx.clearRect(x, y, 1, 1);
         if (color) { this.ctx.fillStyle = color; this.ctx.fillRect(x, y, 1, 1); }
     }
-    redrawFromData() {
-        if (this.renderMode === 'image' && this.imageSource && this.imageSource.complete) {
-            this.ctx.clearRect(0, 0, this.gridW, this.gridH);
-            this.ctx.imageSmoothingEnabled = true;
-            this.ctx.drawImage(this.imageSource, 0, 0, this.gridW, this.gridH);
-            return;
-        }
-        this.ctx.clearRect(0, 0, this.gridW, this.gridH);
-        for (let x = 0; x < this.gridW; x++)
-            for (let y = 0; y < this.gridH; y++)
-                if (this.pixelData[x][y]) { this.ctx.fillStyle = this.pixelData[x][y]; this.ctx.fillRect(x, y, 1, 1); }
-    }
+    redrawFromData() { invalidateRenderer(this, 'pixel-document-state', true); }
     setImageRenderSource(img) {
         this.renderMode = 'image';
         this.imageSource = img;
@@ -2700,6 +3069,13 @@ function rgbToHexBytes(r, g, b) {
 }
 // Deep-copies a layer (pixel data or reference geometry) into a brand new Layer object. Used when duplicating a sprite frame.
 function cloneLayer(l) {
+    if (l.type === 'image') {
+        const nl = new ImageLayer(l.name, l.gridW, l.gridH);
+        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
+        nl.imageData.data.set(l.imageData.data);
+        nl.redrawFromData();
+        return nl;
+    }
     if (l.type === 'pixel' || l.type === 'mask' || l.type === 'clip') {
         const nl = l.type === 'mask' ? new MaskLayer(l.name, l.gridW, l.gridH)
                  : l.type === 'clip' ? new ClipLayer(l.name, l.gridW, l.gridH)
@@ -2807,9 +3183,28 @@ function continueEditing() {
 }
 
 // "Create Canvas" on the hub: either resumes existing work in place (resized, profile-preserving) or starts a brand new canvas, depending on preserveProfile's rules above.
+function createBaseRasterLayer(name, w, h) {
+    // Pixel Art is now the user-facing profile for both renderers. The
+    // renderer is selected purely by canvas dimensions: <=999 on both axes
+    // uses PixelLayer/Canvas2D; any dimension >999 uses ImageLayer/WebGL2
+    // (with its Canvas2D fallback). Portrait and Sprite remain PixelLayer-based.
+    if (selectedProfile === 'portrait' || selectedProfile === 'sprite') {
+        return new PixelLayer(name, w, h);
+    }
+    return shouldUseImageMode(w, h) && window.ImageLayer
+        ? new ImageLayer(name, w, h)
+        : new PixelLayer(name, w, h);
+}
+
 function initApp() {
-    const newW = selectedProfile === 'portrait' ? 40 : readDigitGroup('w-group');
-    const newH = selectedProfile === 'portrait' ? 40 : readDigitGroup('h-group');
+    let newW = readDigitGroup('w-group');
+    let newH = readDigitGroup('h-group');
+    if (selectedProfile === 'portrait' && !portraitDimensionsCompatible(newW, newH)) {
+        selectedProfile = fallbackProfileForDimensions(newW, newH);
+        selectProfile(selectedProfile, newW, newH);
+        newW = readDigitGroup('w-group');
+        newH = readDigitGroup('h-group');
+    }
 
     // Preserve existing work only when the profile is unchanged, or when
     // easing from Portrait down to Standard (that's just lifting the size
@@ -2817,7 +3212,7 @@ function initApp() {
     // change (including Standard/Portrait <-> Sprite) starts fresh, since
     // Sprite's frame-based workflow doesn't carry over sensibly.
     const preserve = lastEnteredProfile === selectedProfile ||
-        (lastEnteredProfile === 'portrait' && (selectedProfile === 'pixelArt' || selectedProfile === 'photo'));
+        (lastEnteredProfile === 'portrait' && selectedProfile === 'pixelArt');
 
     if (frames.length > 0 && preserve) {
         // Resuming work that Main Menu left intact: just resize in place
@@ -2826,6 +3221,7 @@ function initApp() {
         traceLog('initApp(): resuming existing work under profile "' + selectedProfile + '", resizing to ' + newW + '\u00D7' + newH);
         gridW = newW; gridH = newH;
         frames.forEach(f => f.layers.forEach(l => { if (l instanceof PixelLayer || l instanceof ImageLayer) l.resizeToCanvas(newW, newH); }));
+        enforcePixelArtRendererForDimensions();
         document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
         revealMainApp();
         layoutAll();
@@ -2844,7 +3240,7 @@ function initApp() {
     gridW = newW; gridH = newH;
     if(selectedProfile==='portrait'){ portraitTilePalettes=new Map([['0,0',[]]]); portraitActiveTileKey='0,0'; } else portraitTilePalettes=new Map();
     revealMainApp(); // needed now so `container` is assigned before we append the base layer
-    const base = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
+    const base = createBaseRasterLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -2857,16 +3253,116 @@ function initApp() {
     layoutAll();
 }
 
-// Reads the width/height fields in the View panel and resizes the canvas + every pixel layer to match (anchored top-left, existing pixels preserved where they still fit).
-function applyResize() {
-    const wField = document.getElementById('resizeW');
-    const hField = document.getElementById('resizeH');
-    const nw = Math.max(1, Math.min(2000, parseInt(wField.value, 10) || gridW));
-    const nh = Math.max(1, Math.min(2000, parseInt(hField.value, 10) || gridH));
-    gridW = nw; gridH = nh;
-    frames.forEach(f => f.layers.forEach(l => { if (l instanceof PixelLayer || l instanceof ImageLayer) l.resizeToCanvas(nw, nh); }));
-    deselect();
-    layoutAll();
+// Converts the base raster layer type when a Pixel Art canvas crosses the
+// 999px renderer boundary. Portrait and Sprite deliberately stay PixelLayer-based.
+function enforcePixelArtRendererForDimensions() {
+    if (selectedProfile !== 'pixelArt') return;
+    const wantImage = shouldUseImageMode(gridW, gridH) && !!window.ImageLayer;
+    frames.forEach(f => {
+        f.layers = f.layers.map(layer => {
+            if (layer.type === 'image' && !wantImage) {
+                const px = new PixelLayer(layer.name, gridW, gridH);
+                px.loadFromImage(layer.cpuCanvas);
+                px.visible = layer.visible; px.opacity = layer.opacity; px.color = layer.color || null;
+                layer.el.remove();
+                return px;
+            }
+            if (layer.type === 'pixel' && wantImage) {
+                const img = new ImageLayer(layer.name, gridW, gridH);
+                const tmp = document.createElement('canvas'); tmp.width = gridW; tmp.height = gridH;
+                const tctx = tmp.getContext('2d');
+                layer.redrawFromData();
+                tctx.drawImage(layer.el, 0, 0);
+                img.loadFromImage(tmp);
+                img.visible = layer.visible; img.opacity = layer.opacity; img.color = layer.color || null;
+                layer.el.remove();
+                return img;
+            }
+            return layer;
+        });
+    });
+    layers = frames[activeFrameIndex] ? frames[activeFrameIndex].layers : layers;
+    reindexDom();
+    if (layers.length) setActiveLayer(Math.min(activeLayerIndex, layers.length - 1));
+}
+
+// Resize helpers. The anchor is expressed as normalized x/y (0, .5, 1),
+// matching Paint.NET-style canvas anchoring: the chosen point of the old
+// artwork remains fixed while the new canvas grows/crops around it.
+function anchorOffset(oldW, oldH, newW, newH, ax, ay){
+    return {x:Math.round((newW-oldW)*ax), y:Math.round((newH-oldH)*ay)};
+}
+function resizePixelLayerAnchored(layer,newW,newH,dx,dy){
+    const out=Array(newW).fill().map(()=>Array(newH).fill(null));
+    const x0=Math.max(0,-dx), x1=Math.min(layer.gridW,newW-dx);
+    const y0=Math.max(0,-dy), y1=Math.min(layer.gridH,newH-dy);
+    for(let x=x0;x<x1;x++) for(let y=y0;y<y1;y++) out[x+dx][y+dy]=layer.pixelData[x][y];
+    layer.gridW=newW; layer.gridH=newH; layer.el.width=newW; layer.el.height=newH;
+    layer.pixelData=makeTrackedPixelData(layer,newW,newH,out); layer.redrawFromData();
+}
+function resizeImageLayerAnchored(layer,newW,newH,dx,dy){
+    const out=new ImageData(newW,newH); const src=layer.imageData;
+    const sx0=Math.max(0,-dx), sx1=Math.min(src.width,newW-dx);
+    const sy0=Math.max(0,-dy), sy1=Math.min(src.height,newH-dy);
+    for(let y=sy0;y<sy1;y++){
+        const row=src.data.subarray((y*src.width+sx0)*4,(y*src.width+sx1)*4);
+        out.data.set(row,((y+dy)*newW+(sx0+dx))*4);
+    }
+    layer.gridW=layer.gw=newW; layer.gridH=layer.gh=newH;
+    layer.cpuCanvas.width=newW; layer.cpuCanvas.height=newH;
+    layer.ctx=layer.cpuCanvas.getContext('2d',{willReadFrequently:true});
+    layer.imageData=out; layer.renderer.resize(newW,newH); layer.renderer.render(out);
+}
+function snapshotCanvasResizeState(){
+    return {gridW,gridH,layers:frames.map(f=>({name:f.name,layers:f.layers.map(l=>{
+        if(l instanceof PixelLayer) return {id:l.id,type:'pixel',data:l.pixelData.map(col=>col.slice())};
+        if(l instanceof ImageLayer) return {id:l.id,type:'image',data:new Uint8ClampedArray(l.imageData.data)};
+        return null;
+    })}))};
+}
+function restoreCanvasResizeState(state){
+    if(!state)return; gridW=state.gridW; gridH=state.gridH;
+    state.layers.forEach((fs,fi)=>{
+        const f=frames[fi]; if(!f)return;
+        fs.layers.forEach(ls=>{
+            const l=f.layers.find(x=>x.id===ls.id); if(!l||!ls)return;
+            if(l instanceof PixelLayer && ls.type==='pixel'){
+                l.gridW=gridW;l.gridH=gridH;l.el.width=gridW;l.el.height=gridH;l.pixelData=makeTrackedPixelData(l,gridW,gridH,ls.data);l.redrawFromData();
+            }else if(l instanceof ImageLayer && ls.type==='image'){
+                l.gridW=l.gw=gridW;l.gridH=l.gh=gridH;l.cpuCanvas.width=gridW;l.cpuCanvas.height=gridH;l.ctx=l.cpuCanvas.getContext('2d',{willReadFrequently:true});l.imageData=new ImageData(new Uint8ClampedArray(ls.data),gridW,gridH);l.renderer.resize(gridW,gridH);l.renderer.render(l.imageData);
+            }
+        });
+    });
+    enforcePixelArtRendererForDimensions(); deselect(); layoutAll();
+}
+function applyCanvasResize(newW,newH,ax=.5,ay=.5){
+    newW=Math.max(1,Math.min(2000,Math.round(newW))); newH=Math.max(1,Math.min(2000,Math.round(newH)));
+    if(newW===gridW && newH===gridH)return false;
+    const before=snapshotCanvasResizeState();
+    const oldW=gridW,oldH=gridH, off=anchorOffset(oldW,oldH,newW,newH,ax,ay);
+    frames.forEach(f=>f.layers.forEach(l=>{
+        if(l instanceof PixelLayer) resizePixelLayerAnchored(l,newW,newH,off.x,off.y);
+        else if(l instanceof ImageLayer) resizeImageLayerAnchored(l,newW,newH,off.x,off.y);
+    }));
+    gridW=newW;gridH=newH; enforcePixelArtRendererForDimensions(); deselect(); layoutAll();
+    const after=snapshotCanvasResizeState();
+    pushUndo({type:'canvasResize',before,after});
+    return true;
+}
+function openResizeCanvasSheet(){
+    if(!frames.length)return;
+    const modal=document.getElementById('resize-canvas-modal');
+    document.getElementById('resize-current-size').textContent=`Current: ${gridW} × ${gridH}`;
+    document.getElementById('resize-new-w').textContent=gridW;
+    document.getElementById('resize-new-h').textContent=gridH;
+    modal.dataset.w=gridW; modal.dataset.h=gridH; modal.dataset.ax='.5'; modal.dataset.ay='.5';
+    document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.toggle('active',b.dataset.anchor==='.5,.5'));
+    modal.classList.add('open');
+}
+function closeResizeCanvasSheet(){document.getElementById('resize-canvas-modal').classList.remove('open');}
+function setResizeDimension(which,v){
+    const modal=document.getElementById('resize-canvas-modal'); modal.dataset[which]=String(Math.max(1,Math.min(2000,v)));
+    document.getElementById(which==='w'?'resize-new-w':'resize-new-h').textContent=modal.dataset[which];
 }
 
 /* ============================================================
@@ -3125,12 +3621,12 @@ function updateToolVisibility() {
 
     show('pixelToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
-    show('flipToolsSection', type === 'pixel' || type === 'mask' || type === 'clip' || type === 'reference');
+    show('flipToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip' || type === 'reference');
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
     updateSelectionToolsVisibility();
 
-    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse', 'colorToAlpha', 'colorMatch'];
+    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse', 'colorToAlpha'];
     const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
     // Prefer switching to the analogous drawing tool over falling back to
     // the eyedropper: brush<->pen mirror each other as each type's default
@@ -3219,7 +3715,9 @@ function addPixelLayer() {
     traceLog('addPixelLayer() called, layers before: ' + layers.length);
     try {
         const before=captureTreeState();
-        const l = new PixelLayer('Layer ' + (layers.length + 1), gridW, gridH);
+        const l = (selectedProfile === 'pixelArt' && shouldUseImageMode(gridW, gridH) && window.ImageLayer)
+            ? new ImageLayer('Layer ' + (layers.length + 1), gridW, gridH)
+            : new PixelLayer('Layer ' + (layers.length + 1), gridW, gridH);
         addLayer(l);
         reindexDom();
         setActiveLayer(layers.length - 1);
@@ -3451,8 +3949,6 @@ function registerBuiltInCommands(){
     registerCommand('tool.softEraser','Soft Eraser Tool',['soft eraser'],()=>handleToolBtn('softEraser'),'Tools');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
     registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools');
-    registerCommand('tool.colorMatch','Match a Colour',['match colour','match color','colour match','color match','replace colour','replace color','lineart colour','lineart color'],()=>handleToolBtn('colorMatch'),'Tools');
-    commandRegistry[commandRegistry.length-1].description='Replace every exact source colour in the active pixel layer with the sampled target colour';
     commandRegistry[commandRegistry.length-1].description='Background removal';
     registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
     registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
@@ -3917,6 +4413,7 @@ function applyHistoryEntry(entry, forward) {
             layer.redrawFromData();
         }
     } else if(entry.type==='pixels') applyPixelDelta(entry,forward);
+    else if(entry.type==='canvasResize') restoreCanvasResizeState(forward?entry.after:entry.before);
     else if(entry.type==='selection') setSelectionRaw(forward?(entry.afterMask?entry.afterMask.slice():null):(entry.beforeMask?entry.beforeMask.slice():null),forward?(entry.afterCount||0):(entry.beforeCount||0),forward?(entry.afterRect?{...entry.afterRect}:null):(entry.beforeRect?{...entry.beforeRect}:null));
     else if(entry.type==='tree') restoreTreeState(forward?entry.after:entry.before);
     else if(entry.type==='deleteLayer') {
@@ -4019,24 +4516,9 @@ function updateColorToAlphaTargetLabel(){
     l.textContent=colorToAlphaTarget ? ('Target: '+colorToAlphaTarget) : 'Tap a pixel to sample the background colour';
 }
 
-function updateColorMatchTargetLabel(){
-    const l=document.getElementById('colorMatchTargetLabel'); if(!l)return;
-    if(!colorMatchSource){
-        l.textContent='Tap the WRONG colour first, then tap the CORRECT colour.';
-        return;
-    }
-    if(!colorMatchTarget){
-        l.textContent='Wrong: '+colorMatchSource+' • Now tap the CORRECT colour.';
-        return;
-    }
-    l.textContent='Wrong: '+colorMatchSource+' → Correct: '+colorMatchTarget;
-}
 
-function resetColorMatch(){
-    colorMatchSource=null;
-    colorMatchTarget=null;
-    updateColorMatchTargetLabel();
-}
+
+
 
 // Exact colour harmonisation for raster/pixel artwork.
 // First sample the colour that is visually wrong (for example orange arm
@@ -4048,47 +4530,7 @@ function resetColorMatch(){
 // This deliberately uses exact matching by default. A fuzzy replacement
 // would risk changing legitimate nearby body/shading colours, especially
 // on pixel art where several close colours can have distinct meanings.
-function performColorMatch(x,y){
-    const layer=activeLayer();
-    if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH) return;
-    const sampled=layer.pixelData[x][y];
-    if(sampled==null) return;
 
-    if(!colorMatchSource){
-        colorMatchSource=sampled;
-        colorMatchTarget=null;
-        updateColorMatchTargetLabel();
-        return;
-    }
-
-    if(!colorMatchTarget){
-        colorMatchTarget=sampled;
-        updateColorMatchTargetLabel();
-        if(colorMatchSource===colorMatchTarget) return;
-
-        const before=beginEdit();
-        let changed=false;
-        for(let ix=0;ix<layer.gridW;ix++){
-            for(let iy=0;iy<layer.gridH;iy++){
-                if(layer.pixelData[ix][iy]===colorMatchSource){
-                    layer.pixelData[ix][iy]=colorMatchTarget;
-                    changed=true;
-                }
-            }
-        }
-        if(changed){
-            layer.redrawFromData();
-            commitEdit(before);
-        }
-        return;
-    }
-
-    // After a completed replacement, a new tap starts another source/target
-    // pair instead of silently applying the old pair again.
-    colorMatchSource=sampled;
-    colorMatchTarget=null;
-    updateColorMatchTargetLabel();
-}
 
 // Colour-to-Alpha / background removal.
 // Given a sampled background B and pixel C, solve for the smallest foreground
@@ -4399,13 +4841,18 @@ function deselect() {
 function flipActiveLayerH() {
     const layer = activeLayer();
     if (!layer) return;
-    if (isPixelLike(layer)) {
-        const snap = beginEdit();
-        layer.flipHorizontal();
-        commitEdit(snap);
-    } else {
-        layer.flipH = !layer.flipH;
-        layer.layoutCSS();
+    try {
+        if (typeof layer.flipHorizontal === 'function' && isPixelLike(layer)) {
+            const snap = beginEdit();
+            layer.flipHorizontal();
+            commitEdit(snap);
+        } else {
+            layer.flipH = !layer.flipH;
+            if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
+            refreshHookedComposites();
+        }
+    } catch (err) {
+        console.error('flip horizontal failed:', err);
     }
     if (openPanelName === 'layers') renderLayersPanel();
 }
@@ -4413,13 +4860,18 @@ function flipActiveLayerH() {
 function flipActiveLayerV() {
     const layer = activeLayer();
     if (!layer) return;
-    if (isPixelLike(layer)) {
-        const snap = beginEdit();
-        layer.flipVertical();
-        commitEdit(snap);
-    } else {
-        layer.flipV = !layer.flipV;
-        layer.layoutCSS();
+    try {
+        if (typeof layer.flipVertical === 'function' && isPixelLike(layer)) {
+            const snap = beginEdit();
+            layer.flipVertical();
+            commitEdit(snap);
+        } else {
+            layer.flipV = !layer.flipV;
+            if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
+            refreshHookedComposites();
+        }
+    } catch (err) {
+        console.error('flip vertical failed:', err);
     }
     if (openPanelName === 'layers') renderLayersPanel();
 }
@@ -4614,6 +5066,20 @@ function findNearestVectorPoint(layer, x, y) {
    TOOLS / DRAWING (only pixel layers can be painted on)
    ============================================================ */
 function uiAction(fn) { if (isConfirmingClear) cancelClear(); if (mainMenuConfirm.isArmed()) mainMenuConfirm.cancel(); fn(); }
+
+// Flip controls use pointerup so iOS touch, mouse, and stylus all hit the same
+// handler without the click+touchend double-dispatch that previously caused
+// unreliable gallery/editor controls.
+document.getElementById('flipHorizontalBtn')?.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    uiAction(flipActiveLayerH);
+});
+document.getElementById('flipVerticalBtn')?.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    uiAction(flipActiveLayerV);
+});
 // Starts a long-press timer for buttons that do something different on hold vs. tap (e.g. manage colours, copy to clipboard).
 function startHold(callback) { if (isConfirmingClear) return; holdTimer = setTimeout(callback, 600); }
 // Cancels a pending long-press timer.
@@ -4735,8 +5201,7 @@ function handleToolBtn(t) {
     if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); return; }
     currentTool = t;
     if(t === 'colorToAlpha'){ colorToAlphaTarget=null; updateColorToAlphaTargetLabel(); }
-    if(t === 'colorMatch'){ resetColorMatch(); }
-    updateUI(); updateToolVisibility(); updateVectorHandles();
+        updateUI(); updateToolVisibility(); updateVectorHandles();
 }
 
 // Refreshes which swatch/tool button shows as "selected" to match current state.
@@ -4747,10 +5212,9 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
-    if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha','colorMatch'].includes(currentTool)) hideCursor();
+    if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
     const ca = document.getElementById('colorToAlphaControls'); if (ca) ca.style.display = (currentTool === 'colorToAlpha' && isPixelLike(activeLayer())) ? '' : 'none';
-    const cm = document.getElementById('colorMatchControls'); if (cm) cm.style.display = (currentTool === 'colorMatch' && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
     const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
     const bs = document.getElementById('bucketScopeBtn'); if (bs) { bs.textContent = bucketGlobal ? 'GLOBAL' : 'CONTIGUOUS'; bs.classList.toggle('active', !bucketGlobal); }
@@ -4875,15 +5339,15 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha','colorMatch'].includes(currentTool);
+        const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool);
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getPos(e);
-        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha'||currentTool==='colorMatch') syncPortraitPaletteForPoint(x,y);
+        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
             pixelCursor.style.top = (y * scale) + "px";
-            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : ((currentTool === 'colorToAlpha' || currentTool === 'colorMatch') ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
+            pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : ((currentTool === 'colorToAlpha') ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
             pixelCursor.classList.toggle('active', isDrawing);
             if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; }
             if (!isDrawing) cursorTimer = setTimeout(hideCursor, 500);
@@ -4943,11 +5407,6 @@ function setupDrawingEvents() {
         }
         if (currentTool === 'colorToAlpha') {
             performColorToAlpha(x,y);
-            g.suppressStroke = true;
-            return;
-        }
-        if (currentTool === 'colorMatch') {
-            performColorMatch(x,y);
             g.suppressStroke = true;
             return;
         }
@@ -5140,7 +5599,13 @@ function setupDrawingEvents() {
     // -- two-finger gestures: pan+zoom+rotate the canvas view, or (in
     //    TRANSFORM mode) move+scale+rotate a reference layer instead ---
     const startTwoFingerGesture = (touches) => {
+        // A second finger can arrive after a one-finger Pan-tool drag has
+        // already started. Promote that gesture cleanly to the combined
+        // two-finger pan+pinch state instead of letting manualPan consume it.
         g.pendingTouch = null;
+        g.manualPan = null;
+        g.panStart = null;
+        g.xform = null;
         isDrawing = false;
         hideCursor();
         const fab = document.getElementById('rotationResetFab');
@@ -5181,10 +5646,12 @@ function setupDrawingEvents() {
         const [t0, t1] = touches;
         const m = mid2(t0, t1);
 
+        // Keep pinch zoom continuous while the fingers are moving. Do NOT
+        // quantize to ZOOM_STEPS during the gesture: snapping here makes the
+        // canvas visibly jump between preset sizes. The nearest preset is
+        // chosen only after the fingers are released in onEnd().
         const targetScale = ZOOM_STEPS[g.panStart.startZoomIndex] * (dist2(t0, t1) / g.panStart.dist);
-        let bestIdx = 0, bestDiff = Infinity;
-        ZOOM_STEPS.forEach((s, i) => { const d = Math.abs(s - targetScale); if (d < bestDiff) { bestDiff = d; bestIdx = i; } });
-        if (bestIdx !== zoomIndex) { zoomIndex = bestIdx; scale = ZOOM_STEPS[zoomIndex]; }
+        scale = Math.max(0.05, Math.min(64, targetScale));
         let newRotation = g.panStart.startRotation + normalizeAngleDelta(angle2(t0, t1) - g.panStart.angle);
         const snapTargets = [-270, -180, -90, 0, 90, 180, 270, 360];
         for (const t of snapTargets) { if (Math.abs(newRotation - t) < 3) { newRotation = t; break; } }
@@ -5229,7 +5696,7 @@ function setupDrawingEvents() {
         // pan+zoom+rotate camera gesture above. Keeping this as a viewport
         // operation means it works even when there is no editable active layer.
         if (currentTool === 'pan') {
-            g.manualPan = { x: cx, y: cy, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
+            g.manualPan = { x: cx, y: cy, startX: cx, startY: cy, moved: false, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
             if (touches) e.preventDefault();
             return;
         }
@@ -5254,6 +5721,7 @@ function setupDrawingEvents() {
             e.preventDefault();
             const cx = touches ? touches[0].clientX : e.clientX;
             const cy = touches ? touches[0].clientY : e.clientY;
+            if (Math.hypot(cx - g.manualPan.startX, cy - g.manualPan.startY) > 6) g.manualPan.moved = true;
             viewport.scrollLeft = g.manualPan.scrollLeft - (cx - g.manualPan.x);
             viewport.scrollTop = g.manualPan.scrollTop - (cy - g.manualPan.y);
             return;
@@ -5306,9 +5774,35 @@ function setupDrawingEvents() {
             }
             return;
         }
+        const finishedManualPan = g.manualPan;
+        // Pinch zoom is fluid during the gesture; quantize only after release.
+        // This preserves the user's exact pinch motion while still returning
+        // the camera to one of the app's normal zoom presets afterward.
+        if (g.panStart) {
+            let bestIdx = 0, bestDiff = Infinity;
+            ZOOM_STEPS.forEach((z, i) => {
+                const d = Math.abs(z - scale);
+                if (d < bestDiff) { bestDiff = d; bestIdx = i; }
+            });
+            zoomIndex = bestIdx;
+            scale = ZOOM_STEPS[zoomIndex];
+            layoutAll();
+            updatePortraitTileOverlay();
+        }
         g.xform = null;
         g.panStart = null;
         g.manualPan = null;
+        // A stationary tap with the Pan tool is still useful in Portrait mode:
+        // it changes the active 40×40 tile without changing the camera.
+        if (finishedManualPan && !finishedManualPan.moved && selectedProfile === 'portrait') {
+            const ct = e.changedTouches && e.changedTouches[0];
+            const fx = ct ? ct.clientX : e.clientX;
+            const fy = ct ? ct.clientY : e.clientY;
+            if (isInsideCanvas(fx, fy)) {
+                const [tx, ty] = getPosFromClient(fx, fy);
+                syncPortraitPaletteForPoint(tx, ty, true);
+            }
+        }
         const fab = document.getElementById('rotationResetFab');
         if (fab) fab.style.pointerEvents = '';
         if (g.pendingTouch) commitPendingTouch();
@@ -5597,7 +6091,7 @@ function handleImportImageClick() {
 // land correctly on the grid regardless of whether the canvas ended up
 // the image's native size or a downscaled version of it.
 function pixelLayerFromImage(name, img, w, h) {
-    const l = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
+    const l = (shouldUseImageMode(w, h) && window.ImageLayer && selectedProfile !== 'portrait' && selectedProfile !== 'sprite') ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
     if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
@@ -5621,7 +6115,7 @@ function openPixelLayerImport(){
     document.getElementById('hubImageInput').click();
 }
 function pixelLayerFromImagePreserveCanvas(name, img) {
-    const l = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer(name, gridW, gridH) : new PixelLayer(name, gridW, gridH);
+    const l = (shouldUseImageMode(gridW, gridH) && window.ImageLayer && selectedProfile !== 'portrait' && selectedProfile !== 'sprite') ? new ImageLayer(name, gridW, gridH) : new PixelLayer(name, gridW, gridH);
     if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp=document.createElement('canvas'); tmp.width=gridW; tmp.height=gridH;
     const ctx=tmp.getContext('2d');
@@ -5686,19 +6180,21 @@ function setupImportImageInput() {
                 const importProfile = selectedProfile;
                 if (importProfile === 'portrait') {
                     const iw = img.naturalWidth, ih = img.naturalHeight;
-                    if (iw !== 40 || ih !== 40) {
-                        if ((iw % 40) !== 0 && (ih % 40) !== 0) {
-                            alert('Portrait import rejected: the image must be 40×40, or at least one dimension must be a multiple of 40.');
-                            if (importBtn) { importBtn.textContent = '🖼️ Choose Image'; importBtn.disabled = false; }
-                            return;
-                        }
+                    if (!portraitDimensionsCompatible(iw, ih)) {
+                        // Portrait is optional: incompatible imports silently fall back
+                        // to Pixel Art or Image according to the source dimensions.
+                        const fallback = fallbackProfileForDimensions(iw, ih);
+                        w = iw; h = ih;
+                        selectProfile(fallback, iw, ih);
+                        updateColorPickerAvailability();
+                    } else {
+                        w = iw; h = ih;
+                        selectProfile('portrait', iw, ih);
+                        samplePortraitTilePalettes(img);
+                        syncPortraitPaletteForPoint(0,0,true);
                     }
-                    w = iw; h = ih;
-                    selectProfile('portrait');
-                    samplePortraitTilePalettes(img);
-                    syncPortraitPaletteForPoint(0,0,true);
                 } else {
-                    // Keep the profile selected in the import sheet. Photo imports
+                    // Keep the profile selected in the import sheet. Image imports
                     // must remain ImageLayers; Pixel Art imports become PixelLayers.
                     selectProfile(importProfile === 'photo' ? 'photo' : 'pixelArt');
                     updateColorPickerAvailability();
@@ -5859,6 +6355,8 @@ function loadProjectFile(file) {
                 });
             });
             activeFrameIndex = Math.min(data.activeFrameIndex || 0, frames.length - 1);
+            layers = frames[activeFrameIndex].layers;
+            enforcePixelArtRendererForDimensions();
             layers = frames[activeFrameIndex].layers;
             layers.forEach(l => container.appendChild(l.el));
             reindexDom();
@@ -6134,24 +6632,28 @@ function openNewCanvasSheet() {
     // Clone the relevant parts of init-screen into the sheet
     const profileRow = document.createElement('div');
     profileRow.style.cssText = 'display:flex; gap:6px;';
-    ['pixelArt','photo','portrait','sprite'].forEach(p => {
+    ['pixelArt','portrait','sprite'].forEach(p => {
         const btn = document.createElement('button');
-        btn.className = 'profile-btn' + (selectedProfile === p ? ' active' : '');
-        btn.textContent = p.charAt(0).toUpperCase() + p.slice(1);
-        btn.style.cssText = 'flex:1; height:40px; background:#2a2a2a; border:1px solid #444; color:#fff; font-size:10px; font-weight:bold; cursor:pointer; border-radius:8px; text-transform:uppercase;';
-        btn.onclick = () => {
-            document.querySelectorAll('#new-canvas-sheet .ncm-profile-btn').forEach(b => { b.style.background = '#2a2a2a'; b.style.borderColor = '#444'; });
-            btn.style.background = '#0078d4'; btn.style.borderColor = '#fff';
+        btn.className = 'profile-btn ncm-profile-btn' + (selectedProfile === p ? ' active' : '');
+        btn.dataset.profile = p;
+        btn.textContent = p === 'pixelArt' ? 'Pixel Art' : p.charAt(0).toUpperCase() + p.slice(1);
+        btn.style.cssText = 'flex:1;';
+        const chooseProfile = (e) => {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
             selectProfile(p);
-            document.getElementById('ncm-hint').textContent = p === 'photo' ? 'Full RGBA image layers with smooth rendering.'
-                : p === 'portrait' ? 'Locked 40\u00D740. Palette capped at 15 colours.'
-                : p === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : 'Pixel-snapped grid editing.';
-            const lock = p === 'portrait';
-            document.querySelectorAll('#ncm-pickers select').forEach(s => s.disabled = lock);
-            if (lock) { setDigitGroup('ncm-w-group', 40); setDigitGroup('ncm-h-group', 40); }
+            document.querySelectorAll('#new-canvas-sheet .ncm-profile-btn').forEach(b => {
+                const active = b.dataset.profile === selectedProfile;
+                b.classList.toggle('active', active);
+                b.style.background = active ? '#0078d4' : '#2a2a2a';
+                b.style.borderColor = active ? '#fff' : '#444';
+            });
+            const lock = selectedProfile === 'portrait';
+            if (lock) {
+                ncmWidth = 40; ncmHeight = 40;
+                wBtn.textContent = '40'; hBtn.textContent = '40';
+            }
         };
-        btn.className = 'ncm-profile-btn';
-        btn.style.cssText = 'flex:1; height:40px; background:' + (selectedProfile === p ? '#0078d4' : '#2a2a2a') + '; border:1px solid ' + (selectedProfile === p ? '#fff' : '#444') + '; color:#fff; font-size:10px; font-weight:bold; cursor:pointer; border-radius:8px; text-transform:uppercase;';
+        btn.addEventListener('pointerup', chooseProfile);
         profileRow.appendChild(btn);
     });
     sheet.appendChild(profileRow);
@@ -6168,54 +6670,36 @@ function openNewCanvasSheet() {
     const hintEl = document.createElement('div');
     hintEl.id = 'ncm-hint';
     hintEl.style.cssText = 'font-size:9px; color:#888; text-align:center; min-height:18px;';
-    hintEl.textContent = selectedProfile === 'photo' ? 'Full RGBA image layers with smooth rendering.'
-        : selectedProfile === 'portrait' ? 'Locked 40\u00D740. Palette capped at 15 colours.'
-        : selectedProfile === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : 'Pixel-snapped grid editing.';
+    hintEl.textContent = selectedProfile === 'portrait' ? '40\u00D740 tile palette: each tile has its own 15-colour limit.'
+        : selectedProfile === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : '≤999px uses pixel rendering; larger canvases use image rendering.';
     sheet.appendChild(hintEl);
 
-    // Size pickers
-    const pickers = document.createElement('div');
-    pickers.id = 'ncm-pickers';
-    pickers.style.cssText = 'display:flex; flex-direction:column; gap:6px;';
-    ['Width','Height'].forEach((label, li) => {
-        const gid = li === 0 ? 'ncm-w-group' : 'ncm-h-group';
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex; align-items:center; gap:8px;';
-        const lbl = document.createElement('span');
-        lbl.className = 'picker-label';
-        lbl.textContent = label;
-        lbl.style.cssText = 'font-size:10px; color:#888; text-transform:uppercase; letter-spacing:1px; width:36px;';
-        const grp = document.createElement('div');
-        grp.id = gid;
-        grp.style.cssText = 'display:flex; gap:4px;';
-        const defaultVal = li === 0 ? 32 : 32;
-        for (let i = 0; i < 4; i++) {
-            const sel = document.createElement('select');
-            sel.style.cssText = 'appearance:none; -webkit-appearance:none; background:#2a2a2a; border:2px solid #444; border-radius:10px; width:45px; height:55px; color:#0078d4; font-size:24px; font-weight:bold; text-align:center; cursor:pointer; outline:none;';
-            sel.disabled = selectedProfile === 'portrait';
-            const dv = selectedProfile === 'portrait' ? 40 : defaultVal;
-            const digits = String(dv).padStart(4,'0').split('');
-            for (let d = 0; d <= 9; d++) {
-                const opt = document.createElement('option');
-                opt.value = d; opt.textContent = d;
-                if (parseInt(digits[i]) === d) opt.selected = true;
-                sel.appendChild(opt);
-            }
-            grp.appendChild(sel);
-        }
-        row.appendChild(lbl); row.appendChild(grp);
-        pickers.appendChild(row);
-    });
-    sheet.appendChild(pickers);
-    setupDigitKeyboardAdvance(pickers);
+    // Canvas size fields. Touch opens the built-in numeric keypad; a physical
+    // keyboard can type directly while the keypad is open.
+    let ncmWidth = selectedProfile === 'portrait' ? 40 : 32;
+    let ncmHeight = selectedProfile === 'portrait' ? 40 : 32;
+    const sizeBox = document.createElement('div');
+    sizeBox.style.cssText='display:flex;flex-direction:column;gap:6px;';
+    const sizeTitle=document.createElement('div'); sizeTitle.className='panel-subtitle'; sizeTitle.textContent='Canvas Size'; sizeBox.appendChild(sizeTitle);
+    const sizeRow=document.createElement('div'); sizeRow.style.cssText='display:flex;align-items:center;gap:8px;';
+    const wBtn=document.createElement('button'); wBtn.type='button'; wBtn.className='resize-size-field'; wBtn.textContent=String(ncmWidth);
+    const xSep=document.createElement('div'); xSep.textContent='×'; xSep.style.cssText='color:#888;font-size:20px;';
+    const hBtn=document.createElement('button'); hBtn.type='button'; hBtn.className='resize-size-field'; hBtn.textContent=String(ncmHeight);
+    wBtn.onclick=()=>openNumericKeyboard(ncmWidth,v=>{ncmWidth=Math.max(1,Math.min(2000,v));wBtn.textContent=ncmWidth;});
+    hBtn.onclick=()=>openNumericKeyboard(ncmHeight,v=>{ncmHeight=Math.max(1,Math.min(2000,v));hBtn.textContent=ncmHeight;});
+    sizeRow.append(wBtn,xSep,hBtn); sizeBox.appendChild(sizeRow); sheet.appendChild(sizeBox);
 
     const createBtn = document.createElement('button');
     createBtn.className = 'btn-start';
     createBtn.style.cssText = 'width:100%; height:50px; background:#0078d4; border:none; color:white; border-radius:25px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:15px;';
     createBtn.textContent = 'Create Canvas';
     createBtn.onclick = () => {
-        const w = selectedProfile === 'portrait' ? 40 : readNcmDigitGroup('ncm-w-group');
-        const h = selectedProfile === 'portrait' ? 40 : readNcmDigitGroup('ncm-h-group');
+        let w = ncmWidth;
+        let h = ncmHeight;
+        if (selectedProfile === 'portrait' && !portraitDimensionsCompatible(w, h)) {
+            const fallback = fallbackProfileForDimensions(w, h);
+            selectProfile(fallback, w, h);
+        }
         closeNewCanvasModal();
         startNewProjectFromGallery(w, h);
     };
@@ -6290,7 +6774,7 @@ function startNewProjectFromGallery(w, h) {
     currentProjectName = 'Untitled ' + (projectStore.length + 1);
     hideGallery();
     revealMainApp();
-    const base = (selectedProfile === 'photo' && window.ImageLayer) ? new ImageLayer('Layer 1', gridW, gridH) : new PixelLayer('Layer 1', gridW, gridH);
+    const base = createBaseRasterLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
     activeFrameIndex = 0;
@@ -6312,7 +6796,7 @@ function openGalleryCtxMenu(id, e) {
     // Position near the touch/click
     const x = (e.touches ? e.touches[0].clientX : e.clientX) || window.innerWidth / 2;
     const y = (e.touches ? e.touches[0].clientY : e.clientY) || window.innerHeight / 2;
-    const mw = 175, mh = 220;
+    const mw = 190, mh = 260;
     menu.style.left = Math.min(x, window.innerWidth - mw - 8) + 'px';
     menu.style.top = Math.min(y, window.innerHeight - mh - 8) + 'px';
 }
@@ -6324,7 +6808,8 @@ function closeGalleryCtxMenu() {
 
 document.getElementById('gallery-ctx-backdrop').addEventListener('click', closeGalleryCtxMenu);
 
-document.getElementById('ctx-rename').addEventListener('click', () => {
+function beginGalleryRename(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     const id = galleryCtxTargetId;
     closeGalleryCtxMenu();
     const proj = projectStore.find(p => p.id === id);
@@ -6332,9 +6817,21 @@ document.getElementById('ctx-rename').addEventListener('click', () => {
     galleryRenameTargetId = id;
     const input = document.getElementById('gallery-rename-input');
     input.value = proj.name;
-    document.getElementById('gallery-rename-modal').classList.add('open');
-    setTimeout(() => input.focus(), 100);
-});
+    if (shouldUseCustomKeyboard()) {
+        openCustomKeyboard(proj.name, (newName) => {
+            const clean = (newName || '').trim() || 'Untitled';
+            proj.name = clean;
+            if (currentProjectId === proj.id) currentProjectName = clean;
+            renderGallery();
+            galleryRenameTargetId = null;
+        });
+    } else {
+        document.getElementById('gallery-rename-modal').classList.add('open');
+        input.focus();
+        input.select();
+    }
+}
+document.getElementById('ctx-rename').addEventListener('pointerup', beginGalleryRename);
 document.getElementById('rename-cancel-btn').addEventListener('click', () => {
     document.getElementById('gallery-rename-modal').classList.remove('open');
     galleryRenameTargetId = null;
@@ -6374,6 +6871,14 @@ document.getElementById('ctx-duplicate').addEventListener('click', () => {
     const idx = projectStore.findIndex(p => p.id === id);
     projectStore.splice(idx + 1, 0, newEntry);
     renderGallery();
+});
+
+document.getElementById('ctx-resize').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    if (!id) return;
+    openProjectFromStore(id);
+    openResizeCanvasSheet();
 });
 
 document.getElementById('ctx-export').addEventListener('click', () => {
@@ -6493,6 +6998,23 @@ const drawerBackdrop = document.getElementById('drawerBackdrop');
 const keyboardBackdrop = document.getElementById('keyboardBackdrop');
 keyboardBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeCustomKeyboard(true); }, {passive: false});
 keyboardBackdrop.addEventListener('mousedown', () => closeCustomKeyboard(true));
+const numericBackdrop = document.getElementById('numericKeyboardBackdrop');
+numericBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeNumericKeyboard(true); }, {passive:false});
+numericBackdrop.addEventListener('mousedown', () => closeNumericKeyboard(true));
+document.getElementById('numericDoneBtn').addEventListener('click', () => closeNumericKeyboard(true));
+document.getElementById('resize-cancel-btn').addEventListener('click', closeResizeCanvasSheet);
+document.getElementById('resize-canvas-modal').addEventListener('click', e => { if(e.target.id==='resize-canvas-modal') closeResizeCanvasSheet(); });
+document.getElementById('resize-new-w').addEventListener('click', () => { const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.w,v=>setResizeDimension('w',v)); });
+document.getElementById('resize-new-h').addEventListener('click', () => { const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.h,v=>setResizeDimension('h',v)); });
+document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListener('click', () => {
+    const [ax,ay]=btn.dataset.anchor.split(','); const m=document.getElementById('resize-canvas-modal'); m.dataset.ax=ax; m.dataset.ay=ay;
+    document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+}));
+document.getElementById('resize-apply-btn').addEventListener('click', () => {
+    const m=document.getElementById('resize-canvas-modal');
+    applyCanvasResize(Number(m.dataset.w),Number(m.dataset.h),Number(m.dataset.ax),Number(m.dataset.ay));
+    closeResizeCanvasSheet();
+});
 requestAnimationFrame(() => { buildCustomKeyboard(); });
 drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeDrawer(); }, {passive: false});
 drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
@@ -6586,6 +7108,19 @@ requestAnimationFrame(() => {
     handleToolBtn('pencil');
     showGallery();
 });
+
+/* V11: immediately refresh Portrait tile isolation/opacity after an image import.
+   This intentionally reuses the app's existing isolation/opacity refresh hooks
+   when present, without changing ordinary layer opacity. */
+function refreshPortraitTileOpacityAfterImport() {
+    try {
+        invalidateDocumentRender('image-import', true);
+        if (typeof renderLayers === 'function') renderLayers();
+        else if (typeof renderAll === 'function') renderAll();
+        else if (typeof render === 'function') render();
+    } catch (_) {}
+}
+
 </script>
 <div id="pixelToolControlsInline" aria-label="Pencil brush and eraser controls">
                     <div class="pixel-tool-control" data-tool="brush softBrush">
