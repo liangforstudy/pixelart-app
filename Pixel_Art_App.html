@@ -181,9 +181,8 @@
             flex: none;
         }
         .gallery-card .thumb-wrap canvas, .gallery-card .thumb-wrap img {
-            width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; transition: filter 0.15s ease;
+            width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated;
         }
-        .gallery-card .thumb-wrap img.low-zoom-thumb { image-rendering: auto; }
         .gallery-card .card-info {
             padding: 8px 10px 9px;
         }
@@ -194,7 +193,6 @@
         .gallery-card .card-dims {
             font-size: 10px; color: #555; margin-top: 2px;
         }
-        .gallery-card.selected-card { border-color: #0078d4; }
 
         /* Context menu */
         #gallery-ctx-menu {
@@ -392,7 +390,6 @@
             flex: 1; height: 38px; background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
             color: #fff; text-align: center; font-size: 14px; font-weight: bold; box-sizing: border-box;
         }
-        .x-sep { display: flex; align-items: center; color: #888; font-size: 12px; }
 
         #palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; padding: 5px 0; }
         .swatch-wrapper { position: relative; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 50%; transition: transform 0.1s, opacity 0.1s; }
@@ -575,12 +572,6 @@
     <div id="init-screen" style="display:none;">
         <div style="font-size:20px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px;">🎨 Pixel Art Hub</div>
 
-        <div id="hubContinueSection" style="display:none; width:260px; flex-direction:column; gap:8px; margin: 6px 0 4px;">
-            <div class="picker-label">Current Work</div>
-            <button class="btn-start" style="width:100%; height:44px; background:#2a2a2a;" onclick="continueEditing()">▶️ Continue Editing</button>
-            <button class="btn-start" style="width:100%; height:44px; background:#2a2a2a;" onclick="saveProject()">💾 Save Current Project</button>
-        </div>
-
         <div class="picker-label" style="margin-top:6px;">New Project</div>
         <div id="profileRow">
             <button class="profile-btn active" data-profile="pixelArt" onclick="selectProfile('pixelArt')">Pixel Art</button>
@@ -593,7 +584,7 @@
         <div class="digit-col" id="w-group"></div>
         <div class="picker-label">Height</div>
         <div class="digit-col" id="h-group"></div>
-        <button class="btn-start" onclick="initApp()">Create Canvas</button>
+        <button class="btn-start" onclick="newCanvasCreation()">Create Canvas</button>
         <button class="btn-start" id="startFreshBtn" style="background:#631e1e; margin-top:8px;" onclick="handleStartFreshClick()">🆕 Start Fresh</button>
 
         <div class="picker-label" style="margin-top:14px;">Open Project</div>
@@ -636,12 +627,12 @@
             </div>
             <div class="row">
                 <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
-                <button class="btn tool-btn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
+                <button class="btn tool-btn" id="colorToAlphaToolBtn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
 <div class="row"><button class="btn tool-btn" data-tool="pencil" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button><button class="btn tool-btn" id="brushToolBtn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button></div>
-<div class="row"><button class="btn tool-btn" id="softBrushToolBtn" data-tool="softBrush" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" data-tool="hardEraser" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" id="softEraserToolBtn" data-tool="softEraser" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
+<div class="row"><button class="btn tool-btn" id="softBrushToolBtn" data-tool="softBrush" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" id="hardEraserToolBtn" data-tool="hardEraser" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" id="softEraserToolBtn" data-tool="softEraser" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
 <div id="pixelToolControls" style="display:none;padding:6px 0"><label id="brushSizeRow">Brush size <input id="pixel-brush-size" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-value">8 px</output></label><label id="brushSoftnessRow">Brush softness <input id="pixel-brush-softness" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-value">100%</output></label><label id="softEraserSizeRow">Soft eraser size <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8"><output id="pixel-soft-eraser-size-value">8 px</output></label><label id="softEraserSoftnessRow">Soft eraser softness <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35"><output id="pixel-soft-eraser-softness-value">35%</output></label></div>
                 <div class="row">
                     <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
@@ -651,7 +642,7 @@
                     <button class="btn tool-btn" data-tool="lasso" onclick="uiAction(() => handleToolBtn('lasso'))">〰️ LASSO</button>
                 </div>
                 <div id="bucketControls" style="display:none;">
-                    <div class="panel-subtitle">FILL TOLERANCE</div>
+                    <div class="panel-subtitle" id="bucketToleranceSubtitle">FILL TOLERANCE</div>
                     <div class="row" style="align-items:center;">
                         <button class="btn active" id="bucketMatchBtn" onclick="uiAction(toggleBucketMatch)">EXACT</button>
                         <input type="range" id="bucketTolerance" min="0" max="100" step="1" value="10" oninput="uiAction(() => setBucketTolerance(this.value))" style="flex:1;">
@@ -670,7 +661,7 @@
                     <div class="panel-subtitle">Wand Selection</div>
                     <div class="row" style="align-items:center; gap:6px;">
                         <button class="btn" id="wandMatchBtn" onclick="uiAction(toggleWandMatch)">EXACT</button>
-                        <span style="font-size:10px;color:#888;">Match</span>
+                        <span id="wandMatchLabel" style="font-size:10px;color:#888;">Match</span>
                         <input type="range" id="wandTolerance" min="0" max="100" step="1" value="10" oninput="uiAction(() => setWandTolerance(this.value))" style="flex:1;">
                         <span id="wandToleranceLabel" style="font-size:10px;color:#ccc;width:28px;text-align:right;">10</span>
                     </div>
@@ -683,8 +674,8 @@
                         <button class="btn" id="wandSelModeSubtract" onclick="uiAction(() => setPixelSelectionMode('subtract'))">− SUB</button>
                     </div>
                     <div class="row">
-                        <button class="btn" id="wandDeleteBtn" onclick="uiAction(confirmWandDelete)">🧽 CONFIRM DELETE</button>
-                        <button class="btn" onclick="uiAction(clearWandSelection)">❌ CLEAR</button>
+                        <button class="btn" id="wandDeleteBtn" onclick="uiAction(confirmWandDelete)">🗑️ DELETE PIXELS</button>
+                        <button class="btn" id="wandClearBtn" disabled onclick="uiAction(clearWandSelection)">❌ CLEAR SELECTION</button>
                     </div>
                     <div id="wandSelectionCount" style="font-size:10px;color:#aaa;text-align:center;">No wand selection</div>
                 </div>
@@ -698,7 +689,7 @@
                     <div class="panel-subtitle">Selection</div>
                     <div class="row">
                         <button class="btn" id="moveSelBtn" onclick="uiAction(toggleMoveSelection)">✋ MOVE SEL</button>
-                        <button class="btn" id="deleteSelBtn" onclick="uiAction(deleteSelection)">🧽 DELETE SEL</button>
+                        <button class="btn" id="deleteSelBtn" onclick="uiAction(deleteSelection)">🗑️ DELETE PIXELS</button>
                         <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
                     </div>
                 </div>
@@ -799,7 +790,7 @@
                 <button class="btn" onclick="uiAction(() => moveSelectedBlock(1))">⬆️ MOVE UP</button>
                 <button class="btn" onclick="uiAction(() => moveSelectedBlock(-1))">⬇️ MOVE DOWN</button>
                 <button class="btn" onclick="uiAction(duplicateSelectedItems)">📋 DUPLICATE</button>
-                <button class="btn" onclick="uiAction(deleteSelectedItems)">🗑️ DELETE</button>
+                <button class="btn" id="deleteSelectedItemsBtn" onclick="uiAction(confirmDeleteSelectedItems)">🗑️ DELETE</button>
                 <button class="btn" onclick="uiAction(ungroupSelected)">↪️ UNGROUP</button>
                 <button class="btn" onclick="uiAction(mergeSelectedGroups)">🗂️ MERGE GROUPS</button>
                 <button class="btn" onclick="uiAction(toggleLayerSelectionMode)">DONE</button>
@@ -1111,6 +1102,11 @@ class WebGL2ImageRenderer {
 }
 
 const IMAGE_RENDERER_PREFERENCE = 'auto'; // 'auto' | 'webgl2' | 'canvas2d'
+// Currently unused anywhere in the app -- checked and deliberately kept
+// (not dead code to remove) rather than wired in, since doing so would be
+// a feature addition (e.g. surfacing WebGL2-vs-Canvas2D in the Debug stats
+// panel), not a pure cleanup. Flagged here so a future dead-code scan
+// doesn't need to re-investigate it from scratch.
 window.getImageRendererInfo = function(layer) {
     return layer && layer instanceof ImageLayer ? { mode: layer.rendererMode, preference: IMAGE_RENDERER_PREFERENCE } : null;
 };
@@ -1308,9 +1304,6 @@ function getCanvasRenderingModeLabel(width, height) {
         ? 'Image mode'
         : 'Pixel mode';
 }
-window.getCurrentCanvasRenderingModeLabel = function(width, height) {
-    return getCanvasRenderingModeLabel(width, height);
-};
 
 
 
@@ -1493,7 +1486,7 @@ window.pixelToolDefs={pencil:{label:'✏️ PENCIL TOOL'},brush:{label:'🖌️ 
 // are valid. Any invalid tool auto-redirects to its nearest hard-edged
 // equivalent: brush/soft brush -> pencil, soft eraser -> hard eraser.
 const PORTRAIT_TOOL_FALLBACK = { brush:'pencil', softBrush:'pencil', softEraser:'hardEraser' };
-window.selectPixelTool=function(n){if(!window.pixelToolDefs[n])return;if(selectedProfile==='portrait'&&PORTRAIT_TOOL_FALLBACK[n])n=PORTRAIT_TOOL_FALLBACK[n];window.pixelToolState.current=n;currentTool=n;if(n==='hardEraser'){try{if(typeof window.selectTransparentSwatch==='function')window.selectTransparentSwatch();else selectedColor=null;}catch(e){selectedColor=null;}}updateUI();updateToolVisibility();};
+window.selectPixelTool=function(n){if(!window.pixelToolDefs[n])return;if(selectedProfile==='portrait'&&PORTRAIT_TOOL_FALLBACK[n])n=PORTRAIT_TOOL_FALLBACK[n];window.pixelToolState.current=n;currentTool=n;if(n==='hardEraser'){selectedColor=null;}else if(selectedColor===null&&APPLY_LAST_COLOUR_TOOLS.includes(n)){selectedColor=lastNonTransparentColor;}updateUI();updateToolVisibility();};
 window.getPixelToolStroke=function(){const s=window.pixelToolState,n=s.current;if(n==='pencil')return{size:1,alpha:1,erase:false,soft:false};if(n==='brush')return{size:s.brushSize,alpha:1,erase:false,soft:false};if(n==='softBrush')return{size:s.brushSize,alpha:s.brushSoftness/100,erase:false,soft:true};if(n==='hardEraser')return{size:1,alpha:1,erase:true,soft:false};return{size:s.softEraserSize,alpha:s.softEraserSoftness/100,erase:true,soft:true};};
 let isConfirmingClear = false, selectedColor = "#000000";
 let holdTimer, dragTarget = null, cursorTimer;
@@ -1518,16 +1511,14 @@ let selectedProfile = 'pixelArt'; // 'pixelArt' | 'portrait' | 'sprite' (legacy 
 // Each tile owns up to 15 opaque colours; colours may be reused independently in other tiles.
 let portraitTilePalettes = new Map();
 let portraitActiveTileKey = '0,0';
+// While true, syncPortraitPaletteForPoint freezes both the active tile and
+// the isolation overlay to whatever tile was active when isolation was
+// turned on -- tapping/drawing elsewhere no longer switches tiles. See
+// syncPortraitPaletteForPoint and updatePortraitTileControls' toggle handler.
 let portraitTileIsolation = false;
+// Range is 0.5-1.0 (50%-100%), not 0-1.0: below 50% the non-isolated tiles
+// become distracting/visible enough to defeat the point of isolating one.
 let portraitTileIsolationOpacity = 0.78;
-// When true, the isolated tile stays fixed even if the user draws/taps
-// into a different tile -- otherwise syncPortraitPaletteForPoint's normal
-// auto-follow behaviour would silently change which tile is isolated.
-let portraitTileIsolationLocked = false;
-// The tile key the isolation view is pinned to while locked. Captured at
-// lock-on time; updatePortraitTileOverlay() reads this instead of the
-// live (pointer-following) portraitActiveTileKey while locked is true.
-let portraitIsolationLockedKey = null;
 let portraitStrokeColor = null;
 let lastEnteredProfile = null;    // profile the current work (if any) was created/resumed under
 const PORTRAIT_PALETTE_LIMIT = 15;
@@ -1571,7 +1562,6 @@ function syncActiveLayersFromTree() {
     }
     if (activeLayerIndex >= layers.length) activeLayerIndex = layers.length - 1;
 }
-function syncAllFrameTrees() { frames.forEach(ensureFrameLayerTree); syncActiveLayersFromTree(); }
 function findNode(nodes, id, parent) {
     for (let i = 0; i < (nodes || []).length; i++) {
         const n = nodes[i];
@@ -1583,17 +1573,12 @@ function findNode(nodes, id, parent) {
 function findLayerNode(nodes, layerId, parent) { return findNode(nodes, 'layer-' + layerId, parent); }
 function findGroupNode(nodes, groupId, parent) { return findNode(nodes, groupId, parent); }
 function nodeId(node) { return node && node.kind === 'layer' ? 'layer-' + node.layer.id : node && node.id; }
-function nodeChildren(node) { return node && node.kind === 'group' ? node.children : null; }
 function collectNodeIds(node, out) {
     out = out || [];
     if (!node) return out;
     out.push(nodeId(node));
     if (node.kind === 'group') (node.children || []).forEach(ch => collectNodeIds(ch,out));
     return out;
-}
-function isDescendantNode(root, targetId) {
-    if (!root || root.kind !== 'group') return false;
-    return collectNodeIds(root, []).includes(targetId);
 }
 function selectionContainsDescendantOfSelected(node) {
     const id=nodeId(node);
@@ -1708,23 +1693,13 @@ function getRootSelectedNodes(){
     });})(f.layerTree,null);
     return out;
 }
-function canMoveNode(node,direction){
-    const f=frames[activeFrameIndex]; if(!f)return false;
-    const found=findNode(f.layerTree,nodeId(node)); if(!found)return false;
-    const arr=found.parent?found.parent.children:f.layerTree;
-    const pos=found.index;
-    const adjacent=direction>0 ? arr[pos+1] : arr[pos-1];
-    if(!adjacent)return false;
-    // Adjacent group is always a valid destination for a layer: Up/Down can enter it.
-    return true;
-}
 // A layer immediately next to a group can enter that group instead of
 // merely swapping places with it. The Layers panel is rendered in
 // reverse tree order, so +1 (Up) means the group is the next item above
 // the layer visually, while -1 (Down) means the group is below it.
 // Entering from below places the layer at the group's visual bottom;
 // entering from above places the layer at the group's visual top.
-function moveTreeNode(node, direction){
+function reorderLayerTreeNode(node, direction){
     const f=frames[activeFrameIndex]; if(!f)return;
     const found=findNode(f.layerTree,nodeId(node)); if(!found)return;
     const before=captureTreeState();
@@ -1805,9 +1780,16 @@ function duplicateSelectedItems(){
     clearLayerTreeSelection(); created.forEach(n=>selectTreeNode(n,true)); pushTreeOperation('Duplicate selected items',before); renderLayersPanel();
 }
 function collectTreeNodes(nodes,out){out=out||[];(nodes||[]).forEach(n=>{out.push(n);if(n.kind==='group')collectTreeNodes(n.children,out);});return out;}
-function deleteSelectedItems(){
+// Entry point for the DELETE button in the multi-select layers toolbar --
+// arms/triggers the tap-twice confirm. The actual deletion logic lives in
+// performDeleteSelectedItems, matching the confirmWandDelete/performWandDelete
+// split used elsewhere for tap-twice-confirmed destructive actions.
+function confirmDeleteSelectedItems(){
+    const entries=collectSelectedRootsSorted(); if(!entries.length)return;
+    deleteSelectedItemsConfirm.trigger();
+}
+function performDeleteSelectedItems(){
     const f=frames[activeFrameIndex]; if(!f)return; const entries=collectSelectedRootsSorted(); if(!entries.length)return;
-    const count=entries.length; if(!confirm('Delete '+count+' selected '+(count===1?'item':'items')+'?'))return;
     const before=captureTreeState();
     const removedLayers=[]; entries.forEach(e=>collectTreeNodes([e.node]).forEach(n=>{if(n.kind==='layer')removedLayers.push(n.layer);}));
     entries.forEach(e=>removeNodeFromTree(e.node));
@@ -1882,9 +1864,6 @@ function resetHistory() {
     updateUndoRedoFabs();
     if (typeof renderUndoHistory === 'function' && openPanelName === 'history') renderUndoHistory();
 }
-function historyNodeLabel(node) { return node.entry ? historyEntryLabel(node.entry, 0) : 'Initial state'; }
-function getHistoryPath(node) { const out=[]; while(node && node!==historyRoot){out.push(node);node=node.parent;} return out.reverse(); }
-function historyDescendants(node, depth=0) { const out=[]; (node.children||[]).forEach(ch=>{out.push({node:ch,depth});out.push(...historyDescendants(ch,depth+1));}); return out; }
 function estimateHistoryEntryBytes(entry) {
     if (!entry) return 0;
     if (entry.type === 'imageTiles' && Array.isArray(entry.tiles)) {
@@ -1958,13 +1937,6 @@ let eventsInitialized = false;
 /* ============================================================
    SPLASH SCREEN PROFILES
    ============================================================ */
-// Shows/hides the hub's "Current Work" section (Continue/Save) depending
-// on whether there's anything in memory yet to continue or save.
-function updateHubState() {
-    const section = document.getElementById('hubContinueSection');
-    if (section) section.style.display = frames.length > 0 ? 'flex' : 'none';
-}
-
 /* ============================================================
    CUSTOM ON-SCREEN KEYBOARD (iOS-styled)
    A self-contained text entry keyboard, used instead of focusing a real
@@ -2255,14 +2227,6 @@ function handleKeyboardPhysicalKeydown(e) {
 }
 window.addEventListener('keydown', handleKeyboardPhysicalKeydown);
 
-// Handles picking Standard/Portrait/Sprite on the hub: locks the size pickers for Portrait and updates the hint text for what each profile changes.
-function getProfilePickerDimensions() {
-    const ncm = document.getElementById('ncm-w-group');
-    const wh = ncm ? 'ncm' : '';
-    if (wh) return { w: readNcmDigitGroup('ncm-w-group'), h: readNcmDigitGroup('ncm-h-group') };
-    return { w: readDigitGroup('w-group'), h: readDigitGroup('h-group') };
-}
-
 function portraitDimensionsCompatible(w, h) {
     return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 && w % 40 === 0 && h % 40 === 0;
 }
@@ -2321,7 +2285,7 @@ function selectProfile(p, forcedWidth = null, forcedHeight = null) {
 
     if (p !== 'portrait') { portraitTileIsolation = false; hidePortraitTileIsolationOverlay(); }
     updateColorPickerAvailability();
-    if (p === 'portrait' && gridW && gridH) syncPortraitPaletteForPoint(0,0,true);
+    if (p === 'portrait' && gridW && gridH) syncPortraitPaletteForPoint(0,0,true,true);
     updatePortraitTileControls();
     return p;
 }
@@ -2348,19 +2312,33 @@ function replaceVisiblePalette(colours){
     updateUI(); updateColorPickerAvailability();
 }
 function copySafeColours(colours){ return Array.from(new Set((colours||[]).filter(c=>/^#[0-9A-F]{6}$/i.test(c)).map(c=>c.toUpperCase()))); }
-function syncPortraitPaletteForPoint(x,y,force=false){
+// resetIsolation: true only for the handful of call sites that represent a
+// fresh start (entering Portrait mode, loading a new palette image) where
+// any prior isolation state is meaningless and safe to leave as whatever
+// it already reset to. Everyday taps/draws (Pan-tool tile switch, drawing
+// tools) always pass this as false, so isolation correctly blocks them.
+function syncPortraitPaletteForPoint(x,y,force=false,resetIsolation=false){
     if(selectedProfile!=='portrait') return;
+    // While isolation is on, the palette and the isolated tile both stay
+    // fixed on whatever tile was active when isolation was turned on --
+    // tapping/drawing in a different tile (including the Pan-tool's
+    // tap-to-switch-tile gesture) must not switch either one. Turning
+    // isolation off, then back on, re-anchors to the tile active at that
+    // moment (see updatePortraitTileControls' toggle handler).
+    if(portraitTileIsolation && !resetIsolation) return;
     const key=portraitTileKeyForPoint(x,y); if(!key) return;
     if(!force && key===portraitActiveTileKey) return;
     portraitActiveTileKey=key;
     const pal=ensurePortraitTilePalette(key);
     replaceVisiblePalette(pal);
-    // The isolation view's own tile reference is separate from the palette's
-    // active-tile tracking below -- when locked, the isolated tile stays put
-    // even as the palette keeps following the pointer from tile to tile.
-    if(!portraitTileIsolationLocked) updatePortraitTileOverlay();
+    updatePortraitTileOverlay();
     updatePortraitTileControls();
 }
+// Replaces each tile's editable palette with the first unique opaque
+// colours encountered in that region of an image. Follows the GIMP-inspired
+// portrait workflow: scan in normal row-major order, ignore transparent
+// pixels, stop at 15 unique colours per tile, and keep the transparency
+// slot separate.
 function samplePortraitTilePalettes(img){
     portraitTilePalettes=new Map();
     const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
@@ -2383,7 +2361,10 @@ function hidePortraitTileIsolationOverlay(){ const o=document.getElementById('po
 function updatePortraitTileOverlay(){
     const o=document.getElementById('portraitTileIsolationOverlay'); if(!o)return;
     if(!portraitTileIsolation || selectedProfile!=='portrait' || portraitTileCount()<=1){o.style.display='none';return;}
-    const key = (portraitTileIsolationLocked && portraitIsolationLockedKey) ? portraitIsolationLockedKey : portraitActiveTileKey;
+    // portraitActiveTileKey is itself frozen while isolation is on (see
+    // syncPortraitPaletteForPoint), so this always reflects the isolated
+    // tile -- no separate "locked key" needed.
+    const key = portraitActiveTileKey;
     const [tx,ty]=key.split(',').map(Number); const x=tx*40*scale,y=ty*40*scale; const w=Math.min(40,gridW-tx*40)*scale,h=Math.min(40,gridH-ty*40)*scale;
     o.innerHTML=''; o.style.display='block';
     const masks=[
@@ -2399,22 +2380,16 @@ function updatePortraitTileControls(){
     const box=document.createElement('div'); box.id='portraitTileControls'; box.style.cssText='padding:8px 6px;border-bottom:1px solid #333;';
     const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;';
     const b=document.createElement('button'); b.className='btn'; b.style.flex='1'; b.innerText=portraitTileIsolation?'SHOW OTHER TILES':'ISOLATE PORTRAIT TILE';
+    // Turning isolation on freezes the palette/overlay to whichever tile is
+    // active right now (see syncPortraitPaletteForPoint); turning it off
+    // releases the freeze. There is no separate lock step -- isolation
+    // itself is the lock.
     b.onclick=()=>{
         portraitTileIsolation=!portraitTileIsolation;
-        if(!portraitTileIsolation){ portraitTileIsolationLocked=false; portraitIsolationLockedKey=null; }
         invalidateDocumentRender('portrait-isolation',true);
     }; row.appendChild(b);
-    if(portraitTileIsolation){
-        const lockBtn=document.createElement('button'); lockBtn.className='btn'+(portraitTileIsolationLocked?' active':''); lockBtn.style.cssText='width:40px;flex:none;'; lockBtn.innerText='\ud83d\udd12'; lockBtn.title=portraitTileIsolationLocked?'Unlock isolated tile':'Lock isolated tile';
-        lockBtn.onclick=()=>{
-            portraitTileIsolationLocked=!portraitTileIsolationLocked;
-            portraitIsolationLockedKey=portraitTileIsolationLocked?portraitActiveTileKey:null;
-            updatePortraitTileOverlay();
-            updatePortraitTileControls();
-        }; row.appendChild(lockBtn);
-    }
     box.appendChild(row);
-    if(portraitTileIsolation){ const label=document.createElement('div');label.style.cssText='font-size:9px;color:#888;margin-top:6px;';label.innerText='other tiles opacity';box.appendChild(label); const sl=document.createElement('input');sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(portraitTileIsolationOpacity*100);sl.style.width='100%';sl.oninput=()=>{portraitTileIsolationOpacity=sl.value/100;updatePortraitTileOverlay();};box.appendChild(sl);}
+    if(portraitTileIsolation){ const label=document.createElement('div');label.style.cssText='font-size:9px;color:#888;margin-top:6px;';label.innerText='other tiles opacity';box.appendChild(label); const sl=document.createElement('input');sl.type='range';sl.min=50;sl.max=100;sl.value=Math.round(portraitTileIsolationOpacity*100);sl.style.width='100%';sl.oninput=()=>{portraitTileIsolationOpacity=sl.value/100;updatePortraitTileOverlay();};box.appendChild(sl);}
     list.prepend(box);
 }
 // Sets the four digit <select> pickers (e.g. width or height) to a given number, zero-padded to 4 digits.
@@ -3188,7 +3163,7 @@ function setupDigitKeyboardAdvance(root) {
 }
 
 // Runs once, when "Create Canvas" is pressed: sets up the first layer/frame, wires up all the one-time event listeners, and swaps from the splash screen to the main app.
-// Shared by initApp()/continueEditing()/loadProjectFile(): reveals the
+// Shared by newCanvasCreation()/continueEditing()/loadProjectFile(): reveals the
 // main app and wires up its one-time event listeners. Safe to call
 // multiple times -- getElementById and the eventsInitialized guard make
 // it idempotent.
@@ -3238,7 +3213,7 @@ function createBaseRasterLayer(name, w, h) {
         : new PixelLayer(name, w, h);
 }
 
-function initApp() {
+function newCanvasCreation() {
     let newW = readDigitGroup('w-group');
     let newH = readDigitGroup('h-group');
     if (selectedProfile === 'portrait' && !portraitDimensionsCompatible(newW, newH)) {
@@ -3260,7 +3235,7 @@ function initApp() {
         // Resuming work that Main Menu left intact: just resize in place
         // (top-left anchored, same as Apply Size) and reveal it again --
         // nothing gets cleared.
-        traceLog('initApp(): resuming existing work under profile "' + selectedProfile + '", resizing to ' + newW + '\u00D7' + newH);
+        traceLog('newCanvasCreation(): resuming existing work under profile "' + selectedProfile + '", resizing to ' + newW + '\u00D7' + newH);
         gridW = newW; gridH = newH;
         frames.forEach(f => f.layers.forEach(l => { if (l instanceof PixelLayer || l instanceof ImageLayer) l.resizeToCanvas(newW, newH); }));
         enforcePixelArtRendererForDimensions();
@@ -3274,7 +3249,7 @@ function initApp() {
     }
 
     if (frames.length > 0) {
-        traceLog('initApp(): profile changed (' + lastEnteredProfile + ' -> ' + selectedProfile + '), discarding previous work');
+        traceLog('newCanvasCreation(): profile changed (' + lastEnteredProfile + ' -> ' + selectedProfile + '), discarding previous work');
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         resetHistory();
     }
@@ -3292,6 +3267,8 @@ function initApp() {
 
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
+    zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
+    scale = ZOOM_STEPS[zoomIndex];
     layoutAll();
 }
 
@@ -3468,17 +3445,13 @@ function layoutAll() {
     centerCanvasInViewport();
 }
 
-// Scrolls the viewport so the canvas sits in the middle of the visible
-// screen. Safe to call any time -- the canvas is always exactly centered
-// within canvasWrap's total (padded) size, so this is just "scroll to
-// the middle of the scrollable range" regardless of zoom level.
 // Minimum canvas visible on-screen when panned all the way to an edge --
 // enough to still see and grab it, not so much it can't tuck into a corner.
 const MIN_CANVAS_PEEK = 15;
 // Keeps a scroll value within [0, maxScroll] but pulled in by
 // MIN_CANVAS_PEEK on each end, so panning to an extreme leaves a sliver
 // of canvas visible instead of letting it scroll completely out of view.
-function clampScrollKeepingPeek(value, maxScroll) {
+function clampPanScrollWithinEdgeMargin(value, maxScroll) {
     const peek = Math.min(MIN_CANVAS_PEEK, maxScroll / 2);
     return Math.max(peek, Math.min(maxScroll - peek, value));
 }
@@ -3499,6 +3472,31 @@ function centerCanvasInViewport() {
 function getViewportSize() {
     if (window.visualViewport) return { w: window.visualViewport.width, h: window.visualViewport.height };
     return { w: window.innerWidth, h: window.innerHeight };
+}
+
+// Picks the zoom level that best shows the whole canvas at once, snapped to
+// the nearest ZOOM_STEPS preset by absolute distance -- the same
+// nearest-preset approach the two-finger pinch-release handler already
+// uses (see updateCanvasPanZoomRotate). Overshoot is allowed: if the
+// nearest preset is slightly larger than the exact fit, the canvas can
+// crop a little rather than always rounding down to a smaller, blurrier
+// step. Leaves a fixed margin so the canvas doesn't touch the window
+// edges. Used when a canvas is first shown -- new canvas or opening a
+// project -- so the person always starts by seeing their whole picture
+// rather than an arbitrary saved zoom level; see newCanvasCreation() and
+// openProjectFromStore().
+const FIT_TO_SCREEN_MARGIN = 10;
+function computeFitToScreenZoomIndex(w, h) {
+    const { w: vw, h: vh } = getViewportSize();
+    const availW = Math.max(1, vw - FIT_TO_SCREEN_MARGIN * 2);
+    const availH = Math.max(1, vh - FIT_TO_SCREEN_MARGIN * 2);
+    const idealScale = Math.min(availW / w, availH / h);
+    let bestIdx = 0, bestDiff = Infinity;
+    ZOOM_STEPS.forEach((z, i) => {
+        const diff = Math.abs(z - idealScale);
+        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    });
+    return bestIdx;
 }
 
 // Sizes canvasWrap's padding to a full viewport dimension on each side
@@ -3700,6 +3698,10 @@ function updateToolVisibility() {
     if (selectedProfile === 'portrait' && PORTRAIT_TOOL_FALLBACK[currentTool]) {
         handleToolBtn(PORTRAIT_TOOL_FALLBACK[currentTool]);
     }
+    // Same safety net for Colour to Alpha -- see handleToolBtn.
+    if (selectedProfile === 'portrait' && currentTool === 'colorToAlpha') {
+        handleToolBtn('pencil');
+    }
 
     // Hide the tool buttons and slider rows Portrait mode has no use for --
     // brush/soft brush and soft eraser are all redirected to a fixed-size
@@ -3712,6 +3714,32 @@ function updateToolVisibility() {
     show('brushSoftnessRow', !inPortrait);
     show('softEraserSizeRow', !inPortrait);
     show('softEraserSoftnessRow', !inPortrait);
+    show('colorToAlphaToolBtn', !inPortrait);
+    // Portrait's per-tile curated palettes make fuzzy colour matching
+    // meaningless -- a tile's palette is a short, deliberately-chosen list,
+    // so "close enough" matching has no natural tolerance scale the way it
+    // does against a full-gamut raster. Force exact mode and hide the
+    // toggle + slider for bucket/wand/lasso (wand and lasso share
+    // wandControls, see the wc/wr assignments above).
+    if (inPortrait) {
+        if (wandFuzzy) { wandFuzzy = false; const b=document.getElementById('wandMatchBtn'); if(b)b.textContent='EXACT'; }
+        if (bucketFuzzy) { bucketFuzzy = false; const b=document.getElementById('bucketMatchBtn'); if(b)b.textContent='EXACT'; }
+    }
+    show('wandMatchBtn', !inPortrait);
+    show('wandMatchLabel', !inPortrait);
+    show('wandTolerance', !inPortrait);
+    show('wandToleranceLabel', !inPortrait);
+    show('bucketMatchBtn', !inPortrait);
+    show('bucketTolerance', !inPortrait);
+    show('bucketToleranceLabel', !inPortrait);
+    show('bucketToleranceSubtitle', !inPortrait);
+    // Portrait mode only has one eraser tool available (soft eraser is
+    // redirected to it, see PORTRAIT_TOOL_FALLBACK), so calling it "hard"
+    // eraser -- a distinction that only makes sense next to a soft eraser
+    // -- is misleading there. Label-only change; data-tool/id/behaviour
+    // are unaffected.
+    const hardEraserBtn = document.getElementById('hardEraserToolBtn');
+    if (hardEraserBtn) hardEraserBtn.textContent = inPortrait ? '🧹 ERASER' : '🧹 HARD ERASER';
 }
 
 // True only when TRANSFORM mode is on AND the active layer is a reference layer -- gates the drag/pinch reposition-and-scale gesture.
@@ -3961,13 +3989,23 @@ function fuzzyScore(query,text){
     let qi=0,score=0; for(let i=0;i<text.length&&qi<query.length;i++){if(text[i]===query[qi]){score+=20;qi++;}}
     return qi===query.length ? score : -1;
 }
-function registerCommand(id,name,aliases,action,category){ commandRegistry.push({id,name,aliases:aliases||[],action,category:category||'Command'}); }
+// hiddenWhen: optional () => boolean. When it returns true, the command is
+// excluded from search results entirely (not just visually hidden) --
+// items 1/2 of the V1_8 request: anything hidden from the current mode's
+// UI must also be unreachable via search, so search can't become a
+// backdoor around a mode's restrictions.
+function registerCommand(id,name,aliases,action,category,hiddenWhen){ commandRegistry.push({id,name,aliases:aliases||[],action,category:category||'Command',hiddenWhen:hiddenWhen||null}); }
 function buildSearchResults(query){
     const results=[]; const q=(query||'').trim(); if(!q)return results;
     const f=frames[activeFrameIndex]; if(f){
         collectTreeNodes(f.layerTree).forEach(n=>{const name=n.kind==='group'?n.name:n.layer.name; const path=getNodePathText(n); const textContent=n.kind==='layer' ? (n.layer.textContent||n.layer.text||'') : ''; const score=Math.max(fuzzyScore(q,name),fuzzyScore(q,path),fuzzyScore(q,textContent)); if(score>=0)results.push({type:n.kind==='group'?'group':'layer',name,path,score,action:()=>jumpToTreeNode(n)});});
     }
-    commandRegistry.forEach(c=>{const score=Math.max(fuzzyScore(q,c.name),...c.aliases.map(a=>fuzzyScore(q,a)));if(score>=0)results.push({type:'command',name:c.name,path:c.category+' • '+c.aliases.join(', '),score,action:c.action});});
+    commandRegistry.forEach(c=>{
+        if(c.hiddenWhen && c.hiddenWhen()) return;
+        const nameForDisplay = (typeof c.name === 'function') ? c.name() : c.name;
+        const score=Math.max(fuzzyScore(q,nameForDisplay),...c.aliases.map(a=>fuzzyScore(q,a)));
+        if(score>=0)results.push({type:'command',name:nameForDisplay,path:c.category+' • '+c.aliases.join(', '),score,action:c.action});
+    });
     return results.sort((a,b)=>b.score-a.score).slice(0,30);
 }
 function getNodePathText(node){
@@ -4016,19 +4054,23 @@ function openGlobalCommandKeyboard(){
     );
 }
 function closeGlobalCommandPalette(){const o=document.getElementById('globalCommandPalette');if(o)o.style.display='none';globalPaletteOpen=false;if(customKeyboardState)closeCustomKeyboard(false);}
-function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.slice(0,20).map(c=>({type:'command',name:c.name,path:c.category,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
+function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.filter(c=>!(c.hiddenWhen&&c.hiddenWhen())).slice(0,20).map(c=>({type:'command',name:(typeof c.name==='function')?c.name():c.name,path:c.category,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
 function registerBuiltInCommands(){
     if(commandRegistry.length)return;
     registerCommand('tool.pencil','Pencil Tool',['pencil','draw'],()=>handleToolBtn('pencil'),'Tools');
-    registerCommand('tool.brush','Brush Tool',['brush','paint'],()=>handleToolBtn('brush'),'Tools');
-    registerCommand('tool.softBrush','Soft Brush Tool',['soft brush'],()=>handleToolBtn('softBrush'),'Tools');
-    registerCommand('tool.hardEraser','Hard Eraser Tool',['hard eraser','erase'],()=>handleToolBtn('hardEraser'),'Tools');
-    registerCommand('tool.softEraser','Soft Eraser Tool',['soft eraser'],()=>handleToolBtn('softEraser'),'Tools');
+    registerCommand('tool.brush','Brush Tool',['brush','paint'],()=>handleToolBtn('brush'),'Tools',()=>selectedProfile==='portrait');
+    registerCommand('tool.softBrush','Soft Brush Tool',['soft brush'],()=>handleToolBtn('softBrush'),'Tools',()=>selectedProfile==='portrait');
+    // Label mirrors the visible button (see the V1_8 handoff section on
+    // Portrait-mode search filtering): plain "Eraser" in Portrait mode
+    // (there's only one eraser tool available there -- see
+    // PORTRAIT_TOOL_FALLBACK), "Hard Eraser" otherwise, where it needs to
+    // be distinguished from the separate Soft Eraser tool.
+    registerCommand('tool.hardEraser',()=>selectedProfile==='portrait'?'Eraser Tool':'Hard Eraser Tool',['hard eraser','eraser','erase'],()=>handleToolBtn('hardEraser'),'Tools');
+    registerCommand('tool.softEraser','Soft Eraser Tool',['soft eraser'],()=>handleToolBtn('softEraser'),'Tools',()=>selectedProfile==='portrait');
     registerCommand('tool.eyedrop','Select a Colour',['eyedropper','dropper','picker','sample'],()=>handleToolBtn('eyedrop'),'Tools');
-    registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools');
+    registerCommand('tool.colorToAlpha','Colour to Alpha',['color to alpha','colour to alpha','background removal','remove background','background remover','remove white background','remove green screen','remove blue screen'],()=>handleToolBtn('colorToAlpha'),'Tools',()=>selectedProfile==='portrait');
     commandRegistry[commandRegistry.length-1].description='Background removal';
     registerCommand('tool.bucket','Fill',['paint bucket','flood'],()=>handleToolBtn('bucket'),'Tools');
-    registerCommand('tool.eraser','Eraser',['erase','rubber'],()=>handleToolBtn('eraser'),'Tools');
     registerCommand('tool.line','Line',['straight line'],()=>handleToolBtn('line'),'Tools');
     registerCommand('tool.rectangle','Rectangle',['rect','box'],()=>handleToolBtn('rect'),'Tools');
     registerCommand('tool.ellipse','Ellipse',['circle','oval'],()=>handleToolBtn('ellipse'),'Tools');
@@ -4039,7 +4081,7 @@ function registerBuiltInCommands(){
     registerCommand('view.resetRotation','Reset Canvas Rotation',['straighten','reset rotation'],resetCanvasRotation,'View');
     registerCommand('layers.new','New Pixel Layer',['new layer','pixel layer','paint layer'],addPixelLayer,'Layers');
     registerCommand('layers.duplicate','Duplicate Selected',['duplicate layer','copy layer'],duplicateSelectedItems,'Layers');
-    registerCommand('layers.delete','Delete Selected',['delete layer','remove layer'],deleteSelectedItems,'Layers');
+    registerCommand('layers.delete','Delete Selected',['delete layer','remove layer'],confirmDeleteSelectedItems,'Layers');
     registerCommand('groups.ungroup','Ungroup',['ungroup group','remove group'],ungroupSelected,'Layers');
     registerCommand('groups.merge','Merge Groups',['combine groups','merge selected groups'],mergeSelectedGroups,'Layers');
     registerCommand('layers.visibility','Toggle Selected Visibility',['hide selected','show selected','visibility'],toggleSelectedVisibility,'Layers');
@@ -4108,14 +4150,14 @@ function renderLayersPanel() {
         const parent=foundNode?foundNode.parent:null;
         const arr=parent?parent.children:f.layerTree;
         const pos=arr.indexOf(node);
-        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,1);});
+        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,1);});
         const upTarget=pos<arr.length-1?arr[pos+1]:null;
         up.disabled=pos>=arr.length-1;
-        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,-1);});
+        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,-1);});
         const downTarget=pos>0?arr[pos-1]:null;
         down.disabled=pos<=0;
         const clr=mkLayerIconBtn('\u{1F9F9}',e=>{e.stopPropagation();clearLayerAt(i);}); clr.style.display=layer.type!=='reference'?'flex':'none';
-        const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i);});
+        const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
         row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); list.appendChild(row);
         if(!layerSelectionMode && i===activeLayerIndex){const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
@@ -4129,9 +4171,9 @@ function renderLayersPanel() {
         const icon=document.createElement('span'); icon.innerText='\u{1F5C2}\uFE0F'; icon.style.fontSize='18px';
         const name=document.createElement('div'); name.className='layer-name'; name.innerText=node.name; name.onclick=e=>{e.stopPropagation();if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();return;}activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();};
         const gf=findNode(f.layerTree,node.id); const arr=gf&&gf.parent?gf.parent.children:f.layerTree; const pos=arr.indexOf(node);
-        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,1);});up.disabled=pos>=arr.length-1;
-        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();moveTreeNode(node,-1);});down.disabled=pos<=0;
-        const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteGroup(node);});
+        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,1);});up.disabled=pos>=arr.length-1;
+        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,-1);});down.disabled=pos<=0;
+        const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteGroup(node,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=e=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(e.target===exp||e.target===sel||e.target===vis||e.target===name)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();}};
         row.append(colorTag,exp,sel,vis,icon,name,up,down,del); list.appendChild(row);
         if(!layerSelectionMode && activeGroupId===node.id){ const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel); const op=document.createElement('div'); op.className='layer-opacity-row'; const sl=document.createElement('input'); sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(node.opacity*100); const lab=document.createElement('span');lab.innerText=sl.value+'%'; sl.oninput=()=>{node.opacity=sl.value/100;lab.innerText=sl.value+'%';applyGroupVisualState(node);}; op.append(sl,lab); const bm=document.createElement('select'); bm.className='num-input'; ['source-over','multiply','screen','overlay','darken','lighten'].forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
@@ -4181,7 +4223,7 @@ function moveSelectedBlock(direction){
     const before=captureTreeState();
     // A single selected layer/group follows the same Up/Down semantics as its row buttons,
     // including entering an adjacent group. Multi-selection moves as a block within each parent.
-    if(entries.length===1){ moveTreeNode(entries[0].node,direction); return; }
+    if(entries.length===1){ reorderLayerTreeNode(entries[0].node,direction); return; }
     const groups=new Map(); entries.forEach(e=>{const key=e.parent?e.parent.id:'__root__';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e.node);});
     groups.forEach((nodes,parentKey)=>{
         const parent=parentKey==='__root__'?null:findGroupNode(f.layerTree,parentKey).node; const arr=parent?parent.children:f.layerTree;
@@ -4206,16 +4248,21 @@ function selectAllTreeNodes(){
     clearLayerTreeSelection(); (f.layerTree||[]).forEach(n=>selectTreeNode(n,true)); renderLayersPanel();
 }
 function clearTreeSelection(){clearLayerTreeSelection();renderLayersPanel();}
-function deleteGroup(node){
+// btn: the row's delete icon button; see elementTapTwiceConfirm and the
+// comment on deleteLayer for why this can't use the id-based
+// makeTapTwiceConfirm (a fresh button exists on every layers-panel render).
+function deleteGroup(node,btn){
     const f=frames[activeFrameIndex]; if(!f)return; const found=findNode(f.layerTree,node.id); if(!found)return;
     const hasChildren=(node.children||[]).length>0;
-    const message=hasChildren ? 'Delete this group? Its contents will be kept at the current level.' : 'Delete this empty group?';
-    if(!confirm(message)) return;
-    const before=captureTreeState();
-    const arr=found.parent?found.parent.children:f.layerTree;
-    if(hasChildren)arr.splice(found.index,1,...node.children); else arr.splice(found.index,1);
-    if(activeGroupId===node.id)activeGroupId=null;
-    syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites(); pushTreeOperation('Delete group',before); renderLayersPanel();
+    const doDelete = () => {
+        const before=captureTreeState();
+        const arr=found.parent?found.parent.children:f.layerTree;
+        if(hasChildren)arr.splice(found.index,1,...node.children); else arr.splice(found.index,1);
+        if(activeGroupId===node.id)activeGroupId=null;
+        syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites(); pushTreeOperation('Delete group',before); renderLayersPanel();
+    };
+    if (btn) elementTapTwiceConfirm(btn, '\u{1F5D1}\uFE0F', '\u26A0\uFE0F', doDelete);
+    else doDelete();
 }
 
 // Small factory for the plain icon buttons in each layer row (reorder/
@@ -4286,26 +4333,21 @@ function buildReferenceTransformUI(layer) {
     return wrap;
 }
 
-// Swaps a layer to a new stacking position (reorder up/down) and keeps activeLayerIndex pointing at the right layer.
-function moveLayer(from, to) {
-    if (to < 0 || to >= layers.length) return;
-    const [l] = layers.splice(from, 1);
-    layers.splice(to, 0, l);
-    if (activeLayerIndex === from) activeLayerIndex = to;
-    else if (activeLayerIndex === to) activeLayerIndex = from;
-    reindexDom();
-    refreshHookedComposites();
-    renderLayersPanel();
-}
-
 // Removes a layer (unless it's the last one left) and records it on the undo stack so it can be brought straight back.
-function deleteLayer(i) {
+// btn: the row's delete icon button, used for the tap-twice confirm (see
+// elementTapTwiceConfirm) -- arming only changes that button's own text, so
+// it's safe even though renderLayersPanel() below replaces the whole row
+// list once the deletion actually goes through.
+function deleteLayer(i, btn) {
     if (layers.length === 1) return;
     const layer=layers[i]; if(!layer)return; const f=frames[activeFrameIndex]; const found=f?findLayerNode(f.layerTree,layer.id):null; if(!found)return;
-    if(!confirm('Delete layer "'+layer.name+'"?'))return;
-    const before=captureTreeState(); const arr=found.parent?found.parent.children:f.layerTree; arr.splice(found.index,1); layer.el.remove();
-    if(activeLayerId===layer.id){activeLayerId=null;activeLayerIndex=Math.max(0,Math.min(i,layers.length-2));const next=layers[activeLayerIndex];activeLayerId=next?next.id:null;}
-    syncActiveLayersFromTree();reindexDom();refreshHookedComposites();pushTreeOperation('Delete layer',before);renderLayersPanel();
+    const doDelete = () => {
+        const before=captureTreeState(); const arr=found.parent?found.parent.children:f.layerTree; arr.splice(found.index,1); layer.el.remove();
+        if(activeLayerId===layer.id){activeLayerId=null;activeLayerIndex=Math.max(0,Math.min(i,layers.length-2));const next=layers[activeLayerIndex];activeLayerId=next?next.id:null;}
+        syncActiveLayersFromTree();reindexDom();refreshHookedComposites();pushTreeOperation('Delete layer',before);renderLayersPanel();
+    };
+    if (btn) elementTapTwiceConfirm(btn, '\u{1F5D1}\uFE0F', '\u26A0\uFE0F', doDelete);
+    else doDelete();
 }
 
 /* ============================================================
@@ -4675,19 +4717,7 @@ let selectionBoundary = null; // [{x,y}, ...] boundary cells only; kept compact 
 let selectionAntOffset = 0;
 let selectionAnimFrame = null;
 
-function ensureWandSelectionMask(){
-    const size = gridW * gridH;
-    if (!wandSelection || wandSelection.length !== size) {
-        wandSelection = new Uint8Array(size);
-        wandSelectionCount = 0;
-    }
-    return wandSelection;
-}
 function hasWandSelection(){ return !!wandSelection && wandSelectionCount > 0; }
-function setWandPixel(mask, x, y){
-    const i = y * gridW + x;
-    if (!mask[i]) { mask[i] = 1; wandSelectionCount++; }
-}
 
 function selectionSnapshot() {
     return {
@@ -4747,10 +4777,14 @@ function buildSelectionBoundary(mask) {
 function updateSelectionOverlay(){
     const ov=document.getElementById('selectionOverlay');
     const box=document.getElementById('selectionBox');
+    const clearBtn=document.getElementById('wandClearBtn');
     if(!ov) return;
     if(!hasWandSelection()){
-        ov.style.display='none'; const a=document.getElementById('wandSelectionOverlay'); if(a)a.style.display='none'; if(box)box.style.display='none'; selectionBoundary=null; return;
+        ov.style.display='none'; const a=document.getElementById('wandSelectionOverlay'); if(a)a.style.display='none'; if(box)box.style.display='none'; selectionBoundary=null;
+        if(clearBtn) clearBtn.disabled=true;
+        return;
     }
+    if(clearBtn) clearBtn.disabled=false;
     if(ov.width!==gridW||ov.height!==gridH){ov.width=gridW;ov.height=gridH;}
     ov.style.width=(gridW*scale)+'px'; ov.style.height=(gridH*scale)+'px'; ov.style.display='block';
     const ctx=ov.getContext('2d');
@@ -4883,7 +4917,7 @@ function performLassoSelection(points){
 // Tap-twice confirm for wand-selection delete (native confirm() proved
 // unreliable on iOS -- see makeTapTwiceConfirm below for the pattern).
 const wandDeleteConfirm = makeTapTwiceConfirm({
-    btnId: 'wandDeleteBtn', idleText: '\ud83e\uddfd CONFIRM DELETE', armedText: '\u26A0\uFE0F TAP AGAIN TO DELETE',
+    btnId: 'wandDeleteBtn', idleText: '\ud83d\uddd1\ufe0f DELETE PIXELS', armedText: '\u26A0\uFE0F TAP AGAIN TO DELETE',
     onConfirm: () => performWandDelete()
 });
 function confirmWandDelete(){
@@ -4989,8 +5023,14 @@ function flipActiveLayerV() {
 // Tap-twice confirm for rectangle-selection delete (native confirm()
 // proved unreliable on iOS -- see makeTapTwiceConfirm below for the pattern).
 const rectDeleteConfirm = makeTapTwiceConfirm({
-    btnId: 'deleteSelBtn', idleText: '\ud83e\uddfd DELETE SEL', armedText: '\u26A0\uFE0F TAP AGAIN TO DELETE',
+    btnId: 'deleteSelBtn', idleText: '\ud83d\uddd1\ufe0f DELETE PIXELS', armedText: '\u26A0\uFE0F TAP AGAIN TO DELETE',
     onConfirm: () => performDeleteSelection()
+});
+// Tap-twice confirm for the multi-select layers-panel bulk delete (native
+// confirm() proved unreliable on iOS -- see makeTapTwiceConfirm below).
+const deleteSelectedItemsConfirm = makeTapTwiceConfirm({
+    btnId: 'deleteSelectedItemsBtn', idleText: '\ud83d\uddd1\ufe0f DELETE', armedText: '\u26A0\ufe0f TAP AGAIN TO DELETE',
+    onConfirm: () => performDeleteSelectedItems()
 });
 // Erases (sets to transparent) every pixel inside the current selection on the active layer.
 function deleteSelection() {
@@ -5236,11 +5276,6 @@ function updateColorPickerAvailability() {
     wrap.title = full ? 'Portrait palette is full (15 colours)' : 'Add colour';
 }
 
-// Replaces the editable palette with the first unique opaque colours encountered in an image.
-// This follows the requested GIMP-inspired portrait workflow: scan in normal row-major order,
-// ignore transparent pixels, stop at 15 unique colours, and keep the transparency slot separate.
-function loadPortraitPaletteFromImage(img) { if (selectedProfile !== 'portrait') return; samplePortraitTilePalettes(img); syncPortraitPaletteForPoint(0,0,true); }
-
 // Adds a new colour swatch to the palette, enforcing the Portrait profile's colour cap if active.
 function createSwatch(color) {
     const hex = color.toUpperCase();
@@ -5310,7 +5345,26 @@ function setupPaletteDragEvents() {
     };
     const onEnd = () => {
         clearHold();
-        if (dragTarget) { dragTarget.classList.remove('dragging'); dragTarget = null; }
+        if (dragTarget) {
+            dragTarget.classList.remove('dragging');
+            // Persist the new visual order back into the underlying palette
+            // array. Without this, replaceVisiblePalette() (called on every
+            // tile switch and on project load) rebuilds the DOM from the
+            // array's old order, silently discarding the drag. In Portrait
+            // mode the array is the per-tile palette (ensurePortraitTilePalette);
+            // outside Portrait mode there's no positional array to sync --
+            // swatch order there isn't currently persisted at all.
+            if (selectedProfile === 'portrait') {
+                const tilePal = ensurePortraitTilePalette(portraitActiveTileKey);
+                const domOrder = [...pal.children]
+                    .filter(w => w.id !== 'transparencyWrapper' && w.id !== 'pickerContainer')
+                    .map(w => rgbToHex(w.querySelector('.swatch')?.style.backgroundColor || '').toUpperCase())
+                    .filter(hex => tilePal.includes(hex));
+                tilePal.length = 0;
+                tilePal.push(...domOrder);
+            }
+            dragTarget = null;
+        }
     };
     window.addEventListener('mousemove', onMove, {passive: false});
     window.addEventListener('touchmove', onMove, {passive: false});
@@ -5319,13 +5373,39 @@ function setupPaletteDragEvents() {
 }
 
 let toolBeforeEyedrop = 'brush';
+// Tracks the most recently selected non-transparent colour, so tools that
+// don't make sense with transparency selected (drawing tools -- see
+// APPLY_LAST_COLOUR_TOOLS below) can restore it instead of leaving the
+// transparent swatch active.
+let lastNonTransparentColor = '#000000';
 // Selects a colour (or transparency) as the current drawing colour.
-function handleSwatchClick(c, isT = false) { selectedColor = isT ? null : c; updateUI(); }
+function handleSwatchClick(c, isT = false) {
+    selectedColor = isT ? null : c;
+    if (!isT && c) lastNonTransparentColor = c;
+    // Selecting transparency only makes sense for erasing -- auto-switch to
+    // the hard eraser so the transparent swatch is never "selected" while a
+    // drawing tool that can't do anything useful with it stays active.
+    if (isT && currentTool !== 'hardEraser') { currentTool = 'hardEraser'; updateToolVisibility(); }
+    updateUI();
+}
+// Tools where drawing with "no colour" (transparency) selected doesn't make
+// sense -- these should always fall back to the last real colour rather
+// than silently draw nothing. hardEraser/softEraser are deliberately
+// excluded: erasing IS "drawing transparency", so it's the one case where
+// transparent-as-selected-colour is correct, not a UI oversight.
+const APPLY_LAST_COLOUR_TOOLS = ['pencil','brush','softBrush','vpen','bucket','line','rect','ellipse'];
 // Switches the active tool. Remembers the previous tool when switching to the eyedropper, so it can auto-restore after one sample.
 function handleToolBtn(t) {
+    // Portrait mode disables tools that don't fit its per-tile, fixed-size,
+    // curated-palette model (Colour to Alpha bypasses the tile palette
+    // entirely by design). PORTRAIT_TOOL_FALLBACK covers the pixelToolDefs
+    // tools inside selectPixelTool; colorToAlpha isn't one of those (it's
+    // not size/softness-based), so it needs its own check here.
+    if (selectedProfile === 'portrait' && t === 'colorToAlpha') t = 'pencil';
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
     if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); return; }
     currentTool = t;
+    if (selectedColor === null && APPLY_LAST_COLOUR_TOOLS.includes(t)) selectedColor = lastNonTransparentColor;
     if(t === 'colorToAlpha'){ colorToAlphaTarget=null; updateColorToAlphaTargetLabel(); }
         updateUI(); updateToolVisibility(); updateVectorHandles();
 }
@@ -5436,24 +5516,7 @@ function setupDrawingEvents() {
         const localY = ry + (gridH * scale) / 2;
         return [Math.floor(localX / scale), Math.floor(localY / scale)];
     };
-    // Inverse of getPosFromClient: given a grid-space point, where does it
-    // land on screen right now (at the current scale/rotation)? Not
-    // currently called anywhere -- pinch-zoom re-anchoring now solves for
-    // the pan offset directly inline (see updateCanvasPanZoomRotate's
-    // localOffX/localOffY math) instead of round-tripping through this.
-    // Kept as the documented inverse of getPosFromClient for future use.
-    const gridToScreenClient = (gx, gy) => {
-        const r = container.getBoundingClientRect();
-        const centerX = r.left + r.width / 2;
-        const centerY = r.top + r.height / 2;
-        const localX = gx * scale - (gridW * scale) / 2;
-        const localY = gy * scale - (gridH * scale) / 2;
-        const rad = cameraRotation * Math.PI / 180;
-        const rx = localX * Math.cos(rad) - localY * Math.sin(rad);
-        const ry = localX * Math.sin(rad) + localY * Math.cos(rad);
-        return [centerX + rx * cameraScale, centerY + ry * cameraScale];
-    };
-    const getPos = (e) => {
+    const getEventPos = (e) => {
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
         const cy = e.touches ? e.touches[0].clientY : e.clientY;
         return getPosFromClient(cx, cy);
@@ -5462,9 +5525,9 @@ function setupDrawingEvents() {
         const r = container.getBoundingClientRect();
         return cx >= r.left && cx < r.right && cy >= r.top && cy < r.bottom;
     };
-    const dist2 = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
-    const mid2 = (t0, t1) => ({ x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 });
-    const angle2 = (t0, t1) => Math.atan2(t1.clientY - t0.clientY, t1.clientX - t0.clientX) * 180 / Math.PI;
+    const touchDistance = (t0, t1) => Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const touchMidpoint = (t0, t1) => ({ x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 });
+    const touchAngle = (t0, t1) => Math.atan2(t1.clientY - t0.clientY, t1.clientX - t0.clientX) * 180 / Math.PI;
     const normalizeAngleDelta = (d) => { while (d > 180) d -= 360; while (d < -180) d += 360; return d; };
 
     const updateCursor = (e) => {
@@ -5472,8 +5535,8 @@ function setupDrawingEvents() {
         const layer = activeLayer();
         const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool);
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
-        const [x, y] = getPos(e);
-        if(currentTool==='brush'||currentTool==='eraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
+        const [x, y] = getEventPos(e);
+        if(currentTool==='brush'||currentTool==='hardEraser'||currentTool==='softEraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
         if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
@@ -5746,10 +5809,10 @@ function setupDrawingEvents() {
         const fab = document.getElementById('rotationResetFab');
         if (fab) fab.style.pointerEvents = 'none';
         const [t0, t1] = touches;
-        const m = mid2(t0, t1);
+        const m = touchMidpoint(t0, t1);
         if (transformActive()) {
             const layer = activeLayer();
-            g.xform = { type: 'pinch', dist: dist2(t0, t1), angle: angle2(t0, t1), midX: m.x, midY: m.y, gx: layer.gx, gy: layer.gy, gw: layer.gw, gh: layer.gh, startRotation: layer.rotation || 0 };
+            g.xform = { type: 'pinch', dist: touchDistance(t0, t1), angle: touchAngle(t0, t1), midX: m.x, midY: m.y, gx: layer.gx, gy: layer.gy, gw: layer.gw, gh: layer.gh, startRotation: layer.rotation || 0 };
         } else {
             // Anchor the pinch on the grid point under the finger midpoint,
             // not the canvas center. transform-origin is 'center center', so
@@ -5767,7 +5830,7 @@ function setupDrawingEvents() {
             const rad = -cameraRotation * Math.PI / 180;
             const localOffX = (dx * Math.cos(rad) - dy * Math.sin(rad)) / cameraScale;
             const localOffY = (dx * Math.sin(rad) + dy * Math.cos(rad)) / cameraScale;
-            g.cameraGesture = { dist: dist2(t0, t1), startScale: cameraScale, startRotation: cameraRotation, startAngle: angle2(t0, t1), localOffX, localOffY };
+            g.cameraGesture = { dist: touchDistance(t0, t1), startScale: cameraScale, startRotation: cameraRotation, startAngle: touchAngle(t0, t1), localOffX, localOffY };
         }
     };
     const updateTransformDrag = (cx, cy) => {
@@ -5779,9 +5842,9 @@ function setupDrawingEvents() {
     const updateTransformPinch = (touches) => {
         const layer = activeLayer();
         const [t0, t1] = touches;
-        const factor = dist2(t0, t1) / g.xform.dist;
-        const m = mid2(t0, t1);
-        const deltaAngle = normalizeAngleDelta(angle2(t0, t1) - g.xform.angle);
+        const factor = touchDistance(t0, t1) / g.xform.dist;
+        const m = touchMidpoint(t0, t1);
+        const deltaAngle = normalizeAngleDelta(touchAngle(t0, t1) - g.xform.angle);
         const oldCX = g.xform.gx + g.xform.gw / 2, oldCY = g.xform.gy + g.xform.gh / 2;
         const newCX = oldCX + (m.x - g.xform.midX) / scale;
         const newCY = oldCY + (m.y - g.xform.midY) / scale;
@@ -5795,10 +5858,10 @@ function setupDrawingEvents() {
     const updateCanvasPanZoomRotate = (touches) => {
         if (!g.cameraGesture) return;
         const [t0, t1] = touches;
-        const m = mid2(t0, t1);
-        const ratio = g.cameraGesture.dist > 0 ? dist2(t0, t1) / g.cameraGesture.dist : 1;
+        const m = touchMidpoint(t0, t1);
+        const ratio = g.cameraGesture.dist > 0 ? touchDistance(t0, t1) / g.cameraGesture.dist : 1;
         cameraScale = Math.max(0.05, Math.min(64, g.cameraGesture.startScale * ratio));
-        cameraRotation = g.cameraGesture.startRotation + normalizeAngleDelta(angle2(t0, t1) - (g.cameraGesture.startAngle || angle2(t0, t1)));
+        cameraRotation = g.cameraGesture.startRotation + normalizeAngleDelta(touchAngle(t0, t1) - (g.cameraGesture.startAngle || touchAngle(t0, t1)));
         // Re-anchor: find where the gesture's fixed local point (captured in
         // startTwoFingerGesture, relative to the container's untransformed
         // center) lands at the *new* scale/rotation, then set cameraPanX/Y so
@@ -5807,8 +5870,7 @@ function setupDrawingEvents() {
         // center center, and layoutAll() isn't called mid-gesture), the
         // container's bounding-rect center is stable through the whole
         // gesture, so we only need to solve for the pan offset here --
-        // no per-frame drift, same anchoring principle as gridToScreenClient
-        // uses for the mouse-wheel zoom path.
+        // no per-frame drift.
         const r = container.getBoundingClientRect();
         // r already reflects the *previous* frame's transform (including the
         // old cameraPanX/Y), so back that out to get the untransformed center.
@@ -5877,8 +5939,10 @@ function setupDrawingEvents() {
             const cx = touches ? touches[0].clientX : e.clientX;
             const cy = touches ? touches[0].clientY : e.clientY;
             if (Math.hypot(cx - g.manualPan.startX, cy - g.manualPan.startY) > 6) g.manualPan.moved = true;
-            viewport.scrollLeft = g.manualPan.scrollLeft - (cx - g.manualPan.x);
-            viewport.scrollTop = g.manualPan.scrollTop - (cy - g.manualPan.y);
+            // Clamped so a one-finger pan can't scroll the canvas completely
+            // out of view -- see clampPanScrollWithinEdgeMargin/MIN_CANVAS_PEEK.
+            viewport.scrollLeft = clampPanScrollWithinEdgeMargin(g.manualPan.scrollLeft - (cx - g.manualPan.x), viewport.scrollWidth - viewport.clientWidth);
+            viewport.scrollTop = clampPanScrollWithinEdgeMargin(g.manualPan.scrollTop - (cy - g.manualPan.y), viewport.scrollHeight - viewport.clientHeight);
             return;
         }
 
@@ -5905,7 +5969,7 @@ function setupDrawingEvents() {
         updateCursor(e);
         if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
         if (isDrawing && (!g.suppressStroke || currentTool === 'lasso')) {
-            const [x, y] = getPos(e);
+            const [x, y] = getEventPos(e);
             if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) {
                 let pts = g.lastBrushPos ? linePixels(g.lastBrushPos.x,g.lastBrushPos.y,x,y) : [[x,y]];
                 // Portrait mode: a drag can't paint past the 40x40 tile it
@@ -6215,6 +6279,32 @@ function makeTapTwiceConfirm(opts) {
     return { trigger, cancel, isArmed: () => armed };
 }
 
+// Element-scoped variant of makeTapTwiceConfirm, for tap-twice confirms on
+// buttons that don't have a stable id -- rows rendered fresh per layer/group
+// in the layers panel (deleteLayer, deleteGroup) can't be keyed by btnId the
+// way a single fixed toolbar button can, since a fresh button element exists
+// on every re-render. Armed state and the idle-text restore live directly on
+// the element via a WeakMap, so each row's confirm state is independent and
+// self-cleans if the button is ever removed (e.g. the panel re-renders while
+// armed) instead of leaking a dangling id-based timer.
+const elementTapTwiceState = new WeakMap();
+function elementTapTwiceConfirm(btn, idleText, armedText, onConfirm, timeoutMs) {
+    const state = elementTapTwiceState.get(btn);
+    if (!state || !state.armed) {
+        if (state) clearTimeout(state.timer);
+        const timer = setTimeout(() => {
+            const s = elementTapTwiceState.get(btn);
+            if (s) { s.armed = false; if (btn.isConnected) btn.innerText = idleText; }
+        }, timeoutMs || 4000);
+        elementTapTwiceState.set(btn, { armed: true, timer });
+        btn.innerText = armedText;
+    } else {
+        clearTimeout(state.timer);
+        elementTapTwiceState.delete(btn);
+        onConfirm();
+    }
+}
+
 const mainMenuConfirm = makeTapTwiceConfirm({
     btnId: 'mainMenuBtn', idleText: '\ud83c\udfe0 MAIN MENU', armedText: '\u26A0\uFE0F TAP AGAIN TO LEAVE',
     onConfirm: () => goToMainMenu()
@@ -6234,12 +6324,12 @@ const startFreshConfirm = makeTapTwiceConfirm({
         resetSelectionState();
         transformMode = false;
         lastEnteredProfile = null;
-        initApp();
+        newCanvasCreation();
     }
 });
 // "Start Fresh" on the hub: discards current work (with tap-twice confirm if there's anything to lose) and opens a brand new blank canvas.
 function handleStartFreshClick() {
-    if (frames.length === 0) { initApp(); return; }
+    if (frames.length === 0) { newCanvasCreation(); return; }
     traceLog('START FRESH pressed');
     startFreshConfirm.trigger();
 }
@@ -6302,6 +6392,110 @@ function pixelLayerFromImagePreserveCanvas(name, img) {
     return l;
 }
 
+// Imports a chosen image onto a NEW LAYER within the current, already-open
+// canvas. This is distinct from importAsNewProjectFromImage below, which
+// discards the current canvas and starts an entirely new one -- the two
+// used to be one function (branching on pendingImportKind) before being
+// split apart. Called from setupImportImageInput's onchange handler when
+// pendingImportKind === 'pixel-layer'.
+function importImageAsNewLayer(img, file, importBtn) {
+    const layerName = currentProjectName || file.name.replace(/\.[^.]+$/, '') || 'Imported Image';
+    const before = captureTreeState();
+    const imported = pixelLayerFromImagePreserveCanvas(layerName, img);
+    addLayer(imported);
+    reindexDom();
+    setActiveLayer(layers.indexOf(imported));
+    pushTreeOperation('Import image as pixel layer', before);
+    pendingImportKind='pixel';
+    closeNewCanvasModal();
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+
+// Imports a chosen image as an entirely new project, discarding whatever
+// canvas was previously open. This is distinct from importImageAsNewLayer
+// above, which adds to the existing canvas instead -- the two used to be
+// one function (branching on pendingImportKind) before being split apart.
+// Called from setupImportImageInput's onchange handler for every
+// pendingImportKind value other than 'pixel-layer'.
+function importAsNewProjectFromImage(img, file) {
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const MAX = 2000;
+    if (w > MAX || h > MAX) {
+        const f = Math.min(MAX / w, MAX / h);
+        w = Math.max(1, Math.round(w * f));
+        h = Math.max(1, Math.round(h * f));
+    }
+    traceLog('Importing image as new project: ' + img.naturalWidth + '\u00D7' + img.naturalHeight + ' -> canvas ' + w + '\u00D7' + h);
+
+    frames.forEach(f => f.layers.forEach(l => l.el.remove()));
+    frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
+    resetHistory();
+    resetSelectionState();
+    transformMode = false;
+    currentProjectId = null;
+    currentProjectName = file.name.replace(/\.[^.]+$/, '').trim() || 'Untitled';
+
+    // Portrait imports use the GIMP-inspired 15-colour palette, but the image
+    // itself may be larger than 40×40. A non-40×40 image is accepted when at least
+    // one dimension is a multiple of 40 (for example 80×40, 40×80, 120×40, etc.).
+    // The imported image then becomes the actual canvas size.
+    const importProfile = selectedProfile;
+    if (importProfile === 'portrait') {
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+        if (!portraitDimensionsCompatible(iw, ih)) {
+            // Portrait is optional: incompatible imports silently fall back
+            // to Pixel Art or Image according to the source dimensions.
+            const fallback = fallbackProfileForDimensions(iw, ih);
+            w = iw; h = ih;
+            selectProfile(fallback, iw, ih);
+            updateColorPickerAvailability();
+        } else {
+            w = iw; h = ih;
+            selectProfile('portrait', iw, ih);
+            samplePortraitTilePalettes(img);
+            syncPortraitPaletteForPoint(0,0,true,true);
+        }
+    } else {
+        // Keep the profile selected in the import sheet. Image imports
+        // must remain ImageLayers; Pixel Art imports become PixelLayers.
+        selectProfile(importProfile === 'photo' ? 'photo' : 'pixelArt');
+        updateColorPickerAvailability();
+    }
+    gridW = w; gridH = h;
+    closeNewCanvasModal(); // success: now safe to close
+    hideGallery();
+    revealMainApp();
+    const importedName = currentProjectName || 'Untitled';
+    const base = pendingImportKind === 'reference' ? new ReferenceLayer(importedName, img) : pixelLayerFromImage(importedName, img, w, h);
+    layers = [base];
+    frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
+    activeFrameIndex = 0;
+    container.appendChild(base.el);
+    if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
+    setActiveLayer(0);
+    document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
+    lastEnteredProfile = selectedProfile;
+    pendingImportKind = 'pixel';
+    zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
+    scale = ZOOM_STEPS[zoomIndex];
+    layoutAll();
+    // Portrait imports need the tile isolation overlay/opacity and the
+    // per-tile controls panel refreshed immediately -- otherwise the
+    // isolation view stays stale (showing pre-import defaults) until
+    // the user leaves and re-enters the canvas, which is the only
+    // other place these get rebuilt.
+    if (selectedProfile === 'portrait') {
+        updatePortraitTileOverlay();
+        updatePortraitTileControls();
+    }
+}
+
+// Wires up the hidden image-import file input's shared load/decode/error
+// plumbing, then dispatches to one of the two functions above depending on
+// pendingImportKind. The file-reading and error-handling machinery here is
+// genuinely shared between both purposes (same FileReader/Image/decode
+// sequence either way), so it stays as one function rather than being
+// duplicated into each purpose-specific function.
 function setupImportImageInput() {
     document.getElementById('hubImageInput').onchange = (e) => {
         const file = e.target.files[0];
@@ -6316,86 +6510,10 @@ function setupImportImageInput() {
         const proceed = () => {
             try {
                 if (pendingImportKind === 'pixel-layer') {
-                    const layerName = currentProjectName || file.name.replace(/\.[^.]+$/, '') || 'Imported Image';
-                    const before = captureTreeState();
-                    const imported = pixelLayerFromImagePreserveCanvas(layerName, img);
-                    addLayer(imported);
-                    reindexDom();
-                    setActiveLayer(layers.indexOf(imported));
-                    pushTreeOperation('Import image as pixel layer', before);
-                    pendingImportKind='pixel';
-                    closeNewCanvasModal();
-                    if (openPanelName === 'layers') renderLayersPanel();
+                    importImageAsNewLayer(img, file, importBtn);
                     return;
                 }
-                let w = img.naturalWidth, h = img.naturalHeight;
-                const MAX = 2000;
-                if (w > MAX || h > MAX) {
-                    const f = Math.min(MAX / w, MAX / h);
-                    w = Math.max(1, Math.round(w * f));
-                    h = Math.max(1, Math.round(h * f));
-                }
-                traceLog('Importing image as new project: ' + img.naturalWidth + '\u00D7' + img.naturalHeight + ' -> canvas ' + w + '\u00D7' + h);
-
-                frames.forEach(f => f.layers.forEach(l => l.el.remove()));
-                frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
-                resetHistory();
-                resetSelectionState();
-                transformMode = false;
-                currentProjectId = null;
-                currentProjectName = file.name.replace(/\.[^.]+$/, '').trim() || 'Untitled';
-
-                // Portrait imports use the GIMP-inspired 15-colour palette, but the image
-                // itself may be larger than 40×40. A non-40×40 image is accepted when at least
-                // one dimension is a multiple of 40 (for example 80×40, 40×80, 120×40, etc.).
-                // The imported image then becomes the actual canvas size.
-                const importProfile = selectedProfile;
-                if (importProfile === 'portrait') {
-                    const iw = img.naturalWidth, ih = img.naturalHeight;
-                    if (!portraitDimensionsCompatible(iw, ih)) {
-                        // Portrait is optional: incompatible imports silently fall back
-                        // to Pixel Art or Image according to the source dimensions.
-                        const fallback = fallbackProfileForDimensions(iw, ih);
-                        w = iw; h = ih;
-                        selectProfile(fallback, iw, ih);
-                        updateColorPickerAvailability();
-                    } else {
-                        w = iw; h = ih;
-                        selectProfile('portrait', iw, ih);
-                        samplePortraitTilePalettes(img);
-                        syncPortraitPaletteForPoint(0,0,true);
-                    }
-                } else {
-                    // Keep the profile selected in the import sheet. Image imports
-                    // must remain ImageLayers; Pixel Art imports become PixelLayers.
-                    selectProfile(importProfile === 'photo' ? 'photo' : 'pixelArt');
-                    updateColorPickerAvailability();
-                }
-                gridW = w; gridH = h;
-                closeNewCanvasModal(); // success: now safe to close
-                hideGallery();
-                revealMainApp();
-                const importedName = currentProjectName || 'Untitled';
-                const base = pendingImportKind === 'reference' ? new ReferenceLayer(importedName, img) : pixelLayerFromImage(importedName, img, w, h);
-                layers = [base];
-                frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
-                activeFrameIndex = 0;
-                container.appendChild(base.el);
-                if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
-                setActiveLayer(0);
-                document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
-                lastEnteredProfile = selectedProfile;
-                pendingImportKind = 'pixel';
-                layoutAll();
-                // Portrait imports need the tile isolation overlay/opacity and the
-                // per-tile controls panel refreshed immediately -- otherwise the
-                // isolation view stays stale (showing pre-import defaults) until
-                // the user leaves and re-enters the canvas, which is the only
-                // other place these get rebuilt.
-                if (selectedProfile === 'portrait') {
-                    updatePortraitTileOverlay();
-                    updatePortraitTileControls();
-                }
+                importAsNewProjectFromImage(img, file);
             } catch (err) {
                 console.error('Image import failed:', err && err.message);
                 // Restore button so user can try again
@@ -6466,7 +6584,7 @@ function saveProject() {
     const data = {
         version: 6,
         name: currentProjectName || 'Untitled',
-        gridW, gridH, scale, profile: selectedProfile,
+        gridW, gridH, profile: selectedProfile,
         activeFrameIndex, activeLayerIndex, activeLayerId,
         frames: frames.map(f => {
             const serialized = f.layers.map(serializeLayer);
@@ -6498,11 +6616,13 @@ function loadProjectFile(file) {
         currentProjectName = (data.name || file.name.replace(/\.[^.]+$/, '') || 'Untitled').trim() || 'Untitled';
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         gridW = data.gridW; gridH = data.gridH;
-        scale = data.scale || scale;
         selectedProfile = data.profile || 'pixelArt';
         if (selectedProfile === 'standard') selectedProfile = 'pixelArt';
-        zoomIndex = ZOOM_STEPS.indexOf(scale);
-        if (zoomIndex === -1) zoomIndex = ZOOM_STEPS.indexOf(10);
+        // Deliberately not restoring data.scale here: opening a project should
+        // always start by showing the whole picture fit to screen, the same as
+        // creating a new canvas -- see computeFitToScreenZoomIndex.
+        zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
+        scale = ZOOM_STEPS[zoomIndex];
         document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
 
         const frameDefs = data.version >= 2 ? data.frames : [{ name: 'Frame 1', layers: data.layers }];
@@ -6651,7 +6771,6 @@ function saveCurrentStateToStore(existingId, nameOverride) {
         activeFrameIndex,
         activeLayerIndex,
         activeLayerId,
-        scale,
         portraitTilePalettes: selectedProfile==='portrait' ? Object.fromEntries(portraitTilePalettes) : null,
         portraitActiveTileKey,
         thumbnailDataURL: thumb,
@@ -6674,9 +6793,12 @@ function openProjectFromStore(id) {
     // Restore state
     frames = proj.frames;
     gridW = proj.gridW; gridH = proj.gridH;
-    scale = proj.scale || 10;
-    zoomIndex = ZOOM_STEPS.indexOf(scale);
-    if (zoomIndex === -1) zoomIndex = ZOOM_STEPS.indexOf(10);
+    // Deliberately not restoring proj.scale here: opening a project should
+    // always start by showing the whole picture fit to screen, the same as
+    // creating a new canvas (see computeFitToScreenZoomIndex), rather than
+    // whatever zoom level happened to be active when it was last saved.
+    zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
+    scale = ZOOM_STEPS[zoomIndex];
     selectedProfile = proj.profile || 'pixelArt';
     if (selectedProfile === 'standard') selectedProfile = 'pixelArt';
     portraitTilePalettes = new Map(Object.entries(proj.portraitTilePalettes || {}));
@@ -6747,8 +6869,6 @@ function renderGallery() {
         if (proj.thumbnailDataURL) {
             const img = document.createElement('img');
             img.src = proj.thumbnailDataURL;
-            const thumbZoom = Number(proj.scale || 1);
-            if (thumbZoom < 1) { img.style.filter = 'blur(' + Math.min(4, Math.max(.15, (1-thumbZoom)*4)).toFixed(2) + 'px)'; img.classList.add('low-zoom-thumb'); }
             thumbWrap.appendChild(img);
         }
 
@@ -6897,11 +7017,6 @@ function openNewCanvasSheet() {
     document.getElementById('new-canvas-modal').classList.add('open');
 }
 
-function readNcmDigitGroup(id) {
-    const val = parseInt([...document.querySelectorAll('#' + id + ' select')].map(s => s.value).join(''), 10);
-    return Math.max(1, val || 1);
-}
-
 function openImportSheet() {
     const sheet = document.getElementById('new-canvas-sheet');
     sheet.innerHTML = '';
@@ -7046,7 +7161,6 @@ document.getElementById('ctx-duplicate').addEventListener('click', () => {
         frames: clonedFrames,
         activeFrameIndex: proj.activeFrameIndex,
         activeLayerIndex: proj.activeLayerIndex,
-        scale: proj.scale,
         portraitTilePalettes: selectedProfile==='portrait' ? Object.fromEntries(portraitTilePalettes) : null,
         portraitActiveTileKey,
         thumbnailDataURL: proj.thumbnailDataURL,
@@ -7089,7 +7203,7 @@ document.getElementById('ctx-save-file').addEventListener('click', () => {
             version: 2,
             name: proj.name || 'Untitled',
             gridW: proj.gridW, gridH: proj.gridH,
-            scale: proj.scale, profile: proj.profile,
+            profile: proj.profile,
             activeFrameIndex: proj.activeFrameIndex,
             activeLayerIndex: proj.activeLayerIndex,
             frames: proj.frames.map(f => {
@@ -7148,7 +7262,6 @@ function goToMainMenu() {
                 existingProj.frames = frames;
                 existingProj.activeFrameIndex = activeFrameIndex;
                 existingProj.activeLayerIndex = activeLayerIndex;
-                existingProj.scale = scale;
                 existingProj.updatedAt = Date.now();
             } else {
                 saveCurrentStateToStore(null, currentProjectName || ('Untitled ' + (projectStore.length + 1)));
@@ -7164,9 +7277,6 @@ function goToMainMenu() {
         alert('Something went wrong returning to the gallery -- check the Debug tab for details.');
     }
 }
-
-// Also hook up the import image to assign a currentProjectId after import
-const _origSetupImportImageInput = setupImportImageInput;
 
 /* ============================================================
    BOOT
@@ -7212,8 +7322,18 @@ if (window.visualViewport) {
 }
 
 
-// Export/import the editable colour swatches as a simple JSON array. The transparency
+// Export/import the editable colour swatches as JSON. The transparency
 // and colour-picker slots are UI controls, not part of the swatch array.
+//
+// Portrait mode: exports/imports EVERY tile's palette in one go (an object
+// keyed by tile, e.g. {"0,0": ["#RRGGBB", ...], "1,0": [...]}), since each
+// 40x40 tile owns its own independent 15-colour array. Import replaces the
+// currently active tile's on-screen palette immediately and every tile's
+// underlying array in portraitTilePalettes, so switching tiles afterward
+// shows the newly imported colours without needing a re-import per tile.
+//
+// Non-Portrait mode: exports/imports a single flat array, matching the one
+// palette that exists outside Portrait mode.
 function getSwatchArray() {
     return [...document.querySelectorAll('#palette .swatch')]
         .filter(el => !el.classList.contains('transparent-swatch'))
@@ -7221,10 +7341,14 @@ function getSwatchArray() {
         .filter(Boolean);
 }
 function exportSwatchArray() {
-    const data = JSON.stringify(getSwatchArray(), null, 2);
+    const isPortrait = selectedProfile === 'portrait';
+    const data = JSON.stringify(
+        isPortrait ? Object.fromEntries(portraitTilePalettes) : getSwatchArray(),
+        null, 2
+    );
     const blob = new Blob([data], {type:'application/json'});
     const a = document.createElement('a');
-    a.download = 'swatches.json';
+    a.download = isPortrait ? 'portrait-swatches-all-tiles.json' : 'swatches.json';
     a.href = URL.createObjectURL(blob);
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -7233,18 +7357,47 @@ function importSwatchArrayFile() {
     const input = document.getElementById('swatchArrayFileInput');
     if (input) { input.value = ''; input.click(); }
 }
-function applyImportedSwatchArray(raw) {
-    let arr;
-    try { arr = JSON.parse(raw); } catch (_) { alert('Invalid swatch array file.'); return; }
-    if (!Array.isArray(arr)) { alert('Invalid swatch array: expected a JSON array.'); return; }
+// Validates and cleans one tile's colour list: unique, well-formed hex,
+// capped at the Portrait per-tile limit (or 999 outside Portrait mode).
+function cleanSwatchList(arr) {
     const cleaned = [];
     const seen = new Set();
-    for (const value of arr) {
+    for (const value of (Array.isArray(arr) ? arr : [])) {
         if (typeof value !== 'string') continue;
         const hex = value.trim().toUpperCase();
         if (!/^#[0-9A-F]{6}$/.test(hex) || seen.has(hex)) continue;
         seen.add(hex); cleaned.push(hex);
         if (cleaned.length >= (selectedProfile === 'portrait' ? PORTRAIT_PALETTE_LIMIT : 999)) break;
+    }
+    return cleaned;
+}
+function applyImportedSwatchArray(raw) {
+    let data;
+    try { data = JSON.parse(raw); } catch (_) { alert('Invalid swatch array file.'); return; }
+    const isPortrait = selectedProfile === 'portrait';
+    let cleaned;
+    if (isPortrait) {
+        // Accept either the new per-tile export shape ({"tx,ty": [...]}) or
+        // a plain array (imported into just the active tile, for
+        // convenience when re-using a non-Portrait export).
+        if (Array.isArray(data)) {
+            cleaned = cleanSwatchList(data);
+            ensurePortraitTilePalette(portraitActiveTileKey).length = 0;
+            ensurePortraitTilePalette(portraitActiveTileKey).push(...cleaned);
+        } else if (data && typeof data === 'object') {
+            let importedActiveTile = null;
+            for (const [key, list] of Object.entries(data)) {
+                if (!/^-?\d+,-?\d+$/.test(key)) continue;
+                const list2 = cleanSwatchList(list);
+                ensurePortraitTilePalette(key).length = 0;
+                ensurePortraitTilePalette(key).push(...list2);
+                if (key === portraitActiveTileKey) importedActiveTile = list2;
+            }
+            cleaned = importedActiveTile !== null ? importedActiveTile : ensurePortraitTilePalette(portraitActiveTileKey);
+        } else { alert('Invalid swatch array: expected a JSON array or per-tile object.'); return; }
+    } else {
+        if (!Array.isArray(data)) { alert('Invalid swatch array: expected a JSON array.'); return; }
+        cleaned = cleanSwatchList(data);
     }
     document.querySelectorAll('#palette .swatch-wrapper:not(#transparencyWrapper):not(#pickerContainer)').forEach(el => el.remove());
     cleaned.forEach(createSwatch);
@@ -7252,14 +7405,29 @@ function applyImportedSwatchArray(raw) {
     updateUI();
     updateColorPickerAvailability();
 }
+let swatchArrayMenuEl = null;
 function openSwatchArrayMenu() {
     const menu = document.createElement('div');
     menu.style.cssText = 'position:fixed;z-index:2000;left:50%;top:50%;transform:translate(-50%,-50%);background:#222;border:1px solid #555;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:220px;box-shadow:0 8px 30px rgba(0,0,0,.5);';
-    const title = document.createElement('div'); title.textContent='Swatch Array'; title.style.cssText='font-weight:bold;color:#fff;text-align:center;';
-    const ex = document.createElement('button'); ex.className='btn'; ex.textContent='EXPORT SWATCH ARRAY'; ex.onclick=()=>{ exportSwatchArray(); menu.remove(); };
-    const im = document.createElement('button'); im.className='btn'; im.textContent='IMPORT SWATCH ARRAY'; im.onclick=()=>{ importSwatchArrayFile(); menu.remove(); };
-    const cancel = document.createElement('button'); cancel.className='btn'; cancel.textContent='CANCEL'; cancel.onclick=()=>menu.remove();
-    menu.append(title,ex,im,cancel); document.body.appendChild(menu);
+    const title = document.createElement('div'); title.textContent = selectedProfile === 'portrait' ? 'Swatch Array (all tiles)' : 'Swatch Array'; title.style.cssText='font-weight:bold;color:#fff;text-align:center;';
+    const ex = document.createElement('button'); ex.className='btn'; ex.textContent='EXPORT SWATCH ARRAY'; ex.onclick=(e)=>{ e.stopPropagation(); exportSwatchArray(); closeSwatchArrayMenu(); };
+    const im = document.createElement('button'); im.className='btn'; im.textContent='IMPORT SWATCH ARRAY'; im.onclick=(e)=>{ e.stopPropagation(); importSwatchArrayFile(); closeSwatchArrayMenu(); };
+    const cancel = document.createElement('button'); cancel.className='btn'; cancel.textContent='CANCEL'; cancel.onclick=(e)=>{ e.stopPropagation(); closeSwatchArrayMenu(); };
+    menu.append(title,ex,im,cancel); menu.onclick = (e) => e.stopPropagation();
+    // Full-screen backdrop: any tap outside the menu itself closes it,
+    // without needing to hit a specific "cancel" target.
+    const backdrop = document.createElement('div');
+    backdrop.id = 'swatchArrayMenuBackdrop';
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:1999;background:transparent;';
+    backdrop.onclick = closeSwatchArrayMenu;
+    document.body.appendChild(backdrop);
+    document.body.appendChild(menu);
+    swatchArrayMenuEl = menu;
+}
+function closeSwatchArrayMenu() {
+    if (swatchArrayMenuEl) { swatchArrayMenuEl.remove(); swatchArrayMenuEl = null; }
+    const backdrop = document.getElementById('swatchArrayMenuBackdrop');
+    if (backdrop) backdrop.remove();
 }
 
 const swatchArrayFileInput = document.createElement('input');
