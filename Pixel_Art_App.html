@@ -8,7 +8,7 @@
             background: #121212; color: #fff;
             font-family: -apple-system, sans-serif;
             user-select: none; -webkit-user-select: none;
-            height: max-content; min-height: 0; align-self: start;
+            -webkit-touch-callout: none;
         }
 
         #init-screen {
@@ -62,7 +62,7 @@
         .layer-canvas.reference-canvas { image-rendering: auto; }
 
         #portraitTileIsolationOverlay { position:absolute; inset:0; z-index:180; pointer-events:none; display:none; }
-        #portraitTileIsolationOverlay .pt-mask { position:absolute; background:rgba(14,14,14,0.8); }
+        #portraitTileIsolationOverlay .pt-mask { position:absolute; background:rgb(14,14,14); }
         #pixel-cursor {
             position: absolute; width: 10px; height: 10px;
             border: 1px solid rgba(0,0,0,0.5); box-sizing: border-box; pointer-events: none;
@@ -450,7 +450,7 @@
         .layer-icon-btn { flex: none; width: 26px; height: 26px; background: transparent; border: none; color: #fff; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .layer-icon-btn:disabled { opacity: 0.25; }
         .layer-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
-        .layer-name-input { flex: 1; font-size: 11px; background: #1c1c1c; border: 1px solid #0078d4; border-radius: 4px; color: #fff; padding: 2px 4px; min-width: 0; }
+        .layer-name-input { flex: 1; font-size: 16px; background: #1c1c1c; border: 1px solid #0078d4; border-radius: 4px; color: #fff; padding: 2px 4px; min-width: 0; transform-origin: left center; }
 
         #keyboardBackdrop { position: fixed; inset: 0; z-index: 1990; display: none; background: rgba(0,0,0,0.3); }
         #keyboardBackdrop.open { display: block; pointer-events: auto; }
@@ -2742,6 +2742,17 @@ class PixelLayer extends Layer {
         this.imageSource = null;
         this.redrawFromData();
     }
+    // Replaces this layer's entire pixel grid with new data, preserving
+    // history tracking (makeTrackedPixelData wraps it the same way the
+    // constructor does). Width/height are read from the incoming array
+    // rather than this.gridW/this.gridH, since resizeToCanvas() calls this
+    // *before* updating gridW/gridH -- using the new data's own shape keeps
+    // this correct for both same-size callers (flip) and resize callers.
+    setPixelData(data) {
+        const w = data.length, h = w > 0 ? data[0].length : 0;
+        this.pixelData = makeTrackedPixelData(this, w, h, data);
+        this.redrawFromData();
+    }
     resizeToCanvas(newW, newH) {
         const newData = Array(newW).fill().map(() => Array(newH).fill(null));
         for (let x = 0; x < Math.min(this.gridW, newW); x++)
@@ -4840,18 +4851,22 @@ function deselect() {
 // (undoable); reference layers flip visually via CSS transform.
 function flipActiveLayerH() {
     const layer = activeLayer();
-    if (!layer) return;
+    traceLog('flipActiveLayerH called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
+    if (!layer) { traceLog('flipActiveLayerH: no active layer, aborting'); return; }
     try {
         if (typeof layer.flipHorizontal === 'function' && isPixelLike(layer)) {
+            traceLog('flipActiveLayerH: taking pixel-data flip branch');
             const snap = beginEdit();
             layer.flipHorizontal();
             commitEdit(snap);
         } else {
+            traceLog('flipActiveLayerH: taking CSS transform flip branch, flipH before=' + layer.flipH);
             layer.flipH = !layer.flipH;
             if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
             refreshHookedComposites();
         }
     } catch (err) {
+        traceLog('flipActiveLayerH: threw ' + (err && err.message));
         console.error('flip horizontal failed:', err);
     }
     if (openPanelName === 'layers') renderLayersPanel();
@@ -4859,18 +4874,22 @@ function flipActiveLayerH() {
 // Flips the active layer top-bottom. See flipActiveLayerH() for details.
 function flipActiveLayerV() {
     const layer = activeLayer();
-    if (!layer) return;
+    traceLog('flipActiveLayerV called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
+    if (!layer) { traceLog('flipActiveLayerV: no active layer, aborting'); return; }
     try {
         if (typeof layer.flipVertical === 'function' && isPixelLike(layer)) {
+            traceLog('flipActiveLayerV: taking pixel-data flip branch');
             const snap = beginEdit();
             layer.flipVertical();
             commitEdit(snap);
         } else {
+            traceLog('flipActiveLayerV: taking CSS transform flip branch, flipV before=' + layer.flipV);
             layer.flipV = !layer.flipV;
             if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
             refreshHookedComposites();
         }
     } catch (err) {
+        traceLog('flipActiveLayerV: threw ' + (err && err.message));
         console.error('flip vertical failed:', err);
     }
     if (openPanelName === 'layers') renderLayersPanel();
@@ -5071,15 +5090,20 @@ function uiAction(fn) { if (isConfirmingClear) cancelClear(); if (mainMenuConfir
 // handler without the click+touchend double-dispatch that previously caused
 // unreliable gallery/editor controls.
 document.getElementById('flipHorizontalBtn')?.addEventListener('pointerup', (e) => {
+    const sec = document.getElementById('flipToolsSection');
+    traceLog('flipHorizontalBtn pointerup fired, target=' + describeEl(e.target) + ' sectionDisplay=' + (sec && getComputedStyle(sec).display) + ' sectionVisibility=' + (sec && getComputedStyle(sec).visibility));
     e.preventDefault();
     e.stopPropagation();
     uiAction(flipActiveLayerH);
 });
 document.getElementById('flipVerticalBtn')?.addEventListener('pointerup', (e) => {
+    const sec = document.getElementById('flipToolsSection');
+    traceLog('flipVerticalBtn pointerup fired, target=' + describeEl(e.target) + ' sectionDisplay=' + (sec && getComputedStyle(sec).display) + ' sectionVisibility=' + (sec && getComputedStyle(sec).visibility));
     e.preventDefault();
     e.stopPropagation();
     uiAction(flipActiveLayerV);
 });
+traceLog('flip button listeners attached: H=' + !!document.getElementById('flipHorizontalBtn') + ' V=' + !!document.getElementById('flipVerticalBtn'));
 // Starts a long-press timer for buttons that do something different on hold vs. tap (e.g. manage colours, copy to clipboard).
 function startHold(callback) { if (isConfirmingClear) return; holdTimer = setTimeout(callback, 600); }
 // Cancels a pending long-press timer.
@@ -6209,11 +6233,21 @@ function setupImportImageInput() {
                 frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
                 activeFrameIndex = 0;
                 container.appendChild(base.el);
+                if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
                 setActiveLayer(0);
                 document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
                 lastEnteredProfile = selectedProfile;
                 pendingImportKind = 'pixel';
                 layoutAll();
+                // Portrait imports need the tile isolation overlay/opacity and the
+                // per-tile controls panel refreshed immediately -- otherwise the
+                // isolation view stays stale (showing pre-import defaults) until
+                // the user leaves and re-enters the canvas, which is the only
+                // other place these get rebuilt.
+                if (selectedProfile === 'portrait') {
+                    updatePortraitTileOverlay();
+                    updatePortraitTileControls();
+                }
             } catch (err) {
                 console.error('Image import failed:', err && err.message);
                 // Restore button so user can try again
@@ -7109,23 +7143,6 @@ requestAnimationFrame(() => {
     showGallery();
 });
 
-/* V11: immediately refresh Portrait tile isolation/opacity after an image import.
-   This intentionally reuses the app's existing isolation/opacity refresh hooks
-   when present, without changing ordinary layer opacity. */
-function refreshPortraitTileOpacityAfterImport() {
-    try {
-        invalidateDocumentRender('image-import', true);
-        if (typeof renderLayers === 'function') renderLayers();
-        else if (typeof renderAll === 'function') renderAll();
-        else if (typeof render === 'function') render();
-    } catch (_) {}
-}
-
 </script>
-<div id="pixelToolControlsInline" aria-label="Pencil brush and eraser controls">
-                    <div class="pixel-tool-control" data-tool="brush softBrush">
-                        <label>Brush size <input id="pixel-brush-size-inline" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-inline-value">8 px</output></label>
-                        <label>Brush softness <input id="pixel-brush-softness-inline" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-inline-value">100%</output></label>
-                    </div>
 </body>
 </html>
