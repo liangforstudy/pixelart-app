@@ -640,11 +640,10 @@
                 <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
-<div class="row"><button class="btn tool-btn" data-tool="pencil" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button><button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button></div>
-<div class="row"><button class="btn tool-btn" data-tool="softBrush" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" data-tool="hardEraser" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" data-tool="softEraser" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
-<div id="pixelToolControls" style="display:none;padding:6px 0"><label>Brush size <input id="pixel-brush-size" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-value">8 px</output></label><label>Brush softness <input id="pixel-brush-softness" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-value">100%</output></label><label>Soft eraser size <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8"><output id="pixel-soft-eraser-size-value">8 px</output></label><label>Soft eraser softness <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35"><output id="pixel-soft-eraser-softness-value">35%</output></label></div>
+<div class="row"><button class="btn tool-btn" data-tool="pencil" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button><button class="btn tool-btn" id="brushToolBtn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button></div>
+<div class="row"><button class="btn tool-btn" id="softBrushToolBtn" data-tool="softBrush" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" data-tool="hardEraser" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" id="softEraserToolBtn" data-tool="softEraser" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
+<div id="pixelToolControls" style="display:none;padding:6px 0"><label id="brushSizeRow">Brush size <input id="pixel-brush-size" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-value">8 px</output></label><label id="brushSoftnessRow">Brush softness <input id="pixel-brush-softness" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-value">100%</output></label><label id="softEraserSizeRow">Soft eraser size <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8"><output id="pixel-soft-eraser-size-value">8 px</output></label><label id="softEraserSoftnessRow">Soft eraser softness <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35"><output id="pixel-soft-eraser-softness-value">35%</output></label></div>
                 <div class="row">
-                    <button class="btn tool-btn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH</button>
                     <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
                 </div>
                 <div class="row">
@@ -684,7 +683,7 @@
                         <button class="btn" id="wandSelModeSubtract" onclick="uiAction(() => setPixelSelectionMode('subtract'))">− SUB</button>
                     </div>
                     <div class="row">
-                        <button class="btn" onclick="uiAction(confirmWandDelete)">🧽 CONFIRM DELETE</button>
+                        <button class="btn" id="wandDeleteBtn" onclick="uiAction(confirmWandDelete)">🧽 CONFIRM DELETE</button>
                         <button class="btn" onclick="uiAction(clearWandSelection)">❌ CLEAR</button>
                     </div>
                     <div id="wandSelectionCount" style="font-size:10px;color:#aaa;text-align:center;">No wand selection</div>
@@ -699,7 +698,7 @@
                     <div class="panel-subtitle">Selection</div>
                     <div class="row">
                         <button class="btn" id="moveSelBtn" onclick="uiAction(toggleMoveSelection)">✋ MOVE SEL</button>
-                        <button class="btn" onclick="uiAction(deleteSelection)">🧽 DELETE SEL</button>
+                        <button class="btn" id="deleteSelBtn" onclick="uiAction(deleteSelection)">🧽 DELETE SEL</button>
                         <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
                     </div>
                 </div>
@@ -1489,7 +1488,12 @@ let viewport, container, pixelCursor;
 let currentTool = 'pencil', isDrawing = false, isEditing = false;
 window.pixelToolState={current:'pencil',brushSize:8,brushSoftness:100,softEraserSize:8,softEraserSoftness:35};
 window.pixelToolDefs={pencil:{label:'✏️ PENCIL TOOL'},brush:{label:'🖌️ BRUSH TOOL'},softBrush:{label:'🖌️ SOFT BRUSH TOOL'},hardEraser:{label:'🧹 HARD ERASER TOOL'},softEraser:{label:'🧹 SOFT ERASER TOOL'}};
-window.selectPixelTool=function(n){if(!window.pixelToolDefs[n])return;window.pixelToolState.current=n;currentTool=n;if(n==='hardEraser'){try{if(typeof window.selectTransparentSwatch==='function')window.selectTransparentSwatch();else selectedColor=null;}catch(e){selectedColor=null;}}updateUI();updateToolVisibility();};
+// Portrait mode's 40x40 tiles are small enough that size-adjustable/soft
+// brushwork doesn't make sense there -- only fixed-size, hard-edged tools
+// are valid. Any invalid tool auto-redirects to its nearest hard-edged
+// equivalent: brush/soft brush -> pencil, soft eraser -> hard eraser.
+const PORTRAIT_TOOL_FALLBACK = { brush:'pencil', softBrush:'pencil', softEraser:'hardEraser' };
+window.selectPixelTool=function(n){if(!window.pixelToolDefs[n])return;if(selectedProfile==='portrait'&&PORTRAIT_TOOL_FALLBACK[n])n=PORTRAIT_TOOL_FALLBACK[n];window.pixelToolState.current=n;currentTool=n;if(n==='hardEraser'){try{if(typeof window.selectTransparentSwatch==='function')window.selectTransparentSwatch();else selectedColor=null;}catch(e){selectedColor=null;}}updateUI();updateToolVisibility();};
 window.getPixelToolStroke=function(){const s=window.pixelToolState,n=s.current;if(n==='pencil')return{size:1,alpha:1,erase:false,soft:false};if(n==='brush')return{size:s.brushSize,alpha:1,erase:false,soft:false};if(n==='softBrush')return{size:s.brushSize,alpha:s.brushSoftness/100,erase:false,soft:true};if(n==='hardEraser')return{size:1,alpha:1,erase:true,soft:false};return{size:s.softEraserSize,alpha:s.softEraserSoftness/100,erase:true,soft:true};};
 let isConfirmingClear = false, selectedColor = "#000000";
 let holdTimer, dragTarget = null, cursorTimer;
@@ -1516,6 +1520,14 @@ let portraitTilePalettes = new Map();
 let portraitActiveTileKey = '0,0';
 let portraitTileIsolation = false;
 let portraitTileIsolationOpacity = 0.78;
+// When true, the isolated tile stays fixed even if the user draws/taps
+// into a different tile -- otherwise syncPortraitPaletteForPoint's normal
+// auto-follow behaviour would silently change which tile is isolated.
+let portraitTileIsolationLocked = false;
+// The tile key the isolation view is pinned to while locked. Captured at
+// lock-on time; updatePortraitTileOverlay() reads this instead of the
+// live (pointer-following) portraitActiveTileKey while locked is true.
+let portraitIsolationLockedKey = null;
 let portraitStrokeColor = null;
 let lastEnteredProfile = null;    // profile the current work (if any) was created/resumed under
 const PORTRAIT_PALETTE_LIMIT = 15;
@@ -1727,7 +1739,7 @@ function moveTreeNode(node, direction){
         const [item]=arr.splice(from,1); arr.splice(to,0,item);
     }
     syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites();
-    pushTreeOperation('Move item',before);
+    pushTreeOperation(node.kind === 'group' ? 'Move group' : 'Move layer', before);
     renderLayersPanel();
 }
 // Preserve tree order and only operate on top-level selected nodes.
@@ -2343,7 +2355,10 @@ function syncPortraitPaletteForPoint(x,y,force=false){
     portraitActiveTileKey=key;
     const pal=ensurePortraitTilePalette(key);
     replaceVisiblePalette(pal);
-    updatePortraitTileOverlay();
+    // The isolation view's own tile reference is separate from the palette's
+    // active-tile tracking below -- when locked, the isolated tile stays put
+    // even as the palette keeps following the pointer from tile to tile.
+    if(!portraitTileIsolationLocked) updatePortraitTileOverlay();
     updatePortraitTileControls();
 }
 function samplePortraitTilePalettes(img){
@@ -2368,7 +2383,8 @@ function hidePortraitTileIsolationOverlay(){ const o=document.getElementById('po
 function updatePortraitTileOverlay(){
     const o=document.getElementById('portraitTileIsolationOverlay'); if(!o)return;
     if(!portraitTileIsolation || selectedProfile!=='portrait' || portraitTileCount()<=1){o.style.display='none';return;}
-    const [tx,ty]=portraitActiveTileKey.split(',').map(Number); const x=tx*40*scale,y=ty*40*scale; const w=Math.min(40,gridW-tx*40)*scale,h=Math.min(40,gridH-ty*40)*scale;
+    const key = (portraitTileIsolationLocked && portraitIsolationLockedKey) ? portraitIsolationLockedKey : portraitActiveTileKey;
+    const [tx,ty]=key.split(',').map(Number); const x=tx*40*scale,y=ty*40*scale; const w=Math.min(40,gridW-tx*40)*scale,h=Math.min(40,gridH-ty*40)*scale;
     o.innerHTML=''; o.style.display='block';
     const masks=[
       ['left',0,0,x,gridH*scale],['right',x+w,0,Math.max(0,gridW*scale-x-w),gridH*scale],
@@ -2381,8 +2397,23 @@ function updatePortraitTileControls(){
     const old=document.getElementById('portraitTileControls'); if(old)old.remove();
     if(selectedProfile!=='portrait'||portraitTileCount()<=1)return;
     const box=document.createElement('div'); box.id='portraitTileControls'; box.style.cssText='padding:8px 6px;border-bottom:1px solid #333;';
-    const b=document.createElement('button'); b.className='btn'; b.style.width='100%'; b.innerText=portraitTileIsolation?'SHOW OTHER TILES':'ISOLATE PORTRAIT TILE';
-    b.onclick=()=>{portraitTileIsolation=!portraitTileIsolation;invalidateDocumentRender('portrait-isolation',true);}; box.appendChild(b);
+    const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;';
+    const b=document.createElement('button'); b.className='btn'; b.style.flex='1'; b.innerText=portraitTileIsolation?'SHOW OTHER TILES':'ISOLATE PORTRAIT TILE';
+    b.onclick=()=>{
+        portraitTileIsolation=!portraitTileIsolation;
+        if(!portraitTileIsolation){ portraitTileIsolationLocked=false; portraitIsolationLockedKey=null; }
+        invalidateDocumentRender('portrait-isolation',true);
+    }; row.appendChild(b);
+    if(portraitTileIsolation){
+        const lockBtn=document.createElement('button'); lockBtn.className='btn'+(portraitTileIsolationLocked?' active':''); lockBtn.style.cssText='width:40px;flex:none;'; lockBtn.innerText='\ud83d\udd12'; lockBtn.title=portraitTileIsolationLocked?'Unlock isolated tile':'Lock isolated tile';
+        lockBtn.onclick=()=>{
+            portraitTileIsolationLocked=!portraitTileIsolationLocked;
+            portraitIsolationLockedKey=portraitTileIsolationLocked?portraitActiveTileKey:null;
+            updatePortraitTileOverlay();
+            updatePortraitTileControls();
+        }; row.appendChild(lockBtn);
+    }
+    box.appendChild(row);
     if(portraitTileIsolation){ const label=document.createElement('div');label.style.cssText='font-size:9px;color:#888;margin-top:6px;';label.innerText='other tiles opacity';box.appendChild(label); const sl=document.createElement('input');sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(portraitTileIsolationOpacity*100);sl.style.width='100%';sl.oninput=()=>{portraitTileIsolationOpacity=sl.value/100;updatePortraitTileOverlay();};box.appendChild(sl);}
     list.prepend(box);
 }
@@ -3659,6 +3690,28 @@ function updateToolVisibility() {
     if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn('vpen');
     else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn('brush');
     else if (type === 'reference' && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
+
+    // Portrait's 40x40 tiles are too small for size-adjustable/soft
+    // brushwork. Safety net for entry paths that set selectedProfile
+    // directly (e.g. loading a saved Portrait project) instead of going
+    // through a tool-button click, where PORTRAIT_TOOL_FALLBACK already
+    // applies. Re-selecting through handleToolBtn keeps every other piece
+    // of tool-switch bookkeeping (swatch state, cursor, panels) in sync.
+    if (selectedProfile === 'portrait' && PORTRAIT_TOOL_FALLBACK[currentTool]) {
+        handleToolBtn(PORTRAIT_TOOL_FALLBACK[currentTool]);
+    }
+
+    // Hide the tool buttons and slider rows Portrait mode has no use for --
+    // brush/soft brush and soft eraser are all redirected to a fixed-size
+    // equivalent above, so their controls would be dead UI if left visible.
+    const inPortrait = selectedProfile === 'portrait';
+    show('brushToolBtn', !inPortrait);
+    show('softBrushToolBtn', !inPortrait);
+    show('softEraserToolBtn', !inPortrait);
+    show('brushSizeRow', !inPortrait);
+    show('brushSoftnessRow', !inPortrait);
+    show('softEraserSizeRow', !inPortrait);
+    show('softEraserSoftnessRow', !inPortrait);
 }
 
 // True only when TRANSFORM mode is on AND the active layer is a reference layer -- gates the drag/pinch reposition-and-scale gesture.
@@ -4756,6 +4809,21 @@ function clearWandSelection(){
     updateSelectionToolsVisibility();
     recordSelectionUndo(before, selectionSnapshot());
 }
+// Plain selection reset with no undo entry -- for leaving a project
+// entirely (Main Menu) or loading a different one, where the old
+// selection's history no longer applies to the document taking its place.
+// Without this, a wand/rect selection mask sized for the previous
+// document's grid could persist and get drawn against the new one.
+function resetSelectionState(){
+    wandSelection = null;
+    wandSelectionCount = 0;
+    selection = null;
+    movingSelection = false;
+    const btn = document.getElementById('moveSelBtn');
+    if (btn) btn.classList.remove('active');
+    updateSelectionOverlay();
+    updateSelectionToolsVisibility();
+}
 function setWandTolerance(v){ wandTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('wandToleranceLabel'); if(l)l.textContent=wandTolerance; }
 function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementById('wandMatchBtn'); if(b)b.textContent=wandFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('wandTolerance'); if(r)r.disabled=!wandFuzzy; }
 function toggleWandScope(){ wandGlobal=!wandGlobal; const b=document.getElementById('wandScopeBtn'); if(b){b.textContent=wandGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!wandGlobal);} }
@@ -4812,10 +4880,20 @@ function performLassoSelection(points){
     applySelectionMask(out,pixelSelectionMode);
     recordSelectionUndo(before,selectionSnapshot());
 }
+// Tap-twice confirm for wand-selection delete (native confirm() proved
+// unreliable on iOS -- see makeTapTwiceConfirm below for the pattern).
+const wandDeleteConfirm = makeTapTwiceConfirm({
+    btnId: 'wandDeleteBtn', idleText: '\ud83e\uddfd CONFIRM DELETE', armedText: '\u26A0\uFE0F TAP AGAIN TO DELETE',
+    onConfirm: () => performWandDelete()
+});
 function confirmWandDelete(){
     if(!hasWandSelection())return;
     const layer=activeLayer(); if(!isPixelLike(layer))return;
-    if(!confirm('Delete '+wandSelectionCount.toLocaleString()+' selected pixels?'))return;
+    wandDeleteConfirm.trigger();
+}
+function performWandDelete(){
+    if(!hasWandSelection())return;
+    const layer=activeLayer(); if(!isPixelLike(layer))return;
     const snap=beginEdit();
     const mask=wandSelection;
     for(let x=0;x<gridW;x++) for(let y=0;y<gridH;y++) if(mask[y*gridW+x]) layer.plot(x,y,null);
@@ -4908,12 +4986,23 @@ function flipActiveLayerV() {
     if (openPanelName === 'layers') renderLayersPanel();
 }
 
+// Tap-twice confirm for rectangle-selection delete (native confirm()
+// proved unreliable on iOS -- see makeTapTwiceConfirm below for the pattern).
+const rectDeleteConfirm = makeTapTwiceConfirm({
+    btnId: 'deleteSelBtn', idleText: '\ud83e\uddfd DELETE SEL', armedText: '\u26A0\uFE0F TAP AGAIN TO DELETE',
+    onConfirm: () => performDeleteSelection()
+});
 // Erases (sets to transparent) every pixel inside the current selection on the active layer.
 function deleteSelection() {
     const layer = activeLayer();
     if (!isPixelLike(layer)) return;
     if (hasWandSelection()) { confirmWandDelete(); return; }
     if (!selection) return;
+    rectDeleteConfirm.trigger();
+}
+function performDeleteSelection() {
+    const layer = activeLayer();
+    if (!isPixelLike(layer) || !selection) return;
     const snap = beginEdit();
     for (let x = selection.x0; x <= selection.x1; x++)
         for (let y = selection.y0; y <= selection.y1; y++) layer.plot(x, y, null);
@@ -5324,9 +5413,10 @@ function setupDrawingEvents() {
     // below can share it explicitly, instead of as a wall of separate
     // closure variables that are easy to lose track of.
     const g = {
-        panStart: null, cameraGesture: null, xform: null, pendingTouch: null, shapeStart: null,
+        cameraGesture: null, xform: null, pendingTouch: null, shapeStart: null,
         selDragOrigin: null, moveBuffer: null, currentEditSnapshot: null,
-        suppressStroke: false, vecDragTarget: null, vecFreehand: null, lastBrushPos: null, manualPan: null
+        suppressStroke: false, vecDragTarget: null, vecFreehand: null, lastBrushPos: null, manualPan: null,
+        strokeTileKey: null // Portrait mode: tile the current stroke started in; see startStroke/onMove.
     };
 
     // -- coordinate helpers --------------------------------------------
@@ -5347,8 +5437,11 @@ function setupDrawingEvents() {
         return [Math.floor(localX / scale), Math.floor(localY / scale)];
     };
     // Inverse of getPosFromClient: given a grid-space point, where does it
-    // land on screen right now (at the current scale/rotation)? Used to
-    // re-anchor pinch-zoom -- see updateCanvasPanZoomRotate.
+    // land on screen right now (at the current scale/rotation)? Not
+    // currently called anywhere -- pinch-zoom re-anchoring now solves for
+    // the pan offset directly inline (see updateCanvasPanZoomRotate's
+    // localOffX/localOffY math) instead of round-tripping through this.
+    // Kept as the documented inverse of getPosFromClient for future use.
     const gridToScreenClient = (gx, gy) => {
         const r = container.getBoundingClientRect();
         const centerX = r.left + r.width / 2;
@@ -5624,6 +5717,11 @@ function setupDrawingEvents() {
         g.currentEditSnapshot = beginEdit();
         doToolAt(x, y);
         g.lastBrushPos = ['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool) ? {x,y} : null;
+        // Portrait mode: pin the stroke to the tile it started in, so a
+        // drag can't paint across a 40x40 tile boundary mid-stroke. See
+        // onMove's pixel-tool branch, which clips linePixels() output
+        // against this before applying.
+        g.strokeTileKey = (selectedProfile === 'portrait' && g.lastBrushPos) ? portraitTileKeyForPoint(x, y) : null;
     };
 
     const commitPendingTouch = () => {
@@ -5642,7 +5740,6 @@ function setupDrawingEvents() {
         // two-finger pan+pinch state instead of letting manualPan consume it.
         g.pendingTouch = null;
         g.manualPan = null;
-        g.panStart = null;
         g.xform = null;
         isDrawing = false;
         hideCursor();
@@ -5654,8 +5751,23 @@ function setupDrawingEvents() {
             const layer = activeLayer();
             g.xform = { type: 'pinch', dist: dist2(t0, t1), angle: angle2(t0, t1), midX: m.x, midY: m.y, gx: layer.gx, gy: layer.gy, gw: layer.gw, gh: layer.gh, startRotation: layer.rotation || 0 };
         } else {
-            const [anchorCellX, anchorCellY] = getPosFromClient(m.x, m.y);
-            g.cameraGesture = { dist: dist2(t0, t1), startScale: cameraScale, startPanX: cameraPanX, startPanY: cameraPanY, startRotation: cameraRotation, startAngle: angle2(t0, t1), startMidX: m.x, startMidY: m.y, anchorGX: anchorCellX + 0.5, anchorGY: anchorCellY + 0.5 };
+            // Anchor the pinch on the grid point under the finger midpoint,
+            // not the canvas center. transform-origin is 'center center', so
+            // container.style.transform scales/rotates everything around its
+            // own middle -- we capture the anchor's offset from that middle
+            // in local (unscaled, unrotated) container space, then on every
+            // move re-solve cameraPanX/Y so that same local point, after the
+            // new scale+rotation is applied, lands back under the current
+            // finger midpoint. See updateCanvasPanZoomRotate.
+            const r = container.getBoundingClientRect();
+            const centerX = r.left + r.width / 2;
+            const centerY = r.top + r.height / 2;
+            // Undo the current camera transform to get the anchor's local offset.
+            const dx = m.x - centerX, dy = m.y - centerY;
+            const rad = -cameraRotation * Math.PI / 180;
+            const localOffX = (dx * Math.cos(rad) - dy * Math.sin(rad)) / cameraScale;
+            const localOffY = (dx * Math.sin(rad) + dy * Math.cos(rad)) / cameraScale;
+            g.cameraGesture = { dist: dist2(t0, t1), startScale: cameraScale, startRotation: cameraRotation, startAngle: angle2(t0, t1), localOffX, localOffY };
         }
     };
     const updateTransformDrag = (cx, cy) => {
@@ -5686,9 +5798,29 @@ function setupDrawingEvents() {
         const m = mid2(t0, t1);
         const ratio = g.cameraGesture.dist > 0 ? dist2(t0, t1) / g.cameraGesture.dist : 1;
         cameraScale = Math.max(0.05, Math.min(64, g.cameraGesture.startScale * ratio));
-        cameraPanX = g.cameraGesture.startPanX + (m.x - g.cameraGesture.startMidX);
-        cameraPanY = g.cameraGesture.startPanY + (m.y - g.cameraGesture.startMidY);
         cameraRotation = g.cameraGesture.startRotation + normalizeAngleDelta(angle2(t0, t1) - (g.cameraGesture.startAngle || angle2(t0, t1)));
+        // Re-anchor: find where the gesture's fixed local point (captured in
+        // startTwoFingerGesture, relative to the container's untransformed
+        // center) lands at the *new* scale/rotation, then set cameraPanX/Y so
+        // it sits exactly under the current finger midpoint. Because the
+        // container's own center never moves on screen (transform-origin:
+        // center center, and layoutAll() isn't called mid-gesture), the
+        // container's bounding-rect center is stable through the whole
+        // gesture, so we only need to solve for the pan offset here --
+        // no per-frame drift, same anchoring principle as gridToScreenClient
+        // uses for the mouse-wheel zoom path.
+        const r = container.getBoundingClientRect();
+        // r already reflects the *previous* frame's transform (including the
+        // old cameraPanX/Y), so back that out to get the untransformed center.
+        const centerX = r.left + r.width / 2 - cameraPanX;
+        const centerY = r.top + r.height / 2 - cameraPanY;
+        const rad = cameraRotation * Math.PI / 180;
+        const offX = g.cameraGesture.localOffX * cameraScale;
+        const offY = g.cameraGesture.localOffY * cameraScale;
+        const rotOffX = offX * Math.cos(rad) - offY * Math.sin(rad);
+        const rotOffY = offX * Math.sin(rad) + offY * Math.cos(rad);
+        cameraPanX = m.x - centerX - rotOffX;
+        cameraPanY = m.y - centerY - rotOffY;
         // This is presentation-only: do not call layoutAll(), resize layers, change ImageData, or touch history.
         applyCameraTransform();
     };
@@ -5775,7 +5907,16 @@ function setupDrawingEvents() {
         if (isDrawing && (!g.suppressStroke || currentTool === 'lasso')) {
             const [x, y] = getPos(e);
             if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) {
-                if(g.lastBrushPos) linePixels(g.lastBrushPos.x,g.lastBrushPos.y,x,y).forEach(([lx,ly])=>applyPixelToolAt(lx,ly)); else applyPixelToolAt(x,y);
+                let pts = g.lastBrushPos ? linePixels(g.lastBrushPos.x,g.lastBrushPos.y,x,y) : [[x,y]];
+                // Portrait mode: a drag can't paint past the 40x40 tile it
+                // started in. Clip the interpolated line at the first point
+                // that leaves the origin tile, so a fast/diagonal drag can't
+                // skip across the boundary in a single line-interpolation step.
+                if (g.strokeTileKey) {
+                    const cut = pts.findIndex(([px,py]) => portraitTileKeyForPoint(px,py) !== g.strokeTileKey);
+                    if (cut !== -1) pts = pts.slice(0, cut);
+                }
+                pts.forEach(([lx,ly])=>applyPixelToolAt(lx,ly));
                 g.lastBrushPos={x,y}; if(activeLayerHasLiveHook())scheduleHookedCompositeRefresh();
             }
             else if (currentTool === 'select') updateSelectionDrag(x, y);
@@ -5819,7 +5960,6 @@ function setupDrawingEvents() {
             updatePortraitTileOverlay();
         }
         g.xform = null;
-        g.panStart = null;
         g.cameraGesture = null;
         g.manualPan = null;
         // A stationary tap with the Pan tool is still useful in Portrait mode:
@@ -6091,7 +6231,8 @@ const startFreshConfirm = makeTapTwiceConfirm({
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
         resetHistory();
-        selection = null; movingSelection = false; transformMode = false;
+        resetSelectionState();
+        transformMode = false;
         lastEnteredProfile = null;
         initApp();
     }
@@ -6199,7 +6340,8 @@ function setupImportImageInput() {
                 frames.forEach(f => f.layers.forEach(l => l.el.remove()));
                 frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
                 resetHistory();
-                selection = null; movingSelection = false; transformMode = false;
+                resetSelectionState();
+                transformMode = false;
                 currentProjectId = null;
                 currentProjectName = file.name.replace(/\.[^.]+$/, '').trim() || 'Untitled';
 
@@ -6543,7 +6685,8 @@ function openProjectFromStore(id) {
     activeFrameIndex = proj.activeFrameIndex || 0;
     layers = frames[activeFrameIndex].layers;
     resetHistory();
-    selection = null; movingSelection = false; transformMode = false;
+    resetSelectionState();
+    transformMode = false;
     hideGallery();
     revealMainApp();
     if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
@@ -6808,7 +6951,8 @@ function startNewProjectFromGallery(w, h) {
     if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
     frames = []; layers = []; activeLayerIndex = -1; activeLayerId = null; activeFrameIndex = 0;
     resetHistory();
-    selection = null; movingSelection = false; transformMode = false;
+    resetSelectionState();
+    transformMode = false;
     gridW = w; gridH = h;
     currentProjectId = null; // new unsaved project
     currentProjectName = 'Untitled ' + (projectStore.length + 1);
@@ -6987,7 +7131,7 @@ function goToMainMenu() {
         if (playing) togglePlay();
         closePanel();
         closeDrawer();
-        selection = null; movingSelection = false;
+        resetSelectionState();
         transformMode = false;
         hideFloatingBuffer();
         const selBox = document.getElementById('selectionBox');
