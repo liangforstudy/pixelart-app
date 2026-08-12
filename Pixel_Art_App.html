@@ -508,7 +508,10 @@
     <!-- ══════════ GALLERY SCREEN ══════════ -->
     <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
-            <h1>🎨 Pixel Art Hub</h1>
+            <div>
+                <h1>🎨 Pixel Art Hub</h1>
+                <div id="hubVersionLabel" style="font-size:10px;color:#666;letter-spacing:0.5px;margin-top:-2px;"></div>
+            </div>
             <button class="btn" id="hubDebugBtn" onclick="uiAction(() => toggleDrawer('debug'))" style="flex:0 0 auto; padding:8px 14px;">⚙️ DEBUG</button>
         </div>
 
@@ -886,9 +889,11 @@
         <div class="side-drawer right" id="debugDrawer">
             <div id="debugDrawerControls" style="position:sticky; top:0; z-index:2; background:#1c1c1c; display:flex; flex-direction:column; gap:8px; padding-bottom:4px;">
                 <div class="panel-title">JS Logs</div>
+                <div id="buildVersionLabel" style="font-size:11px;color:#0af;text-align:center;font-weight:bold;letter-spacing:0.5px;"></div>
                 <div id="debugStats"></div>
                 <div class="row">
                     <button class="btn" onclick="uiAction(refreshDebugStats)">🔄 REFRESH STATS</button>
+                    <button class="btn" id="printVersionBtn" onclick="uiAction(printBuildVersion)">🏷️ PRINT VERSION</button>
                 </div>
                 <div class="panel-subtitle">Rendering</div>
                 <div class="row">
@@ -921,6 +926,14 @@
     <div id="customKeyboard"></div>
 
 <script>
+// Shown as a static label at the top of the Debug drawer (and in the Debug
+// stats readout) so it's always visible which exact build/file is loaded --
+// added after two separate sessions where confusion over "which file did I
+// actually open" cost real debugging time (a diagnostic build that looked
+// unchanged, and general risk of testing a stale/cached tab). Update this
+// string with every new build.
+const BUILD_VERSION = 'V1_28';
+
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
 
@@ -1147,6 +1160,18 @@ class ImageLayer {
       copy.imageData.data.set(this.imageData.data); copy.redrawFromData(); return copy;
     }
   }
+// `class` declarations (unlike `var`/`function` at top level) do NOT
+// automatically become properties of `window` -- this is a real, confirmed
+// gap in every prior session's assumption that they did. Every
+// `window.ImageLayer` check elsewhere in this file (pixelLayerFromImage,
+// enforcePixelArtRendererForDimensions, createBaseRasterLayer, and others)
+// was therefore always evaluating false, meaning ImageLayer has likely
+// never been constructible through the normal size-threshold path --
+// every canvas, regardless of size, has been silently running through
+// PixelLayer's much slower Proxy-tracked array-of-arrays model instead.
+// This explicit assignment is the actual fix. Root-caused via a targeted
+// diagnostic build; see handoff section 42 for the full investigation.
+window.ImageLayer = ImageLayer;
 
 /* IMAGE_MODE_999_THRESHOLD_PATCH
    Large-canvas rendering policy:
@@ -1319,10 +1344,28 @@ function toggleForceCustomKeyboard() {
     if (btn) btn.classList.toggle('active', forceCustomKeyboard);
 }
 
+// Prints the current build version to the TRACE log (visible even without
+// opening the Debug drawer to look at the static label) and briefly flashes
+// the version on the button itself, so a tap gives immediate, unambiguous
+// confirmation of which file is loaded -- on demand, not just passively
+// displayed. Complements buildVersionLabel/hubVersionLabel (always-visible
+// static labels) rather than replacing them.
+function printBuildVersion() {
+    traceLog('Build version: ' + BUILD_VERSION);
+    const btn = document.getElementById('printVersionBtn');
+    if (btn) {
+        const original = btn.textContent;
+        btn.textContent = '\ud83c\udff7\ufe0f ' + BUILD_VERSION;
+        setTimeout(() => { btn.textContent = original; }, 1500);
+    }
+}
+
 // Rebuilds the stats readout in the Debug drawer (canvas size, layer/frame counts, undo depth, memory estimate).
 function refreshDebugStats() {
     const el = document.getElementById('debugStats');
     if (!el) return;
+    const versionLabel = document.getElementById('buildVersionLabel');
+    if (versionLabel) versionLabel.textContent = 'Build: ' + BUILD_VERSION;
     const totalLayers = frames.reduce((n, f) => n + f.layers.length, 0);
     const mb = (estimateMemoryBytes() / (1024 * 1024)).toFixed(2);
     const historyMb = (historyMemoryBytes / (1024 * 1024)).toFixed(2);
@@ -2178,14 +2221,14 @@ function selectProfile(p, forcedWidth = null, forcedHeight = null) {
         ? '40×40 tile palette: each tile has its own 15-colour limit.'
         : p === 'sprite'
         ? 'Adds a Frames strip to the Layers panel for simple flipbook animation.'
-        : 'Pixel Art mode: ≤999px uses pixel rendering; larger canvases use image rendering.';
+        : '';
 
     const ncmHint = document.getElementById('ncm-hint');
     if (ncmHint) ncmHint.textContent = p === 'portrait'
         ? '40×40 tile palette: each tile has its own 15-colour limit.'
         : p === 'sprite'
         ? 'Adds a Frames strip for flipbook animation.'
-        : '≤999px uses pixel rendering; larger canvases use image rendering.';
+        : '';
 
     if (p !== 'portrait') { portraitTileIsolation = false; hidePortraitTileIsolationOverlay(); }
     updateColorPickerAvailability();
@@ -2197,6 +2240,15 @@ function selectProfile(p, forcedWidth = null, forcedHeight = null) {
 function portraitTileKeyForPoint(x,y){
     if(selectedProfile!=='portrait' || x<0 || y<0 || x>=gridW || y>=gridH) return null;
     return Math.floor(x/40)+','+Math.floor(y/40);
+}
+// Shared by PixelLayer.plot() (blocks the actual draw) and the pixel-cursor
+// preview (hides the cursor) so both agree on the same boundary using the
+// same rule -- see the handoff's danger-zones entry on same-named wrappers
+// not being the real choke point; this is deliberately a single function
+// both callers share, not two copies of the same check.
+function isPointOutsidePortraitIsolation(x,y){
+    if(selectedProfile!=='portrait' || !portraitTileIsolation) return false;
+    return portraitTileKeyForPoint(x,y) !== portraitActiveTileKey;
 }
 function portraitTileCount(){ return selectedProfile==='portrait' ? Math.max(1,Math.ceil(gridW/40)*Math.ceil(gridH/40)) : 0; }
 function ensurePortraitTilePalette(key){
@@ -2636,6 +2688,19 @@ class PixelLayer extends Layer {
     }
     plot(x, y, color) {
         if (x < 0 || x >= this.gridW || y < 0 || y >= this.gridH) return;
+        // Portrait tile isolation was previously purely visual (the dimming
+        // overlay is pointer-events:none by design -- see the handoff's
+        // bug log) -- every tool could still draw on the dimmed,
+        // supposedly-inactive tiles, because nothing ever checked tile
+        // membership before writing a pixel. This is the one true choke
+        // point every drawing path funnels through (the global plot()
+        // wrapper, applyPixelToolAt/blendPixel's direct l.plot() calls,
+        // bucket fill's per-pixel plot() calls, and performWandDelete's
+        // direct layer.plot() calls all end up here), so the boundary
+        // check belongs here rather than duplicated across every caller.
+        // isPointOutsidePortraitIsolation is shared with the pixel-cursor
+        // preview so both agree on the same rule from one place.
+        if (isPointOutsidePortraitIsolation(x, y)) return;
         // Large imported images start in image-render mode. The first actual
         // pixel edit lazily materializes the pixel array, preserving the
         // fast import/display path until editing is actually required.
@@ -2669,6 +2734,24 @@ class PixelLayer extends Layer {
     // this correct for both same-size callers (flip) and resize callers.
     setPixelData(data) {
         const w = data.length, h = w > 0 ? data[0].length : 0;
+        // setPixelData replaces `this.pixelData` outright with a fresh
+        // Proxy structure built from `data` -- that's a direct property
+        // reassignment, not a write *through* the existing tracked Proxy
+        // (`this.pixelData[x][y] = ...`), so neither level of
+        // makeTrackedPixelData's set-trap ever fires and _historyCapture
+        // never gets populated. Every caller of setPixelData (flipHorizontal,
+        // flipVertical, resizeToCanvas, clear) goes through this same gap.
+        // Capture the outgoing grid into _historyCapture.before explicitly
+        // here, matching what the outer Proxy's own set-trap does for a
+        // single-column reassignment, just applied to the whole grid at once.
+        if (this._historyCapture && this.pixelData) {
+            const before = this._historyCapture.before;
+            const oldW = this.gridW, oldH = this.gridH;
+            for (let x = 0; x < oldW; x++) for (let y = 0; y < oldH; y++) {
+                const key = x + ',' + y;
+                if (!before.has(key)) before.set(key, this.pixelData[x][y]);
+            }
+        }
         this.pixelData = makeTrackedPixelData(this, w, h, data);
         this.redrawFromData();
     }
@@ -4885,26 +4968,30 @@ function deselect() {
     if (btn) btn.classList.remove('active');
     updateSelectionBox();
 }
-// Erases (sets to transparent) every pixel inside the current selection on the active layer.
-// Runs a synchronous, potentially-slow operation (large-canvas flip, etc.)
-// with a "loading" button state around it. flipHorizontal/flipVertical on
-// ImageLayer are plain nested-loop pixel copies with no yield point, so the
-// browser genuinely cannot repaint mid-operation -- the only way to show
-// "loading" at all is to relabel+disable the button, force a repaint via
-// requestAnimationFrame + a zero-delay timeout (two separate yields: rAF
-// alone can still land before the next paint on some browsers), THEN run
-// the operation, THEN restore the button. On a small/fast canvas this
-// means "loading" flashes briefly rather than staying invisible; on a
-// large one it genuinely stays up for as long as the flip takes.
+// STALE / NOT CURRENTLY CALLED as of V1_28. The flip buttons' loading-state
+// UI was removed at the person's request (V1_28) -- flipActiveLayerH/V now
+// run their logic directly instead of through this wrapper. Left in place
+// deliberately rather than deleted, since a genuinely slow synchronous
+// operation (e.g. a future large-canvas bulk tool) could still legitimately
+// want this exact pattern. Before reusing: confirm no other caller exists
+// (search for `runWithLoadingButtonState(` -- if this comment is the only
+// hit besides the definition, it is still unused) and re-verify with a
+// fresh diagnostic build the way flip's timing was verified in V1_26,
+// since real timing needs matter more than assuming this still applies.
 function runWithLoadingButtonState(btnId, loadingText, runOperation) {
     const btn = document.getElementById(btnId);
     const originalText = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = loadingText; }
+    const scheduledAt = performance.now();
     requestAnimationFrame(() => {
         setTimeout(() => {
+            const paintDelayMs = performance.now() - scheduledAt;
+            const opStart = performance.now();
             try {
                 runOperation();
             } finally {
+                const opMs = performance.now() - opStart;
+                traceLog(btnId + ': paint-tick delay ' + paintDelayMs.toFixed(1) + 'ms, operation ' + opMs.toFixed(1) + 'ms, total ' + (paintDelayMs + opMs).toFixed(1) + 'ms');
                 if (btn) { btn.disabled = false; btn.textContent = originalText; }
             }
         }, 0);
@@ -4913,57 +5000,49 @@ function runWithLoadingButtonState(btnId, loadingText, runOperation) {
 // Flips the active layer left-right. Pixel layers flip their actual data
 // (undoable); reference layers flip visually via CSS transform.
 function flipActiveLayerH() {
-    runWithLoadingButtonState('flipHorizontalBtn', '\u23f3 LOADING\u2026', () => {
-        const layer = activeLayer();
-        traceLog('flipActiveLayerH called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
-        if (!layer) { traceLog('flipActiveLayerH: no active layer, aborting'); return; }
-        try {
-            if (typeof layer.flipHorizontal === 'function' && isPixelLike(layer)) {
-                traceLog('flipActiveLayerH: taking pixel-data flip branch');
-                const _perfStart = performance.now();
-                const snap = beginEdit();
-                layer.flipHorizontal();
-                commitEdit(snap);
-                traceLog('flipActiveLayerH: PERF flip+undo-capture took ' + (performance.now() - _perfStart).toFixed(2) + 'ms (layer.type=' + layer.type + ', ' + layer.gridW + 'x' + layer.gridH + ')');
-            } else {
-                traceLog('flipActiveLayerH: taking CSS transform flip branch, flipH before=' + layer.flipH);
-                layer.flipH = !layer.flipH;
-                if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
-                refreshHookedComposites();
-            }
-        } catch (err) {
-            traceLog('flipActiveLayerH: threw ' + (err && err.message));
-            console.error('flip horizontal failed:', err);
+    const layer = activeLayer();
+    traceLog('flipActiveLayerH called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
+    if (!layer) { traceLog('flipActiveLayerH: no active layer, aborting'); return; }
+    try {
+        if (typeof layer.flipHorizontal === 'function' && isPixelLike(layer)) {
+            traceLog('flipActiveLayerH: taking pixel-data flip branch');
+            const snap = beginEdit();
+            layer.flipHorizontal();
+            commitEdit(snap);
+        } else {
+            traceLog('flipActiveLayerH: taking CSS transform flip branch, flipH before=' + layer.flipH);
+            layer.flipH = !layer.flipH;
+            if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
+            refreshHookedComposites();
         }
-        if (openPanelName === 'layers') renderLayersPanel();
-    });
+    } catch (err) {
+        traceLog('flipActiveLayerH: threw ' + (err && err.message));
+        console.error('flip horizontal failed:', err);
+    }
+    if (openPanelName === 'layers') renderLayersPanel();
 }
 // Flips the active layer top-bottom. See flipActiveLayerH() for details.
 function flipActiveLayerV() {
-    runWithLoadingButtonState('flipVerticalBtn', '\u23f3 LOADING\u2026', () => {
-        const layer = activeLayer();
-        traceLog('flipActiveLayerV called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
-        if (!layer) { traceLog('flipActiveLayerV: no active layer, aborting'); return; }
-        try {
-            if (typeof layer.flipVertical === 'function' && isPixelLike(layer)) {
-                traceLog('flipActiveLayerV: taking pixel-data flip branch');
-                const _perfStart = performance.now();
-                const snap = beginEdit();
-                layer.flipVertical();
-                commitEdit(snap);
-                traceLog('flipActiveLayerV: PERF flip+undo-capture took ' + (performance.now() - _perfStart).toFixed(2) + 'ms (layer.type=' + layer.type + ', ' + layer.gridW + 'x' + layer.gridH + ')');
-            } else {
-                traceLog('flipActiveLayerV: taking CSS transform flip branch, flipV before=' + layer.flipV);
-                layer.flipV = !layer.flipV;
-                if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
-                refreshHookedComposites();
-            }
-        } catch (err) {
-            traceLog('flipActiveLayerV: threw ' + (err && err.message));
-            console.error('flip vertical failed:', err);
+    const layer = activeLayer();
+    traceLog('flipActiveLayerV called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
+    if (!layer) { traceLog('flipActiveLayerV: no active layer, aborting'); return; }
+    try {
+        if (typeof layer.flipVertical === 'function' && isPixelLike(layer)) {
+            traceLog('flipActiveLayerV: taking pixel-data flip branch');
+            const snap = beginEdit();
+            layer.flipVertical();
+            commitEdit(snap);
+        } else {
+            traceLog('flipActiveLayerV: taking CSS transform flip branch, flipV before=' + layer.flipV);
+            layer.flipV = !layer.flipV;
+            if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
+            refreshHookedComposites();
         }
-        if (openPanelName === 'layers') renderLayersPanel();
-    });
+    } catch (err) {
+        traceLog('flipActiveLayerV: threw ' + (err && err.message));
+        console.error('flip vertical failed:', err);
+    }
+    if (openPanelName === 'layers') renderLayersPanel();
 }
 
 // Tap-twice confirm for rectangle-selection delete (native confirm()
@@ -5483,7 +5562,7 @@ function setupDrawingEvents() {
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getEventPos(e);
         if(currentTool==='brush'||currentTool==='hardEraser'||currentTool==='softEraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
-        if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
+        if (x >= 0 && x < gridW && y >= 0 && y < gridH && !isPointOutsidePortraitIsolation(x, y)) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
             pixelCursor.style.top = (y * scale) + "px";
@@ -6298,12 +6377,7 @@ function handleImportImageClick() {
 // land correctly on the grid regardless of whether the canvas ended up
 // the image's native size or a downscaled version of it.
 function pixelLayerFromImage(name, img, w, h) {
-    // DIAGNOSTIC BUILD ONLY -- forces ImageLayer regardless of the real
-    // condition below, purely so a performance test can measure a
-    // correctly-classified large-canvas flip. Not a real fix for the
-    // classification bug (see handoff section 42.1) -- do not ship this.
-    const forceImageLayerForPerfTest = shouldUseImageMode(w, h) && window.ImageLayer;
-    const l = forceImageLayerForPerfTest ? new ImageLayer(name, w, h) : (shouldUseImageMode(w, h) && window.ImageLayer && selectedProfile !== 'portrait' && selectedProfile !== 'sprite') ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
+    const l = (shouldUseImageMode(w, h) && window.ImageLayer && selectedProfile !== 'portrait' && selectedProfile !== 'sprite') ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
     if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
@@ -6925,7 +6999,7 @@ function openNewCanvasSheet() {
     hintEl.id = 'ncm-hint';
     hintEl.style.cssText = 'font-size:9px; color:#888; text-align:center; min-height:18px;';
     hintEl.textContent = selectedProfile === 'portrait' ? '40\u00D740 tile palette: each tile has its own 15-colour limit.'
-        : selectedProfile === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : '≤999px uses pixel rendering; larger canvases use image rendering.';
+        : selectedProfile === 'sprite' ? 'Adds a Frames strip for flipbook animation.' : '';
     sheet.appendChild(hintEl);
 
     // Canvas size fields. Touch opens the built-in numeric keypad; a physical
@@ -7409,6 +7483,15 @@ requestAnimationFrame(() => {
     handleToolBtn('brush');
     [['pixel-brush-size','brushSize'],['pixel-brush-softness','brushSoftness'],['pixel-soft-eraser-size','softEraserSize'],['pixel-soft-eraser-softness','softEraserSoftness']].forEach(([id,k])=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{window.pixelToolState[k]=Number(e.value);updateUI();});});
     handleToolBtn('pencil');
+    // Populate the Debug drawer's version label immediately at boot, rather
+    // than waiting for the first time someone opens the drawer (which also
+    // sets it, via refreshDebugStats) -- belt and suspenders, since knowing
+    // which build is loaded is exactly the kind of thing that should never
+    // depend on remembering to open a panel first.
+    const versionLabel = document.getElementById('buildVersionLabel');
+    if (versionLabel) versionLabel.textContent = 'Build: ' + BUILD_VERSION;
+    const hubVersionLabel = document.getElementById('hubVersionLabel');
+    if (hubVersionLabel) hubVersionLabel.textContent = BUILD_VERSION;
     showGallery();
 });
 
