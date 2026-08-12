@@ -338,6 +338,14 @@
         .side-drawer.left { left: 0; border-right: 1px solid #333; transform: translateX(-100%); }
         .side-drawer.right { right: 0; border-left: 1px solid #333; transform: translateX(100%); }
         .side-drawer.open { transform: translateX(0); }
+        /* Debug drawer sits above every other overlay in the app (modals,
+           keyboards, confirm sheets) but below the global command palette
+           (z-index 3000), which is meant to be reachable from literally
+           anywhere, including while debugging. #toolsDrawer, sharing the
+           same .side-drawer base class, is deliberately left at the
+           normal 950 tier -- this override is Debug-specific. */
+        #debugDrawer { z-index: 9000; }
+        #drawerBackdrop.debug-open { z-index: 8999; }
 
         #rotationResetFab {
             position: fixed; z-index: 870; display: none;
@@ -501,6 +509,7 @@
     <div id="gallery-screen" style="display:flex;">
         <div id="gallery-header">
             <h1>🎨 Pixel Art Hub</h1>
+            <button class="btn" id="hubDebugBtn" onclick="uiAction(() => toggleDrawer('debug'))" style="flex:0 0 auto; padding:8px 14px;">⚙️ DEBUG</button>
         </div>
 
         <div id="gallery-grid">
@@ -616,7 +625,6 @@
         </div>
 
         <div id="panelBackdrop"></div>
-        <div id="drawerBackdrop"></div>
         <div id="leftEdgeZone"></div>
         <div id="rightEdgeZone"></div>
 
@@ -856,34 +864,6 @@
             </div>
         </div>
 
-        <div class="side-drawer right" id="debugDrawer">
-            <div id="debugDrawerControls" style="position:sticky; top:0; z-index:2; background:#1c1c1c; display:flex; flex-direction:column; gap:8px; padding-bottom:4px;">
-                <div class="panel-title">JS Logs</div>
-                <div id="debugStats"></div>
-                <div class="row">
-                    <button class="btn" onclick="uiAction(refreshDebugStats)">🔄 REFRESH STATS</button>
-                </div>
-                <div class="panel-subtitle">Rendering</div>
-                <div class="row">
-                    <button class="btn" id="debugVectorToggleBtn" onclick="uiAction(toggleDebugUnrestrictedVector)">🐛 UNRESTRICTED VECTOR</button>
-                </div>
-                <div class="row">
-                    <button class="btn" id="forceKeyboardToggleBtn" onclick="uiAction(toggleForceCustomKeyboard)">⌨️ FORCE BUILT-IN KEYBOARD</button>
-                </div>
-                <div class="panel-subtitle">Log Capture</div>
-                <div class="row">
-                    <button class="btn" id="logToggle-touch" onclick="uiAction(() => setLogToggle('touch', !logTouchEnabled))">👆 TOUCH</button>
-                    <button class="btn" id="logToggle-js" onclick="uiAction(() => setLogToggle('js', !logJsEnabled))">📜 LOGS</button>
-                    <button class="btn" id="logToggle-trace" onclick="uiAction(() => setLogToggle('trace', !logTraceEnabled))">🔍 TRACE</button>
-                </div>
-                <div class="row">
-                    <button class="btn" id="exportLogBtn" onclick="uiAction(exportLogToClipboard)">📋 COPY LOG</button>
-                    <button class="btn" onclick="uiAction(clearDebugLog)">🧹 CLEAR LOG</button>
-                </div>
-            </div>
-            <div id="debugLog"></div>
-        </div>
-
         <div id="floatingBar">
             <button class="fbtn" id="tab-tools" data-panel-tab="tools" onclick="toggleDrawer('tools')">🛠️ TOOLS</button>
             <button class="fbtn" id="tab-view" data-panel-tab="view" onclick="togglePanel('view')">🔍 VIEW</button>
@@ -901,6 +881,40 @@
         <button id="redoFab" onclick="uiAction(redo)">↪️</button>
     </div>
 
+    <div id="drawerBackdrop"></div>
+    <!-- Debug drawer: kept outside #main-app, alongside the on-screen keyboard, so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
+        <div class="side-drawer right" id="debugDrawer">
+            <div id="debugDrawerControls" style="position:sticky; top:0; z-index:2; background:#1c1c1c; display:flex; flex-direction:column; gap:8px; padding-bottom:4px;">
+                <div class="panel-title">JS Logs</div>
+                <div id="debugStats"></div>
+                <div class="row">
+                    <button class="btn" onclick="uiAction(refreshDebugStats)">🔄 REFRESH STATS</button>
+                </div>
+                <div class="panel-subtitle">Rendering</div>
+                <div class="row">
+                    <button class="btn" id="debugVectorToggleBtn" onclick="uiAction(toggleDebugUnrestrictedVector)">🐛 UNRESTRICTED VECTOR</button>
+                </div>
+                <div class="row">
+                    <button class="btn" id="forceKeyboardToggleBtn" onclick="uiAction(toggleForceCustomKeyboard)">⌨️ FORCE BUILT-IN KEYBOARD</button>
+                </div>
+                <div class="panel-subtitle">History Memory Budget</div>
+                <div class="row" style="align-items:center; gap:6px;">
+                    <input type="range" id="historyMemoryBudgetSlider" min="8" max="512" step="8" oninput="uiAction(() => setHistoryMemoryBudgetMiB(this.value))" style="flex:1;">
+                    <span id="historyMemoryBudgetLabel" style="font-size:10px;color:#ccc;width:52px;text-align:right;">64 MiB</span>
+                </div>
+                <div class="panel-subtitle">Log Capture</div>
+                <div class="row">
+                    <button class="btn" id="logToggle-touch" onclick="uiAction(() => setLogToggle('touch', !logTouchEnabled))">👆 TOUCH</button>
+                    <button class="btn" id="logToggle-js" onclick="uiAction(() => setLogToggle('js', !logJsEnabled))">📜 LOGS</button>
+                    <button class="btn" id="logToggle-trace" onclick="uiAction(() => setLogToggle('trace', !logTraceEnabled))">🔍 TRACE</button>
+                </div>
+                <div class="row">
+                    <button class="btn" id="exportLogBtn" onclick="uiAction(exportLogToClipboard)">📋 COPY LOG</button>
+                    <button class="btn" onclick="uiAction(clearDebugLog)">🧹 CLEAR LOG</button>
+                </div>
+            </div>
+            <div id="debugLog"></div>
+        </div>
 
     <!-- Global on-screen keyboard: kept outside #main-app so it remains usable from the Hub. -->
     <div id="keyboardBackdrop"></div>
@@ -935,8 +949,9 @@ function sameImageTile(a,b){
 /* ============================================================
    IMAGE RENDERERS
    Image/Photo layers keep their authoritative pixels on the CPU so
-   undo/redo never depends on GPU state. The visible canvas can be
-   rendered by WebGL2 when available, with a Canvas2D fallback.
+   undo/redo never depends on GPU state. The visible canvas is rendered
+   via Canvas2D (a prior WebGL2 renderer was removed -- see the comment
+   above createImageRenderer for why).
    ============================================================ */
 class Canvas2DImageRenderer {
     constructor(layer) {
@@ -960,163 +975,17 @@ class Canvas2DImageRenderer {
     destroy() {}
 }
 
-class WebGL2ImageRenderer {
-    constructor(layer) {
-        this.layer = layer;
-        this.canvas = layer.el;
-        this.gl = this.canvas.getContext('webgl2', {
-            alpha: true,
-            antialias: false,
-            depth: false,
-            stencil: false,
-            premultipliedAlpha: false,
-            preserveDrawingBuffer: false
-        });
-        if (!this.gl) throw new Error('WebGL2 unavailable');
-        this.kind = 'webgl2';
-        this.texture = null;
-        this.program = null;
-        this.positionBuffer = null;
-        this.aPosition = -1;
-        this.aTexCoord = -1;
-        this.uTexture = null;
-        this._buildPipeline();
-        this.canvas.addEventListener('webglcontextlost', (e) => {
-            e.preventDefault();
-            this.contextLost = true;
-        }, { passive: false });
-        this.canvas.addEventListener('webglcontextrestored', () => {
-            this.contextLost = false;
-            try {
-                this._buildPipeline();
-                this.render(this.layer.imageData);
-            } catch (err) {
-                console.warn('WebGL2 image renderer could not restore context:', err);
-            }
-        });
-    }
-    _compile(type, source) {
-        const gl = this.gl;
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            const info = gl.getShaderInfoLog(shader) || 'unknown shader error';
-            gl.deleteShader(shader);
-            throw new Error(info);
-        }
-        return shader;
-    }
-    _buildPipeline() {
-        const gl = this.gl;
-        const vs = this._compile(gl.VERTEX_SHADER, `#version 300 es
-            in vec2 aPosition;
-            in vec2 aTexCoord;
-            out vec2 vTexCoord;
-            void main(){
-                gl_Position = vec4(aPosition, 0.0, 1.0);
-                vTexCoord = aTexCoord;
-            }`);
-        const fs = this._compile(gl.FRAGMENT_SHADER, `#version 300 es
-            precision mediump float;
-            uniform sampler2D uTexture;
-            in vec2 vTexCoord;
-            out vec4 outColor;
-            void main(){ outColor = texture(uTexture, vTexCoord); }`);
-        const program = gl.createProgram();
-        gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
-        gl.deleteShader(vs); gl.deleteShader(fs);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            const info = gl.getProgramInfoLog(program) || 'unknown program link error';
-            gl.deleteProgram(program);
-            throw new Error(info);
-        }
-        this.program = program;
-        this.aPosition = gl.getAttribLocation(program, 'aPosition');
-        this.aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
-        this.uTexture = gl.getUniformLocation(program, 'uTexture');
-        if (!this.positionBuffer) this.positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        // Two triangles. Texture coordinates are flipped vertically once
-        // during texture upload so the ImageData orientation remains natural.
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            -1,-1, 0,0,   1,-1, 1,0,  -1,1, 0,1,
-            -1,1,  0,1,   1,-1, 1,0,   1,1, 1,1
-        ]), gl.STATIC_DRAW);
-        if (!this.texture) this.texture = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this.texture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    }
-    resize(w, h) {
-        this.canvas.width = w;
-        this.canvas.height = h;
-        if (this.gl) this.gl.viewport(0, 0, w, h);
-    }
-    render(imageData) {
-        if (this.contextLost) return;
-        const gl = this.gl;
-        if (this.canvas.width !== imageData.width || this.canvas.height !== imageData.height) this.resize(imageData.width, imageData.height);
-        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-        gl.useProgram(this.program);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(this.aPosition);
-        gl.vertexAttribPointer(this.aPosition, 2, gl.FLOAT, false, 16, 0);
-        gl.enableVertexAttribArray(this.aTexCoord);
-        gl.vertexAttribPointer(this.aTexCoord, 2, gl.FLOAT, false, 16, 8);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, imageData.width, imageData.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, imageData.data);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.uniform1i(this.uTexture, 0);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-    }
-    renderFromCanvas(source) {
-        if (this.contextLost) return;
-        const gl = this.gl;
-        if (this.canvas.width !== source.width || this.canvas.height !== source.height) this.resize(source.width, source.height);
-        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-        gl.useProgram(this.program);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(this.aPosition); gl.vertexAttribPointer(this.aPosition, 2, gl.FLOAT, false, 16, 0);
-        gl.enableVertexAttribArray(this.aTexCoord); gl.vertexAttribPointer(this.aTexCoord, 2, gl.FLOAT, false, 16, 8);
-        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.uniform1i(this.uTexture, 0);
-        gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES,0,6);
-    }
-    destroy() {
-        if (!this.gl) return;
-        if (this.texture) this.gl.deleteTexture(this.texture);
-        if (this.positionBuffer) this.gl.deleteBuffer(this.positionBuffer);
-        if (this.program) this.gl.deleteProgram(this.program);
-        this.texture = null; this.positionBuffer = null; this.program = null;
-    }
-}
-
-const IMAGE_RENDERER_PREFERENCE = 'auto'; // 'auto' | 'webgl2' | 'canvas2d'
-// Currently unused anywhere in the app -- checked and deliberately kept
-// (not dead code to remove) rather than wired in, since doing so would be
-// a feature addition (e.g. surfacing WebGL2-vs-Canvas2D in the Debug stats
-// panel), not a pure cleanup. Flagged here so a future dead-code scan
-// doesn't need to re-investigate it from scratch.
-window.getImageRendererInfo = function(layer) {
-    return layer && layer instanceof ImageLayer ? { mode: layer.rendererMode, preference: IMAGE_RENDERER_PREFERENCE } : null;
-};
+// Only rendering path for large (>999px) canvases is Canvas2D. A prior
+// WebGL2 renderer was removed here: its fragment shader did nothing but a
+// plain, unfiltered texture sample (no blending/filtering work that would
+// actually benefit from the GPU), while WebGL2 contexts measurably cost
+// more memory than Canvas2D for the same canvas dimensions and carry a
+// documented iOS Safari memory-leak-on-resize risk -- the opposite of the
+// crash-safety property it was originally added for. createImageRenderer
+// is kept as a thin factory (rather than constructing Canvas2DImageRenderer
+// directly at the one call site) so ImageLayer doesn't need to know which
+// concrete renderer class it's using.
 function createImageRenderer(layer) {
-    if (IMAGE_RENDERER_PREFERENCE !== 'canvas2d') {
-        try { return new WebGL2ImageRenderer(layer); }
-        catch (err) {
-            if (IMAGE_RENDERER_PREFERENCE === 'webgl2') console.warn('WebGL2 image renderer unavailable; using Canvas2D fallback:', err);
-        }
-    }
     return new Canvas2DImageRenderer(layer);
 }
 
@@ -1133,9 +1002,10 @@ class ImageLayer {
       this.type = 'image';
       this.id = 'image_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-      // el is always the visible layer canvas. For WebGL2 rendering the
-      // authoritative CPU canvas is kept separately so tools and undo can
-      // continue using normal Canvas2D/ImageData operations.
+      // el is always the visible layer canvas, kept separate from the
+      // authoritative CPU canvas (cpuCanvas/imageData below) so tools and
+      // undo can continue using normal Canvas2D/ImageData operations
+      // regardless of how el itself gets drawn.
       this.el = document.createElement('canvas');
       this.el.width = width;
       this.el.height = height;
@@ -1282,11 +1152,13 @@ class ImageLayer {
    Large-canvas rendering policy:
    - Pixel mode is retained for canvases whose width AND height are <= 999.
    - Image mode is selected when either dimension is > 999.
-   The renderer-selection helper is deliberately isolated so the Photo/Image
-   profile can use WebGL2 without changing the document or undo model.
-   Pixel Art continues to use Canvas2D; ImageLayer uses WebGL2 when available
-   and falls back to Canvas2D. The CPU-side ImageData remains authoritative
-   for editing and undo/redo.
+   The renderer-selection helper (createImageRenderer) is deliberately
+   isolated so ImageLayer doesn't need to know or care which concrete
+   renderer class it's using -- currently always Canvas2D (a prior WebGL2
+   option was removed; see the comment above createImageRenderer for why).
+   Pixel Art continues to use Canvas2D via PixelLayer's own direct
+   ImageData drawing, unrelated to this ImageLayer renderer. The CPU-side
+   ImageData remains authoritative for editing and undo/redo either way.
 */
 const IMAGE_MODE_MAX_DIMENSION = 999;
 
@@ -1430,7 +1302,6 @@ function estimateMemoryBytes() {
     }));
     return bytes;
 }
-// Rebuilds the stats readout in the Debug panel (canvas size, layer/frame counts, undo depth, memory estimate).
 // Debug-only: switches vector layers between the normal pixel-snapped
 // rendering and the old smooth/display-resolution one, for comparison.
 function toggleDebugUnrestrictedVector() {
@@ -1454,16 +1325,28 @@ function refreshDebugStats() {
     if (!el) return;
     const totalLayers = frames.reduce((n, f) => n + f.layers.length, 0);
     const mb = (estimateMemoryBytes() / (1024 * 1024)).toFixed(2);
+    const historyMb = (historyMemoryBytes / (1024 * 1024)).toFixed(2);
+    const budgetMb = Math.round(HISTORY_MEMORY_BUDGET / 1024 / 1024);
     el.innerHTML =
         'Profile: ' + (selectedProfile === 'photo' ? 'Pixel Art' : selectedProfile) + '<br>' +
-        'Canvas: ' + gridW + '&times;' + gridH + '<br>' +
+        'Canvas: ' + (gridW && gridH ? (gridW + '&times;' + gridH) : 'none open') + '<br>' +
         'Rendering: ' + getCanvasRenderingModeLabel(gridW, gridH) + '<br>' +
         'Zoom: ' + scale + 'x<br>' +
         'Frames: ' + frames.length + ' (active #' + (activeFrameIndex + 1) + ')<br>' +
         'Layers this frame: ' + layers.length + ' (all frames: ' + totalLayers + ')<br>' +
         'Undo stack: ' + undoStack.length + ' / Redo: ' + redoStack.length + '<br>' +
+        'History memory: ~' + historyMb + ' / ' + budgetMb + ' MiB<br>' +
         'Est. raster memory: ~' + mb + ' MB (our own count -- iOS/WebKit has no memory API to read from)<br>' +
         'devicePixelRatio: ' + (window.devicePixelRatio || 1);
+    // Keep the History Memory Budget slider in sync with the live value --
+    // it can change from setHistoryMemoryBudgetMiB itself (normal case) but
+    // also needs to reflect the current value whenever the Debug drawer is
+    // (re)opened, since the slider's DOM value doesn't persist across
+    // drawer close/reopen the way the underlying variable does.
+    const slider = document.getElementById('historyMemoryBudgetSlider');
+    const label = document.getElementById('historyMemoryBudgetLabel');
+    if (slider && document.activeElement !== slider) slider.value = budgetMb;
+    if (label) label.textContent = budgetMb + ' MiB';
 }
 
 /* ============================================================
@@ -1848,8 +1731,29 @@ let pendingImportKind = 'pixel';
 
 let undoStack = [], redoStack = [];
 let MAX_UNDO = 40; // action cap; the memory budget is the primary safety limit
-const HISTORY_MEMORY_BUDGET = 64 * 1024 * 1024; // 64 MiB
-const PHOTO_HISTORY_MEMORY_BUDGET = 128 * 1024 * 1024; // 128 MiB cap for Photo history within the shared budget
+// Single unified budget for all history, regardless of layer/profile type.
+// A separate PHOTO_HISTORY_MEMORY_BUDGET (128 MiB) used to exist here for
+// Photo/large-canvas history specifically, but pruneHistoryLimit() never
+// actually checked it -- only this constant was ever enforced, so the
+// "Photo gets more headroom" idea was dead in practice. Removed rather
+// than wired in: one adjustable budget is simpler than maintaining two,
+// especially now that it's live-adjustable (see setHistoryMemoryBudgetMiB
+// and the History Memory Budget slider in the Debug drawer) rather than
+// a fixed constant either way.
+let HISTORY_MEMORY_BUDGET = 64 * 1024 * 1024; // 64 MiB default
+const HISTORY_MEMORY_BUDGET_MIN_MB = 8, HISTORY_MEMORY_BUDGET_MAX_MB = 512;
+// Applies a new history memory budget (in MiB) from the Debug drawer slider,
+// clamped to a sane range, and re-runs the prune immediately so a lowered
+// budget takes effect right away rather than waiting for the next edit.
+function setHistoryMemoryBudgetMiB(mb) {
+    const clamped = Math.max(HISTORY_MEMORY_BUDGET_MIN_MB, Math.min(HISTORY_MEMORY_BUDGET_MAX_MB, Number(mb) || 64));
+    HISTORY_MEMORY_BUDGET = clamped * 1024 * 1024;
+    const label = document.getElementById('historyMemoryBudgetLabel');
+    if (label) label.textContent = clamped + ' MiB';
+    pruneHistoryLimit();
+    if (openPanelName === 'history') renderUndoHistory();
+    refreshDebugStats();
+}
 let historyMemoryBytes = 0;
 let historyRoot = null;
 let historyCurrent = null;
@@ -2472,7 +2376,7 @@ function renderUndoHistory() {
     const controls=document.createElement('div');
     controls.style.cssText='display:flex;gap:5px;align-items:center;margin-bottom:5px;';
     const status=document.createElement('span'); status.style.cssText='font-size:10px;color:#aaa;';
-    status.textContent='Linear history • '+(Math.round(historyMemoryBytes/1024/1024*10)/10)+' / 64 MiB';
+    status.textContent='Linear history • '+(Math.round(historyMemoryBytes/1024/1024*10)/10)+' / '+Math.round(HISTORY_MEMORY_BUDGET/1024/1024)+' MiB';
     controls.append(status); list.appendChild(controls);
 
     if (!historyRoot) resetHistory();
@@ -2557,7 +2461,14 @@ function openDrawer(which) {
     document.getElementById(which + 'Drawer').classList.add('open');
     const tab = document.getElementById('tab-' + which);
     if (tab) tab.classList.add('active');
-    document.getElementById('drawerBackdrop').classList.add('open');
+    const backdrop = document.getElementById('drawerBackdrop');
+    backdrop.classList.add('open');
+    // Debug sits well above every other overlay (see #debugDrawer's
+    // z-index override); its backdrop needs to rise to match, or the
+    // drawer would float above a backdrop still sitting at the normal
+    // ~950 tier. Tools stays at the normal tier, so this only applies
+    // when Debug specifically is the one opening.
+    backdrop.classList.toggle('debug-open', which === 'debug');
     drawerOpenName = which;
     if (which === 'debug') { refreshDebugStats(); renderLogToggleButtons(); }
 }
@@ -2565,7 +2476,9 @@ function openDrawer(which) {
 function closeDrawer() {
     document.querySelectorAll('.side-drawer').forEach(d => d.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
-    document.getElementById('drawerBackdrop').classList.remove('open');
+    const backdrop = document.getElementById('drawerBackdrop');
+    backdrop.classList.remove('open');
+    backdrop.classList.remove('debug-open');
     drawerOpenName = null;
 }
 // Opens the named side drawer, or closes it if it was already open (tab button behavior).
@@ -2598,7 +2511,7 @@ function setupEdgeSwipe(zoneId, drawerName, expectDirection) {
 /* ============================================================
    DOCUMENT STATE -> RENDERER INVALIDATION -> RENDER
    V12 centralizes the final presentation step after document state changes.
-   Document data remains authoritative; Canvas2D/WebGL2 are render targets.
+   Document data remains authoritative; Canvas2D is the render target.
    ============================================================ */
 const rendererInvalidationQueue = new Set();
 let rendererInvalidationFrame = 0;
@@ -3203,8 +3116,9 @@ function continueEditing() {
 function createBaseRasterLayer(name, w, h) {
     // Pixel Art is now the user-facing profile for both renderers. The
     // renderer is selected purely by canvas dimensions: <=999 on both axes
-    // uses PixelLayer/Canvas2D; any dimension >999 uses ImageLayer/WebGL2
-    // (with its Canvas2D fallback). Portrait and Sprite remain PixelLayer-based.
+    // uses PixelLayer/Canvas2D; any dimension >999 uses ImageLayer, also
+    // Canvas2D (a prior WebGL2 option was removed -- see the comment above
+    // createImageRenderer for why). Portrait and Sprite remain PixelLayer-based.
     if (selectedProfile === 'portrait' || selectedProfile === 'sprite') {
         return new PixelLayer(name, w, h);
     }
@@ -4029,7 +3943,7 @@ function jumpToTreeNode(node){
 function openGlobalCommandPalette(){
     let overlay=document.getElementById('globalCommandPalette');
     if(!overlay){
-        overlay=document.createElement('div');overlay.id='globalCommandPalette';overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px;';
+        overlay=document.createElement('div');overlay.id='globalCommandPalette';overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px;';
         const panel=document.createElement('div');panel.style.cssText='width:min(720px,100%);max-height:70vh;overflow:auto;background:#1d1d1d;border:1px solid #555;border-radius:16px;padding:14px;';
         panel.innerHTML='<div style="font-weight:700;color:#fff;margin-bottom:8px;">COMMAND PALETTE</div><input id="globalCommandInput" class="num-input" style="width:100%;height:44px;text-align:left;padding:0 12px;" placeholder="Search tools, commands, layers, groups…" autocomplete="off"><div id="globalCommandResults" class="layer-search-results"></div>';
         overlay.appendChild(panel);document.body.appendChild(overlay); overlay.addEventListener('click',e=>{if(e.target===overlay)closeGlobalCommandPalette();});
@@ -4972,52 +4886,84 @@ function deselect() {
     updateSelectionBox();
 }
 // Erases (sets to transparent) every pixel inside the current selection on the active layer.
+// Runs a synchronous, potentially-slow operation (large-canvas flip, etc.)
+// with a "loading" button state around it. flipHorizontal/flipVertical on
+// ImageLayer are plain nested-loop pixel copies with no yield point, so the
+// browser genuinely cannot repaint mid-operation -- the only way to show
+// "loading" at all is to relabel+disable the button, force a repaint via
+// requestAnimationFrame + a zero-delay timeout (two separate yields: rAF
+// alone can still land before the next paint on some browsers), THEN run
+// the operation, THEN restore the button. On a small/fast canvas this
+// means "loading" flashes briefly rather than staying invisible; on a
+// large one it genuinely stays up for as long as the flip takes.
+function runWithLoadingButtonState(btnId, loadingText, runOperation) {
+    const btn = document.getElementById(btnId);
+    const originalText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = loadingText; }
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            try {
+                runOperation();
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = originalText; }
+            }
+        }, 0);
+    });
+}
 // Flips the active layer left-right. Pixel layers flip their actual data
 // (undoable); reference layers flip visually via CSS transform.
 function flipActiveLayerH() {
-    const layer = activeLayer();
-    traceLog('flipActiveLayerH called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
-    if (!layer) { traceLog('flipActiveLayerH: no active layer, aborting'); return; }
-    try {
-        if (typeof layer.flipHorizontal === 'function' && isPixelLike(layer)) {
-            traceLog('flipActiveLayerH: taking pixel-data flip branch');
-            const snap = beginEdit();
-            layer.flipHorizontal();
-            commitEdit(snap);
-        } else {
-            traceLog('flipActiveLayerH: taking CSS transform flip branch, flipH before=' + layer.flipH);
-            layer.flipH = !layer.flipH;
-            if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
-            refreshHookedComposites();
+    runWithLoadingButtonState('flipHorizontalBtn', '\u23f3 LOADING\u2026', () => {
+        const layer = activeLayer();
+        traceLog('flipActiveLayerH called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
+        if (!layer) { traceLog('flipActiveLayerH: no active layer, aborting'); return; }
+        try {
+            if (typeof layer.flipHorizontal === 'function' && isPixelLike(layer)) {
+                traceLog('flipActiveLayerH: taking pixel-data flip branch');
+                const _perfStart = performance.now();
+                const snap = beginEdit();
+                layer.flipHorizontal();
+                commitEdit(snap);
+                traceLog('flipActiveLayerH: PERF flip+undo-capture took ' + (performance.now() - _perfStart).toFixed(2) + 'ms (layer.type=' + layer.type + ', ' + layer.gridW + 'x' + layer.gridH + ')');
+            } else {
+                traceLog('flipActiveLayerH: taking CSS transform flip branch, flipH before=' + layer.flipH);
+                layer.flipH = !layer.flipH;
+                if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
+                refreshHookedComposites();
+            }
+        } catch (err) {
+            traceLog('flipActiveLayerH: threw ' + (err && err.message));
+            console.error('flip horizontal failed:', err);
         }
-    } catch (err) {
-        traceLog('flipActiveLayerH: threw ' + (err && err.message));
-        console.error('flip horizontal failed:', err);
-    }
-    if (openPanelName === 'layers') renderLayersPanel();
+        if (openPanelName === 'layers') renderLayersPanel();
+    });
 }
 // Flips the active layer top-bottom. See flipActiveLayerH() for details.
 function flipActiveLayerV() {
-    const layer = activeLayer();
-    traceLog('flipActiveLayerV called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
-    if (!layer) { traceLog('flipActiveLayerV: no active layer, aborting'); return; }
-    try {
-        if (typeof layer.flipVertical === 'function' && isPixelLike(layer)) {
-            traceLog('flipActiveLayerV: taking pixel-data flip branch');
-            const snap = beginEdit();
-            layer.flipVertical();
-            commitEdit(snap);
-        } else {
-            traceLog('flipActiveLayerV: taking CSS transform flip branch, flipV before=' + layer.flipV);
-            layer.flipV = !layer.flipV;
-            if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
-            refreshHookedComposites();
+    runWithLoadingButtonState('flipVerticalBtn', '\u23f3 LOADING\u2026', () => {
+        const layer = activeLayer();
+        traceLog('flipActiveLayerV called, activeLayer=' + describeEl(layer && layer.el) + ' type=' + (layer && layer.type) + ' isPixelLike=' + (layer && isPixelLike(layer)));
+        if (!layer) { traceLog('flipActiveLayerV: no active layer, aborting'); return; }
+        try {
+            if (typeof layer.flipVertical === 'function' && isPixelLike(layer)) {
+                traceLog('flipActiveLayerV: taking pixel-data flip branch');
+                const _perfStart = performance.now();
+                const snap = beginEdit();
+                layer.flipVertical();
+                commitEdit(snap);
+                traceLog('flipActiveLayerV: PERF flip+undo-capture took ' + (performance.now() - _perfStart).toFixed(2) + 'ms (layer.type=' + layer.type + ', ' + layer.gridW + 'x' + layer.gridH + ')');
+            } else {
+                traceLog('flipActiveLayerV: taking CSS transform flip branch, flipV before=' + layer.flipV);
+                layer.flipV = !layer.flipV;
+                if (typeof layer.layoutCSS === 'function') layer.layoutCSS();
+                refreshHookedComposites();
+            }
+        } catch (err) {
+            traceLog('flipActiveLayerV: threw ' + (err && err.message));
+            console.error('flip vertical failed:', err);
         }
-    } catch (err) {
-        traceLog('flipActiveLayerV: threw ' + (err && err.message));
-        console.error('flip vertical failed:', err);
-    }
-    if (openPanelName === 'layers') renderLayersPanel();
+        if (openPanelName === 'layers') renderLayersPanel();
+    });
 }
 
 // Tap-twice confirm for rectangle-selection delete (native confirm()
@@ -6352,7 +6298,12 @@ function handleImportImageClick() {
 // land correctly on the grid regardless of whether the canvas ended up
 // the image's native size or a downscaled version of it.
 function pixelLayerFromImage(name, img, w, h) {
-    const l = (shouldUseImageMode(w, h) && window.ImageLayer && selectedProfile !== 'portrait' && selectedProfile !== 'sprite') ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
+    // DIAGNOSTIC BUILD ONLY -- forces ImageLayer regardless of the real
+    // condition below, purely so a performance test can measure a
+    // correctly-classified large-canvas flip. Not a real fix for the
+    // classification bug (see handoff section 42.1) -- do not ship this.
+    const forceImageLayerForPerfTest = shouldUseImageMode(w, h) && window.ImageLayer;
+    const l = forceImageLayerForPerfTest ? new ImageLayer(name, w, h) : (shouldUseImageMode(w, h) && window.ImageLayer && selectedProfile !== 'portrait' && selectedProfile !== 'sprite') ? new ImageLayer(name, w, h) : new PixelLayer(name, w, h);
     if (l.type === 'image') { l.loadFromImage(img); return l; }
     const tmp = document.createElement('canvas');
     tmp.width = w; tmp.height = h;
