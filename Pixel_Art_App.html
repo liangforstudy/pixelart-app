@@ -41,7 +41,7 @@
         .profile-btn.active { background: #0078d4; border-color: #fff; }
         #profileHint { font-size: 9px; color: #888; width: 260px; text-align: center; min-height: 24px; }
 
-        #main-app { display: none; }
+        #pixel-canvas-screen { display: none; }
 
         #viewport {
             position: fixed; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch;
@@ -52,9 +52,9 @@
         .canvas-container {
             position: relative; border: 2px solid #333; flex-shrink: 0;
             touch-action: none; border-radius: 8px; overflow: hidden;
-            background-color: #ffffff;
-            background-image: linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0),
-                              linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0);
+            background-color: #808080;
+            background-image: linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666),
+                              linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666);
             cursor: none;
         }
 
@@ -191,6 +191,15 @@
         .spriteAnimFieldRow input[type="range"] { flex: 1; margin-left: 10px; }
         #spriteAnimLayerToggles { flex: none; display: flex; gap: 8px; }
         #spriteAnimLayerToggles .btn.active { background: #0078d4; }
+        #spriteAnimEditSection { flex: none; }
+        #spriteAnimEditButtons { display: flex; gap: 8px; }
+        #spriteAnimFrameEditDoneBtn {
+            position: fixed; z-index: 1200; display: none;
+            top: max(16px, env(safe-area-inset-top)); right: 12px;
+            background: #1fa34a; border: 1px solid #2ecc60; color: #fff;
+            font-size: 13px; font-weight: bold; border-radius: 20px;
+            padding: 10px 18px; align-items: center; gap: 6px;
+        }
         #spriteAnimToast {
             position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 1400;
             background: #232334; border: 1px solid #45475a; border-radius: 10px; padding: 12px 14px;
@@ -213,19 +222,19 @@
             align-items: center; justify-content: center;
             min-height: 120px;
         }
-        .gallery-card.new-canvas-card .nc-icon {
+        .gallery-card.new-canvas-card .new-canvas-card-icon {
             font-size: 32px; margin-bottom: 6px; line-height: 1;
         }
-        .gallery-card.new-canvas-card .nc-label {
+        .gallery-card.new-canvas-card .new-canvas-card-label {
             font-size: 13px; font-weight: 700; color: #0078d4; text-transform: uppercase; letter-spacing: 0.5px;
         }
-        .gallery-card.new-canvas-card .nc-hint {
+        .gallery-card.new-canvas-card .new-canvas-card-hint {
             font-size: 9px; color: #555; margin-top: 4px; text-align: center; padding: 0 8px;
         }
         .gallery-card .thumb-wrap {
-            width: 100%; aspect-ratio: 1 / 1; background: #fff;
-            background-image: linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0),
-                              linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0);
+            width: 100%; aspect-ratio: 1 / 1; background: #808080;
+            background-image: linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666),
+                              linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666);
             background-size: 10px 10px; background-position: 0 0, 5px 5px;
             overflow: hidden; display: flex; align-items: center; justify-content: center;
             flex: none;
@@ -577,7 +586,7 @@
         </div>
 
         <div id="gallery-grid">
-            <div class="gallery-card new-canvas-card"><div class="nc-icon">+</div><div class="nc-label">Pixel Art Hub</div><div class="nc-hint">Loading gallery…</div></div>
+            <div class="gallery-card new-canvas-card"><div class="new-canvas-card-icon">+</div><div class="new-canvas-card-label">Pixel Art Hub</div><div class="new-canvas-card-hint">Loading gallery…</div></div>
         </div>
     </div>
 
@@ -653,6 +662,14 @@
                 </div>
             </div>
 
+            <div id="spriteAnimEditSection">
+                <div class="spriteAnimSubLabel">Edit Sprite (current frame)</div>
+                <div id="spriteAnimEditButtons">
+                    <button class="btn" id="spriteAnimToolsBtn" onclick="uiAction(() => { spriteAnimEnterFrameEditMode(); openDrawer('tools'); })">🛠️ TOOLS</button>
+                    <button class="btn" id="spriteAnimLayersBtnRef" onclick="uiAction(() => { spriteAnimEnterFrameEditMode(); togglePanel('layers'); })">📚 LAYERS</button>
+                </div>
+            </div>
+
             <div id="spriteAnimLayerToggles">
                 <button class="btn" id="spriteAnimToggleShadowBtn" onclick="uiAction(toggleSpriteAnimShadowVisible)">🌑 SHADOW</button>
                 <button class="btn" id="spriteAnimToggleOffsetsBtn" onclick="uiAction(toggleSpriteAnimOffsetsVisible)">➕ OFFSETS</button>
@@ -700,7 +717,7 @@
     <!-- New Canvas / Import sheet (slides up over gallery) -->
     <div id="new-canvas-modal">
         <div id="new-canvas-sheet">
-            <!-- content injected by openNewCanvasSheet() -->
+            <!-- content injected by openNewCanvasModal() -->
         </div>
     </div>
 
@@ -787,7 +804,7 @@
         <div style="font-size:9px; color:#666; width:260px; text-align:center; margin-top:10px;">No persistent storage yet -- projects only exist as files you save/load yourself.</div>
     </div>
 
-    <div id="main-app">
+    <div id="pixel-canvas-screen">
         <div id="viewport">
             <div id="canvasWrap">
                 <div class="canvas-container" id="container">
@@ -1060,6 +1077,7 @@
         </div>
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
+        <button id="spriteAnimFrameEditDoneBtn" onclick="uiAction(spriteAnimExitFrameEditMode)" style="display:none;">✅ DONE EDITING FRAME</button>
         <div id="portraitIsolationHint">👇 Tap a tile to isolate it</div>
 
         <button id="undoFab" onclick="uiAction(undo)">↩️</button>
@@ -1067,7 +1085,7 @@
     </div>
 
     <div id="drawerBackdrop"></div>
-    <!-- Debug drawer: kept outside #main-app, alongside the on-screen keyboard, so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
+    <!-- Debug drawer: kept outside #pixel-canvas-screen, alongside the on-screen keyboard, so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
         <div class="side-drawer right" id="debugDrawer">
             <div id="debugDrawerControls" style="position:sticky; top:0; z-index:2; background:#1c1c1c; display:flex; flex-direction:column; gap:8px; padding-bottom:4px;">
                 <div class="panel-title">JS Logs</div>
@@ -1103,7 +1121,7 @@
             <div id="debugLog"></div>
         </div>
 
-    <!-- Global on-screen keyboard: kept outside #main-app so it remains usable from the Hub. -->
+    <!-- Global on-screen keyboard: kept outside #pixel-canvas-screen so it remains usable from the Hub. -->
     <div id="keyboardBackdrop"></div>
     <div id="customKeyboard"></div>
 
@@ -1114,7 +1132,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_32';
+const BUILD_VERSION = 'V1_35';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -2039,7 +2057,6 @@ function setHistoryMemoryBudgetMiB(mb) {
 let historyMemoryBytes = 0;
 let historyRoot = null;
 let historyCurrent = null;
-let historyBranchView = false; // retained for compatibility; history is now linear
 
 function resetHistory() {
     undoStack = [];
@@ -2312,7 +2329,7 @@ function renderCustomKeyboardPreview() {
 function openCustomKeyboard(initialValue, onCommit, onChange) {
     buildCustomKeyboard();
     // The custom keyboard is also used by the Gallery (for project rename).
-    // In the original layout it lives inside #main-app, which is display:none
+    // In the original layout it lives inside #pixel-canvas-screen, which is display:none
     // while the Gallery is visible. Move the fixed keyboard elements to body
     // once so iOS can actually display and receive their touch events.
     const kb = document.getElementById('customKeyboard');
@@ -2447,7 +2464,7 @@ function selectProfile(p, forcedWidth = null, forcedHeight = null) {
     document.querySelectorAll('.profile-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.profile === p)
     );
-    document.querySelectorAll('.ncm-profile-btn').forEach(b =>
+    document.querySelectorAll('.new-canvas-modal-profile-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.profile === p)
     );
 
@@ -2462,8 +2479,8 @@ function selectProfile(p, forcedWidth = null, forcedHeight = null) {
         ? 'Adds a Frames strip to the Layers panel for simple flipbook animation.'
         : '';
 
-    const ncmHint = document.getElementById('ncm-hint');
-    if (ncmHint) ncmHint.textContent = p === 'portrait'
+    const newCanvasModalHint = document.getElementById('new-canvas-modal-hint');
+    if (newCanvasModalHint) newCanvasModalHint.textContent = p === 'portrait'
         ? '40×40 tile palette: each tile has its own 15-colour limit.'
         : p === 'sprite'
         ? 'Adds a Frames strip for flipbook animation.'
@@ -3475,13 +3492,13 @@ function setupDigitKeyboardAdvance(root) {
 // main app and wires up its one-time event listeners. Safe to call
 // multiple times -- getElementById and the eventsInitialized guard make
 // it idempotent.
-function revealMainApp() {
+function revealPixelCanvas() {
     viewport = document.getElementById('viewport');
     container = document.getElementById('container');
     pixelCursor = document.getElementById('pixel-cursor');
     document.getElementById('gallery-screen').style.display = 'none';
     document.getElementById('init-screen').style.display = 'none';
-    document.getElementById('main-app').style.display = 'block';
+    document.getElementById('pixel-canvas-screen').style.display = 'block';
     if (!eventsInitialized) {
         setupDrawingEvents();
         setupPaletteDragEvents();
@@ -3499,7 +3516,7 @@ prepareSearchInputs();
 function continueEditing() {
     if (frames.length === 0) return;
     traceLog('continueEditing(): resuming without touching size');
-    revealMainApp();
+    revealPixelCanvas();
     if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     layoutAll();
@@ -3549,7 +3566,7 @@ function newCanvasCreation() {
         frames.forEach(f => f.layers.forEach(l => { if (l instanceof PixelLayer || l instanceof ImageLayer) l.resizeToCanvas(newW, newH); }));
         enforcePixelArtRendererForDimensions();
         document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
-        revealMainApp();
+        revealPixelCanvas();
         layoutAll();
         renderLayersPanel();
         renderFramesPanel();
@@ -3565,7 +3582,7 @@ function newCanvasCreation() {
 
     gridW = newW; gridH = newH;
     if(selectedProfile==='portrait'){ portraitTilePalettes=new Map([['0,0',[]]]); portraitActiveTileKey='0,0'; } else portraitTilePalettes=new Map();
-    revealMainApp(); // needed now so `container` is assigned before we append the base layer
+    revealPixelCanvas(); // needed now so `container` is assigned before we append the base layer
     const base = createBaseRasterLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
@@ -5379,35 +5396,6 @@ function deselect() {
     if (btn) btn.classList.remove('active');
     updateSelectionBox();
 }
-// STALE / NOT CURRENTLY CALLED as of V1_28. The flip buttons' loading-state
-// UI was removed at the person's request (V1_28) -- flipActiveLayerH/V now
-// run their logic directly instead of through this wrapper. Left in place
-// deliberately rather than deleted, since a genuinely slow synchronous
-// operation (e.g. a future large-canvas bulk tool) could still legitimately
-// want this exact pattern. Before reusing: confirm no other caller exists
-// (search for `runWithLoadingButtonState(` -- if this comment is the only
-// hit besides the definition, it is still unused) and re-verify with a
-// fresh diagnostic build the way flip's timing was verified in V1_26,
-// since real timing needs matter more than assuming this still applies.
-function runWithLoadingButtonState(btnId, loadingText, runOperation) {
-    const btn = document.getElementById(btnId);
-    const originalText = btn ? btn.textContent : null;
-    if (btn) { btn.disabled = true; btn.textContent = loadingText; }
-    const scheduledAt = performance.now();
-    requestAnimationFrame(() => {
-        setTimeout(() => {
-            const paintDelayMs = performance.now() - scheduledAt;
-            const opStart = performance.now();
-            try {
-                runOperation();
-            } finally {
-                const opMs = performance.now() - opStart;
-                traceLog(btnId + ': paint-tick delay ' + paintDelayMs.toFixed(1) + 'ms, operation ' + opMs.toFixed(1) + 'ms, total ' + (paintDelayMs + opMs).toFixed(1) + 'ms');
-                if (btn) { btn.disabled = false; btn.textContent = originalText; }
-            }
-        }, 0);
-    });
-}
 // Flips the active layer left-right. Pixel layers flip their actual data
 // (undoable); reference layers flip visually via CSS transform.
 function flipActiveLayerH() {
@@ -7016,7 +7004,7 @@ function importAsNewProjectFromImage(img, file) {
     gridW = w; gridH = h;
     closeNewCanvasModal(); // success: now safe to close
     hideGallery();
-    revealMainApp();
+    revealPixelCanvas();
     const importedName = currentProjectName || 'Untitled';
     const base = pendingImportKind === 'reference' ? new ReferenceLayer(importedName, img) : pixelLayerFromImage(importedName, img, w, h);
     layers = [base];
@@ -7164,7 +7152,7 @@ function loadProjectFile(file) {
         let data;
         try { data = JSON.parse(reader.result); } catch (e) { alert('Invalid project file.'); return; }
 
-        revealMainApp();
+        revealPixelCanvas();
         currentProjectName = (data.name || file.name.replace(/\.[^.]+$/, '') || 'Untitled').trim() || 'Untitled';
         frames.forEach(f => f.layers.forEach(l => l.el.remove()));
         gridW = data.gridW; gridH = data.gridH;
@@ -7362,7 +7350,7 @@ function openProjectFromStore(id) {
     resetSelectionState();
     transformMode = false;
     hideGallery();
-    revealMainApp();
+    revealPixelCanvas();
     if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
     // Re-attach all layer canvases to the container
     layers.forEach(l => { if (!container.contains(l.el)) container.appendChild(l.el); });
@@ -7386,29 +7374,29 @@ function renderGallery() {
     grid.innerHTML = '';
 
     // + New Canvas card (always first)
-    const newCard = document.createElement('div');
-    newCard.className = 'gallery-card new-canvas-card';
-    newCard.innerHTML = '<div class="nc-icon">+</div><div class="nc-label">New Canvas</div><div class="nc-hint">Long-press to import an image</div>';
-    let ncHoldTimer = null;
-    let ncLongPressed = false;
+    const newCanvasCardEl = document.createElement('div');
+    newCanvasCardEl.className = 'gallery-card new-canvas-card';
+    newCanvasCardEl.innerHTML = '<div class="new-canvas-card-icon">+</div><div class="new-canvas-card-label">New Canvas</div><div class="new-canvas-card-hint">Long-press to import an image</div>';
+    let newCanvasCardHoldTimer = null;
+    let newCanvasCardLongPressed = false;
     // Long-press = import image
-    const ncStartHold = (e) => {
-        ncLongPressed = false;
-        ncHoldTimer = setTimeout(() => {
-            ncHoldTimer = null;
-            ncLongPressed = true;
+    const newCanvasCardStartHold = (e) => {
+        newCanvasCardLongPressed = false;
+        newCanvasCardHoldTimer = setTimeout(() => {
+            newCanvasCardHoldTimer = null;
+            newCanvasCardLongPressed = true;
             openImportSheet();
         }, 600);
     };
-    const ncClearHold = () => { if (ncHoldTimer) { clearTimeout(ncHoldTimer); ncHoldTimer = null; } };
-    newCard.addEventListener('touchstart', ncStartHold, {passive: true});
-    newCard.addEventListener('touchend', ncClearHold);
-    newCard.addEventListener('touchcancel', ncClearHold);
-    newCard.addEventListener('mousedown', ncStartHold);
-    newCard.addEventListener('mouseup', ncClearHold);
-    newCard.addEventListener('mouseleave', ncClearHold);
-    newCard.addEventListener('click', () => { if (!ncLongPressed) openNewCanvasSheet(); });
-    grid.appendChild(newCard);
+    const newCanvasCardClearHold = () => { if (newCanvasCardHoldTimer) { clearTimeout(newCanvasCardHoldTimer); newCanvasCardHoldTimer = null; } };
+    newCanvasCardEl.addEventListener('touchstart', newCanvasCardStartHold, {passive: true});
+    newCanvasCardEl.addEventListener('touchend', newCanvasCardClearHold);
+    newCanvasCardEl.addEventListener('touchcancel', newCanvasCardClearHold);
+    newCanvasCardEl.addEventListener('mousedown', newCanvasCardStartHold);
+    newCanvasCardEl.addEventListener('mouseup', newCanvasCardClearHold);
+    newCanvasCardEl.addEventListener('mouseleave', newCanvasCardClearHold);
+    newCanvasCardEl.addEventListener('click', () => { if (!newCanvasCardLongPressed) openNewCanvasModal(); });
+    grid.appendChild(newCanvasCardEl);
 
     // Project cards
     projectStore.forEach(proj => {
@@ -7462,7 +7450,7 @@ function renderGallery() {
 function showGallery() {
     document.getElementById('gallery-screen').style.display = 'flex';
     document.getElementById('init-screen').style.display = 'none';
-    document.getElementById('main-app').style.display = 'none';
+    document.getElementById('pixel-canvas-screen').style.display = 'none';
     renderGallery();
 }
 function hideGallery() {
@@ -7479,17 +7467,21 @@ function hideGallery() {
 // so the button never shows stale behavior for whichever profile is
 // actually selected right now.
 function updateNewCanvasImportButton() {
-    const btn = document.getElementById('ncmImportBtn');
+    const btn = document.getElementById('newCanvasModalImportBtn');
     if (!btn) return;
     if (selectedProfile === 'sprite') {
         btn.textContent = '🎞️ Import Sprite ZIP';
-        btn.onclick = () => { closeNewCanvasModal(); openSpriteAnimEditor(); triggerSpriteAnimImport(); };
+        // File picker opens immediately on tap (no delay -- any lag here
+        // would make the button itself feel sluggish); only the editor
+        // screen's own appearance is delayed by 500ms, so it doesn't pop
+        // in at the exact same instant the New Canvas modal is closing.
+        btn.onclick = () => { closeNewCanvasModal(); triggerSpriteAnimImport(); setTimeout(openSpriteAnimEditor, 500); };
     } else {
         btn.textContent = '🖼️ Import Image';
         btn.onclick = openImportSheet;
     }
 }
-function openNewCanvasSheet() {
+function openNewCanvasModal() {
     const sheet = document.getElementById('new-canvas-sheet');
     sheet.innerHTML = '';
 
@@ -7508,14 +7500,14 @@ function openNewCanvasSheet() {
     profileRow.style.cssText = 'display:flex; gap:6px;';
     ['pixelArt','portrait','sprite'].forEach(p => {
         const btn = document.createElement('button');
-        btn.className = 'profile-btn ncm-profile-btn' + (selectedProfile === p ? ' active' : '');
+        btn.className = 'profile-btn new-canvas-modal-profile-btn' + (selectedProfile === p ? ' active' : '');
         btn.dataset.profile = p;
         btn.textContent = p === 'pixelArt' ? 'Pixel Art' : p === 'sprite' ? 'PMD Anim XML' : p.charAt(0).toUpperCase() + p.slice(1);
         btn.style.cssText = 'flex:1;';
         const chooseProfile = (e) => {
             if (e) { e.preventDefault(); e.stopPropagation(); }
             selectProfile(p);
-            document.querySelectorAll('#new-canvas-sheet .ncm-profile-btn').forEach(b => {
+            document.querySelectorAll('#new-canvas-sheet .new-canvas-modal-profile-btn').forEach(b => {
                 const active = b.dataset.profile === selectedProfile;
                 b.classList.toggle('active', active);
                 b.style.background = active ? '#0078d4' : '#2a2a2a';
@@ -7523,7 +7515,7 @@ function openNewCanvasSheet() {
             });
             const lock = selectedProfile === 'portrait';
             if (lock) {
-                ncmWidth = 40; ncmHeight = 40;
+                newCanvasModalWidth = 40; newCanvasModalHeight = 40;
                 wBtn.value = '40'; hBtn.value = '40';
             }
             updateNewCanvasImportButton();
@@ -7545,14 +7537,14 @@ function openNewCanvasSheet() {
     // currently selected, including when switching between profiles
     // without closing the sheet.
     const importBtn = document.createElement('button');
-    importBtn.id = 'ncmImportBtn';
+    importBtn.id = 'newCanvasModalImportBtn';
     importBtn.className = 'btn-start';
     importBtn.style.cssText = 'width:100%; height:40px; background:#2a6aba; border:1px solid #4b7fc5; color:white; border-radius:8px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:12px; margin-top:8px;';
     sheet.appendChild(importBtn);
     updateNewCanvasImportButton();
 
     const hintEl = document.createElement('div');
-    hintEl.id = 'ncm-hint';
+    hintEl.id = 'new-canvas-modal-hint';
     hintEl.style.cssText = 'font-size:9px; color:#888; text-align:center; min-height:18px;';
     hintEl.textContent = selectedProfile === 'portrait' ? '40\u00D740 tile palette: each tile has its own 15-colour limit.'
         : selectedProfile === 'sprite' ? 'Create Canvas adds a Frames strip for flipbook animation. Import Sprite ZIP opens the PMD animation editor instead.' : '';
@@ -7560,21 +7552,21 @@ function openNewCanvasSheet() {
 
     // Canvas size fields. Touch opens the built-in numeric keypad; a physical
     // keyboard can type directly while the keypad is open.
-    let ncmWidth = selectedProfile === 'portrait' ? 40 : 32;
-    let ncmHeight = selectedProfile === 'portrait' ? 40 : 32;
+    let newCanvasModalWidth = selectedProfile === 'portrait' ? 40 : 32;
+    let newCanvasModalHeight = selectedProfile === 'portrait' ? 40 : 32;
     const sizeBox = document.createElement('div');
     sizeBox.style.cssText='display:flex;flex-direction:column;gap:6px;';
     const sizeTitle=document.createElement('div'); sizeTitle.className='panel-subtitle'; sizeTitle.textContent='Canvas Size'; sizeBox.appendChild(sizeTitle);
     const sizeRow=document.createElement('div'); sizeRow.style.cssText='display:flex;align-items:center;gap:8px;';
-    const wBtn=document.createElement('input'); wBtn.type='number'; wBtn.inputMode='numeric'; wBtn.min='1'; wBtn.max='2000'; wBtn.className='resize-size-field'; wBtn.value=String(ncmWidth);
+    const wBtn=document.createElement('input'); wBtn.type='number'; wBtn.inputMode='numeric'; wBtn.min='1'; wBtn.max='2000'; wBtn.className='resize-size-field'; wBtn.value=String(newCanvasModalWidth);
     const xSep=document.createElement('div'); xSep.textContent='×'; xSep.style.cssText='color:#888;font-size:20px;';
-    const hBtn=document.createElement('input'); hBtn.type='number'; hBtn.inputMode='numeric'; hBtn.min='1'; hBtn.max='2000'; hBtn.className='resize-size-field'; hBtn.value=String(ncmHeight);
-    wBtn.oninput=()=>{ncmWidth=Math.max(1,Math.min(2000,parseInt(wBtn.value,10)||1));};
-    hBtn.oninput=()=>{ncmHeight=Math.max(1,Math.min(2000,parseInt(hBtn.value,10)||1));};
-    wBtn.onblur=()=>{wBtn.value=String(ncmWidth);};
-    hBtn.onblur=()=>{hBtn.value=String(ncmHeight);};
-    wBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ wBtn.blur(); openNumericKeyboard(ncmWidth,v=>{ncmWidth=Math.max(1,Math.min(2000,v));wBtn.value=ncmWidth;}); } };
-    hBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ hBtn.blur(); openNumericKeyboard(ncmHeight,v=>{ncmHeight=Math.max(1,Math.min(2000,v));hBtn.value=ncmHeight;}); } };
+    const hBtn=document.createElement('input'); hBtn.type='number'; hBtn.inputMode='numeric'; hBtn.min='1'; hBtn.max='2000'; hBtn.className='resize-size-field'; hBtn.value=String(newCanvasModalHeight);
+    wBtn.oninput=()=>{newCanvasModalWidth=Math.max(1,Math.min(2000,parseInt(wBtn.value,10)||1));};
+    hBtn.oninput=()=>{newCanvasModalHeight=Math.max(1,Math.min(2000,parseInt(hBtn.value,10)||1));};
+    wBtn.onblur=()=>{wBtn.value=String(newCanvasModalWidth);};
+    hBtn.onblur=()=>{hBtn.value=String(newCanvasModalHeight);};
+    wBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ wBtn.blur(); openNumericKeyboard(newCanvasModalWidth,v=>{newCanvasModalWidth=Math.max(1,Math.min(2000,v));wBtn.value=newCanvasModalWidth;}); } };
+    hBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ hBtn.blur(); openNumericKeyboard(newCanvasModalHeight,v=>{newCanvasModalHeight=Math.max(1,Math.min(2000,v));hBtn.value=newCanvasModalHeight;}); } };
     sizeRow.append(wBtn,xSep,hBtn); sizeBox.appendChild(sizeRow); sheet.appendChild(sizeBox);
 
     const createBtn = document.createElement('button');
@@ -7582,8 +7574,8 @@ function openNewCanvasSheet() {
     createBtn.style.cssText = 'width:100%; height:50px; background:#0078d4; border:none; color:white; border-radius:25px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:15px;';
     createBtn.textContent = 'Create Canvas';
     createBtn.onclick = () => {
-        let w = ncmWidth;
-        let h = ncmHeight;
+        let w = newCanvasModalWidth;
+        let h = newCanvasModalHeight;
         if (selectedProfile === 'portrait' && !portraitDimensionsCompatible(w, h)) {
             const fallback = fallbackProfileForDimensions(w, h);
             selectProfile(fallback, w, h);
@@ -7657,7 +7649,7 @@ function startNewProjectFromGallery(w, h) {
     currentProjectId = null; // new unsaved project
     currentProjectName = 'Untitled ' + (projectStore.length + 1);
     hideGallery();
-    revealMainApp();
+    revealPixelCanvas();
     const base = createBaseRasterLayer('Layer 1', gridW, gridH);
     layers = [base];
     frames = [{ name: 'Frame 1', layers, layerTree: layers.map(makeLayerNode) }];
@@ -7854,7 +7846,7 @@ function goToMainMenu() {
             }
         }
 
-        document.getElementById('main-app').style.display = 'none';
+        document.getElementById('pixel-canvas-screen').style.display = 'none';
         showGallery();
         traceLog('goToMainMenu() completed, gallery shown');
     } catch (err) {
@@ -8296,19 +8288,27 @@ function parseAnimDataXml(xmlText) {
 }
 
 /* ---- Offset-marker pixel decoding -------------------------------------
-   Per section 54.1: each frame of a -Offsets.png sheet carries up to four
-   single, fully-opaque pixels marking anchor points -- black=center/head,
-   green=shadow-drop point, red=left-hand, blue=right-hand -- at the same
-   grid position within the frame cell as the corresponding -Anim frame. */
-const SPRITE_ANIM_OFFSET_COLORS = { center: [0,0,0], shadow: [0,255,0], left: [255,0,0], right: [0,0,255] };
+   Confirmed directly from the community's own PMD_Sprite_Guide (slide 10,
+   "Multi Sheet Files" -- see handoff doc for the full citation): each
+   frame of a -Offsets.png sheet carries up to four single, fully-opaque
+   pixels marking anchor points -- black=head, green=body (center of the
+   body, not a "shadow-drop point" as an earlier session's reverse-
+   engineering guess had it), red=RIGHT hand, blue=LEFT hand -- at the
+   same grid position within the frame cell as the corresponding -Anim
+   frame. The red/blue hand assignment was flipped in an earlier version
+   of this code (guessed from pixel positions alone, without the actual
+   spec available at the time); corrected here now that the guide -- the
+   actual source documentation for this exact file format -- is available
+   to check against directly, rather than continuing to guess. */
+const SPRITE_ANIM_OFFSET_COLORS = { head: [0,0,0], body: [0,255,0], right: [255,0,0], left: [0,0,255] };
 
 // Scans one frame-cell of an already-decoded ImageData-backed canvas for
-// the four marker colours, returning { center:{x,y}|null, shadow:{...},
-// left:{...}, right:{...} } in cell-local coordinates. Cheap enough to
+// the four marker colours, returning { head:{x,y}|null, body:{...},
+// right:{...}, left:{...} } in cell-local coordinates. Cheap enough to
 // call per-frame-per-direction at import time (frame cells are small).
 function decodeOffsetMarkers(ctx, cellX, cellY, fw, fh) {
     const img = ctx.getImageData(cellX, cellY, fw, fh).data;
-    const found = { center: null, shadow: null, left: null, right: null };
+    const found = { head: null, body: null, right: null, left: null };
     for (let y = 0; y < fh; y++) {
         for (let x = 0; x < fw; x++) {
             const i = (y * fw + x) * 4;
@@ -8369,7 +8369,7 @@ function spriteAnimDirectionCount() {
     // what makes an unusual row count (a direction-agnostic 1-row sheet
     // like Sleep, or a hypothetical 16-direction sheet) work automatically
     // with no special-casing. See section 55.1/the person's 16-direction request.
-    return Math.max(1, Math.round(sheet.naturalHeight / a.frameHeight));
+    return Math.max(1, Math.round((sheet.naturalHeight || sheet.height) / a.frameHeight));
 }
 function spriteAnimFrameCount() {
     const a = spriteAnimResolvedAnim();
@@ -8392,6 +8392,120 @@ function closeSpriteAnimEditor() {
     document.getElementById('sprite-anim-screen').style.display = 'none';
     stopSpriteAnimLoop();
 }
+
+/* ---- Frame edit mode: reuses the main pixel editor's Tools/Layers -----
+   Per the person's explicit scope: only the sprite artwork (-Anim.png)
+   is editable this way -- not Shadow, not Offsets (those get their own
+   draggable-marker interaction instead, see setupSpriteAnimOffsetDrag).
+   Editing applies to just the current frame/direction cell, not a whole
+   row or multiple directions at once (no symmetric-edit assistance).
+   Reuses the actual Tools drawer / Layers panel UI, not a separate
+   lookalike -- per the person, "reuse for now."
+
+   Mechanism: snapshot every piece of main-editor global state this touches,
+   build a temporary one-layer, one-frame PixelLayer project sized exactly
+   to the current animation's frameWidth x frameHeight, seed its pixel
+   data from the sheet cell via setPixelData (so it goes through the
+   layer's real seeding path, not a hand-rolled shortcut), then reveal
+   #pixel-canvas-screen showing that temporary project. Exiting reverses this: the
+   temporary layer's edited pixelData is written back into the sheet
+   canvas at the same cell rect, then every snapshotted global is
+   restored and the sprite-anim screen reappears. */
+let spriteAnimFrameEditSnapshot = null;
+
+function spriteAnimEnterFrameEditMode() {
+    const anim = spriteAnimResolvedAnim();
+    if (!anim) return;
+    const sheets = spriteAnimProject.sheets[anim.name];
+    if (!sheets || !sheets.anim) return;
+    const dir = Math.min(spriteAnimState.activeDirection, spriteAnimDirectionCount() - 1);
+    const frame = Math.min(spriteAnimState.activeFrameIndex, anim.durations.length - 1);
+    const rect = spriteAnimFrameCellRect(anim, frame, dir);
+
+    // Snapshot every global the main editor owns that this is about to
+    // overwrite, so it can be put back exactly as it was. currentTool is
+    // included so returning to the sprite editor doesn't leave some
+    // pixel tool selected as the active tool for whatever the person
+    // does next in the main editor on a future, unrelated visit.
+    spriteAnimFrameEditSnapshot = {
+        frames, layers, activeLayerIndex, activeFrameIndex, gridW, gridH,
+        currentProjectId, currentProjectName, selectedProfile, currentTool,
+        animName: anim.name, direction: dir, frameIndex: frame, rect,
+    };
+
+    const fw = rect.w, fh = rect.h;
+    const cellData = sheets.anim.getContext('2d').getImageData(rect.sx, rect.sy, fw, fh).data;
+    const pixelData = Array(fw).fill().map(() => Array(fh).fill(null));
+    for (let y = 0; y < fh; y++) {
+        for (let x = 0; x < fw; x++) {
+            const i = (y * fw + x) * 4;
+            const a = cellData[i+3];
+            pixelData[x][y] = a < 128 ? null : rgbToHexBytes(cellData[i], cellData[i+1], cellData[i+2]);
+        }
+    }
+
+    selectedProfile = 'pixelArt'; // plain pixel tools, no Portrait tile-boundary restrictions on a sprite frame
+    gridW = fw; gridH = fh;
+    const layer = new PixelLayer('Frame', fw, fh);
+    layer.setPixelData(pixelData);
+    layers = [layer];
+    frames = [{ name: 'Frame', layers, layerTree: layers.map(makeLayerNode) }];
+    activeFrameIndex = 0;
+    currentProjectId = null;
+    currentProjectName = anim.name + ' - Frame ' + (frame + 1);
+    resetHistory();
+
+    document.getElementById('sprite-anim-screen').style.display = 'none';
+    revealPixelCanvas();
+    container.innerHTML = '';
+    container.appendChild(layer.el);
+    if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
+    setActiveLayer(0);
+    document.getElementById('framesSection').style.display = 'none';
+    layoutAll();
+    const doneBtn = document.getElementById('spriteAnimFrameEditDoneBtn');
+    if (doneBtn) doneBtn.style.display = 'flex';
+}
+
+// Writes the edited frame back into the sheet canvas, then restores every
+// snapshotted global exactly as spriteAnimEnterFrameEditMode found it.
+function spriteAnimExitFrameEditMode() {
+    const snap = spriteAnimFrameEditSnapshot;
+    if (!snap) return;
+    const layer = layers[0];
+    const sheets = spriteAnimProject.sheets[snap.animName];
+    if (layer && sheets && sheets.anim) {
+        const { rect } = snap;
+        const ctx = sheets.anim.getContext('2d');
+        const out = ctx.createImageData(rect.w, rect.h);
+        for (let y = 0; y < rect.h; y++) {
+            for (let x = 0; x < rect.w; x++) {
+                const c = layer.pixelData[x][y];
+                const i = (y * rect.w + x) * 4;
+                if (c) {
+                    out.data[i] = parseInt(c.slice(1,3), 16);
+                    out.data[i+1] = parseInt(c.slice(3,5), 16);
+                    out.data[i+2] = parseInt(c.slice(5,7), 16);
+                    out.data[i+3] = 255;
+                } // else leave as 0,0,0,0 (transparent) -- ImageData initializes zeroed
+            }
+        }
+        ctx.clearRect(rect.sx, rect.sy, rect.w, rect.h);
+        ctx.putImageData(out, rect.sx, rect.sy);
+    }
+
+    frames = snap.frames; layers = snap.layers; activeLayerIndex = snap.activeLayerIndex;
+    activeFrameIndex = snap.activeFrameIndex; gridW = snap.gridW; gridH = snap.gridH;
+    currentProjectId = snap.currentProjectId; currentProjectName = snap.currentProjectName;
+    selectedProfile = snap.selectedProfile; currentTool = snap.currentTool;
+    spriteAnimFrameEditSnapshot = null;
+
+    const doneBtn = document.getElementById('spriteAnimFrameEditDoneBtn');
+    if (doneBtn) doneBtn.style.display = 'none';
+    document.getElementById('sprite-anim-screen').style.display = 'flex';
+    renderSpriteAnimFrame();
+}
+
 function triggerSpriteAnimImport() {
     document.getElementById('spriteAnimFileInput').click();
 }
@@ -8429,16 +8543,30 @@ async function importSpriteAnimZip(arrayBuffer) {
     const xmlText = new TextDecoder('utf-8').decode(entries[xmlName]);
     const parsed = parseAnimDataXml(xmlText);
 
-    // Load every present PNG as an <img>, keyed by [animName][kind]. Only
-    // load what's actually in the zip -- alias entries with no sheets of
-    // their own (section 55.1) simply have nothing here, resolved via
-    // resolvedFrom at render time instead.
+    // Load every present PNG, decoded via <img> then immediately baked
+    // into an offscreen <canvas> of the same size -- kept as a canvas
+    // (not the raw <img>) specifically so pixel data can be read AND
+    // WRITTEN once frame editing (Tools/Layers integration) is in play,
+    // not just read for rendering/export as before. Everything that used
+    // to call drawImage(img,...) still works identically with a canvas
+    // source; the few spots that read .naturalWidth/.naturalHeight (an
+    // <img>-only property) now also fall back to .width/.height, which a
+    // canvas does have. Keyed by [animName][kind]. Only load what's
+    // actually in the zip -- alias entries with no sheets of their own
+    // (section 55.1) simply have nothing here, resolved via resolvedFrom
+    // at render time instead.
     const sheets = {};
     const loadImg = (bytes) => new Promise((resolve, reject) => {
         const blob = new Blob([bytes], { type: 'image/png' });
         const url = URL.createObjectURL(blob);
         const img = new Image();
-        img.onload = () => { resolve(img); };
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            c.getContext('2d').drawImage(img, 0, 0);
+            resolve(c);
+        };
         img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to decode a PNG in the package.')); };
         img.src = url;
     });
@@ -8449,7 +8577,7 @@ async function importSpriteAnimZip(arrayBuffer) {
         sheets[name] = {};
         for (const [kind, fname] of Object.entries(kinds)) {
             const key = Object.keys(entries).find(n => n.split('/').pop() === fname);
-            if (key) loadPromises.push(loadImg(entries[key]).then(img => { sheets[name][kind] = img; }));
+            if (key) loadPromises.push(loadImg(entries[key]).then(canvas => { sheets[name][kind] = canvas; }));
         }
     }
     await Promise.all(loadPromises);
@@ -8554,9 +8682,30 @@ function renderSpriteAnimFrameList() {
         const el = document.createElement('div');
         el.className = 'spriteAnimListItem' + (i === spriteAnimState.activeFrameIndex ? ' active' : '');
         el.textContent = 'Frame ' + (i + 1);
+        el.dataset.frameIndex = i;
         el.onclick = () => selectSpriteAnimFrame(i);
         list.appendChild(el);
     }
+}
+// Updates just the highlighted ("active") row in the frame list to match
+// spriteAnimState.activeFrameIndex, without tearing down and rebuilding
+// every row. Used during playback (advanceSpriteAnimPlayback calls this,
+// not renderSpriteAnimFrameList) since a full innerHTML='' + rebuild on
+// every single frame advance -- happening several times a second during
+// normal playback, more at higher speeds/shorter durations -- was
+// expensive enough on iOS Safari to make taps land during an in-flight
+// DOM rebuild and get silently dropped (the element a finger touched down
+// on could literally no longer exist by the time touchend/click fired).
+// See handoff doc for the full bug writeup. Falls back to a full
+// renderSpriteAnimFrameList() if the row count doesn't match what's in
+// the DOM (e.g. after switching animations, where the list must actually
+// be rebuilt) rather than silently doing nothing.
+function updateSpriteAnimFrameListSelection() {
+    const list = document.getElementById('spriteAnimFrameList');
+    const rows = list.children;
+    const n = spriteAnimFrameCount();
+    if (rows.length !== n) { renderSpriteAnimFrameList(); return; }
+    for (let i = 0; i < rows.length; i++) rows[i].classList.toggle('active', i === spriteAnimState.activeFrameIndex);
 }
 function selectSpriteAnimFrame(i) {
     const n = spriteAnimFrameCount();
@@ -8752,26 +8901,26 @@ function updateSpriteAnimFrameDataFields() {
         oyField.value = overrides.offsetY != null ? overrides.offsetY : (marker ? marker.y : 0);
     }
 }
-// Reads the black center/head anchor marker (see SPRITE_ANIM_OFFSET_COLORS)
-// for one frame/direction from the loaded -Offsets.png sheet, returning
-// its position relative to the frame cell's center in grid pixels, or
-// null if that sheet isn't loaded or no black marker is found in this
-// specific frame (not every frame of every animation necessarily carries
-// one -- not verified against every sample, so this degrades gracefully
-// rather than assuming one is always present).
+// Reads the black head anchor marker (see SPRITE_ANIM_OFFSET_COLORS) for
+// one frame/direction from the loaded -Offsets.png sheet, returning its
+// position relative to the frame cell's center in grid pixels, or null
+// if that sheet isn't loaded or no black marker is found in this specific
+// frame (not every frame of every animation necessarily carries one --
+// not verified against every sample, so this degrades gracefully rather
+// than assuming one is always present).
 function spriteAnimReadCenterOffsetMarker(anim, direction, frameIndex) {
     const sheets = spriteAnimProject.sheets[anim.name];
     if (!sheets || !sheets.offsets) return null;
     const cacheKey = anim.name + '|' + direction + '|' + frameIndex;
     if (!spriteAnimOffsetMarkerCache.has(cacheKey)) {
         const c = spriteAnimOffsetsScratchCanvas();
-        c.width = sheets.offsets.naturalWidth; c.height = sheets.offsets.naturalHeight;
+        c.width = sheets.offsets.naturalWidth || sheets.offsets.width; c.height = sheets.offsets.naturalHeight || sheets.offsets.height;
         const ctx = c.getContext('2d');
         ctx.clearRect(0, 0, c.width, c.height);
         ctx.drawImage(sheets.offsets, 0, 0);
         const rect = spriteAnimFrameCellRect(anim, frameIndex, direction);
         const markers = decodeOffsetMarkers(ctx, rect.sx, rect.sy, rect.w, rect.h);
-        spriteAnimOffsetMarkerCache.set(cacheKey, markers.center ? { x: markers.center.x - Math.floor(rect.w / 2), y: markers.center.y - Math.floor(rect.h / 2) } : null);
+        spriteAnimOffsetMarkerCache.set(cacheKey, markers.head ? { x: markers.head.x - Math.floor(rect.w / 2), y: markers.head.y - Math.floor(rect.h / 2) } : null);
     }
     return spriteAnimOffsetMarkerCache.get(cacheKey);
 }
@@ -8874,7 +9023,7 @@ function advanceSpriteAnimPlayback() {
         spriteAnimState.tickCounter = 0;
         spriteAnimState.activeFrameIndex = (spriteAnimState.activeFrameIndex + 1) % anim.durations.length;
         document.getElementById('spriteAnimScrubber').value = spriteAnimState.activeFrameIndex;
-        renderSpriteAnimFrameList();
+        updateSpriteAnimFrameListSelection();
         updateSpriteAnimFrameDataFields();
         renderSpriteAnimFrame();
     }
@@ -8919,7 +9068,7 @@ function buildAnimDataXml() {
 
 async function canvasToPngBytes(sourceImg) {
     const c = document.createElement('canvas');
-    c.width = sourceImg.naturalWidth; c.height = sourceImg.naturalHeight;
+    c.width = sourceImg.naturalWidth || sourceImg.width; c.height = sourceImg.naturalHeight || sourceImg.height;
     c.getContext('2d').drawImage(sourceImg, 0, 0);
     const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
     return new Uint8Array(await blob.arrayBuffer());
@@ -8959,7 +9108,92 @@ function initSpriteAnimEditor() {
     setupSpriteAnimFrameDataFieldListeners();
     setupSpriteAnimOnionListeners();
     setupSpriteAnimSpeedListener();
+    setupSpriteAnimOffsetDrag();
 }
+
+/* ---- Draggable offset markers -----------------------------------------
+   Per the person: no Tools/Layers for Shadow or Offsets -- instead, the
+   head/body/left/right anchor dots (SPRITE_ANIM_OFFSET_COLORS) are
+   directly draggable on the preview canvas itself. Applies to just the
+   current frame/direction, same scope restriction as frame editing. A
+   marker not present in the current frame (not every frame necessarily
+   has all four, see spriteAnimReadCenterOffsetMarker's own doc comment)
+   can't be dragged since there's nothing to grab -- this doesn't create
+   new markers, only repositions existing ones. */
+let spriteAnimOffsetDragTarget = null;
+
+function setupSpriteAnimOffsetDrag() {
+    const canvas = document.getElementById('spriteAnimCanvas');
+    if (!canvas) return;
+    const getFrameLocalPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        // canvas.width/height are already fw*scale/fh*scale (no separate
+        // CSS scaling applied to the element), but getBoundingClientRect
+        // reflects actual on-screen size, which can differ slightly from
+        // canvas.width/height on some zoom/DPI combinations -- scale by
+        // the ratio between the two rather than assuming they match, so
+        // hit-testing stays correct regardless.
+        const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+        const px = (cx - rect.left) * scaleX, py = (cy - rect.top) * scaleY;
+        return [Math.floor(px / SPRITE_ANIM_PREVIEW_SCALE), Math.floor(py / SPRITE_ANIM_PREVIEW_SCALE)];
+    };
+    const start = (e) => {
+        if (spriteAnimFrameEditSnapshot) return; // frame edit mode owns the canvas/tools while active
+        const anim = spriteAnimResolvedAnim();
+        const sheets = anim && spriteAnimProject.sheets[anim.name];
+        if (!anim || !sheets || !sheets.offsets) return;
+        const [fx, fy] = getFrameLocalPos(e);
+        if (fx < 0 || fx >= anim.frameWidth || fy < 0 || fy >= anim.frameHeight) return;
+        const dir = Math.min(spriteAnimState.activeDirection, spriteAnimDirectionCount() - 1);
+        const frame = Math.min(spriteAnimState.activeFrameIndex, anim.durations.length - 1);
+        const rect = spriteAnimFrameCellRect(anim, frame, dir);
+        const markers = decodeOffsetMarkers(sheets.offsets.getContext('2d'), rect.sx, rect.sy, rect.w, rect.h);
+        // Nearest marker within a small grab radius (frame-local pixels,
+        // not scaled screen pixels) -- small sprites have very few pixels
+        // between markers, so this stays tight rather than fighting a
+        // wide grab radius that could snap the wrong marker on a dense
+        // frame.
+        let best = null, bestDist = Infinity;
+        for (const key in markers) {
+            const m = markers[key]; if (!m) continue;
+            const d = Math.hypot(m.x - fx, m.y - fy);
+            if (d < bestDist) { bestDist = d; best = key; }
+        }
+        if (best === null || bestDist > 3) return;
+        spriteAnimOffsetDragTarget = { key: best, anim, sheets, rect, cacheKeyPrefix: anim.name + '|' + dir + '|' + frame };
+        e.preventDefault();
+    };
+    const move = (e) => {
+        if (!spriteAnimOffsetDragTarget) return;
+        e.preventDefault();
+        const t = spriteAnimOffsetDragTarget;
+        const [fx, fy] = getFrameLocalPos(e);
+        const cx = Math.max(0, Math.min(t.rect.w - 1, fx)), cy = Math.max(0, Math.min(t.rect.h - 1, fy));
+        const ctx = t.sheets.offsets.getContext('2d');
+        // Erase the whole cell's marker of this colour, then draw one
+        // fresh pixel at the new position -- simpler and more robust than
+        // trying to move just the single old pixel, in case decoding
+        // picked up antialiasing/adjacent pixels at the old spot.
+        const existing = decodeOffsetMarkers(ctx, t.rect.sx, t.rect.sy, t.rect.w, t.rect.h);
+        const old = existing[t.key];
+        if (old) ctx.clearRect(t.rect.sx + old.x, t.rect.sy + old.y, 1, 1);
+        const [r,g,b] = SPRITE_ANIM_OFFSET_COLORS[t.key];
+        ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+        ctx.fillRect(t.rect.sx + cx, t.rect.sy + cy, 1, 1);
+        spriteAnimOffsetMarkerCache.delete(t.cacheKeyPrefix);
+        renderSpriteAnimFrame();
+        if (t.key === 'head') updateSpriteAnimFrameDataFields(); // Offset X/Y fields read the head marker specifically
+    };
+    const end = () => { spriteAnimOffsetDragTarget = null; };
+    canvas.addEventListener('pointerdown', start);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+    canvas.addEventListener('pointerleave', end);
+}
+
 
 
 
