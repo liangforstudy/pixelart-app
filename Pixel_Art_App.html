@@ -212,7 +212,7 @@
         .ctx-item.danger { color: #ff453a; }
         .ctx-divider { border: none; border-top: 1px solid #2a2a2a; margin: 4px 0; }
         #gallery-ctx-backdrop {
-            position: fixed; inset: 0; z-index: 1190; display: none;
+            position: fixed; inset: 0; z-index: 1190; display: none; background: rgba(0,0,0,.55);
         }
         #gallery-ctx-backdrop.open { display: block; }
 
@@ -281,8 +281,10 @@
         .resize-size-row { display:flex; gap:8px; }
         .resize-size-field {
             flex:1; height:48px; background:#2a2a2a; border:2px solid #444; border-radius:10px;
-            color:#fff; font-size:22px; font-weight:800; text-align:center; cursor:pointer;
+            color:#fff; font-size:16px; font-weight:800; text-align:center; cursor:pointer; box-sizing:border-box;
+            -webkit-appearance:none; appearance:none;
         }
+        .resize-size-field::-webkit-outer-spin-button, .resize-size-field::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
         .resize-size-field.active { border-color:#0078d4; }
         #resize-anchor-grid {
             width:180px; height:180px; margin:0 auto; display:grid; grid-template-columns:repeat(3,1fr);
@@ -354,6 +356,14 @@
             padding: 8px 14px; white-space: nowrap;
         }
 
+        #portraitIsolationHint {
+            position: fixed; z-index: 870; display: none;
+            top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+            background: #0078d4; border: 1px solid #fff; color: #fff;
+            font-size: 12px; font-weight: bold; border-radius: 20px;
+            padding: 8px 16px; white-space: nowrap; pointer-events: none;
+        }
+
         #undoFab, #redoFab {
             position: fixed; z-index: 780; bottom: calc(64px + env(safe-area-inset-bottom));
             background: #1c1c1c; border: 1px solid #444; color: #fff;
@@ -396,7 +406,7 @@
 
         .num-input {
             flex: 1; height: 38px; background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
-            color: #fff; text-align: center; font-size: 14px; font-weight: bold; box-sizing: border-box;
+            color: #fff; text-align: center; font-size: 16px; font-weight: bold; box-sizing: border-box;
         }
 
         #palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; padding: 5px 0; }
@@ -558,9 +568,9 @@
             <div class="sheet-title">Resize Canvas</div>
             <div class="sheet-hint" id="resize-current-size">Current: 1 × 1</div>
             <div class="resize-size-row">
-                <button type="button" class="resize-size-field" id="resize-new-w">1</button>
+                <input type="number" inputmode="numeric" class="resize-size-field" id="resize-new-w" value="1" min="1" max="2000">
                 <div style="display:flex;align-items:center;color:#888;font-size:20px;">×</div>
-                <button type="button" class="resize-size-field" id="resize-new-h">1</button>
+                <input type="number" inputmode="numeric" class="resize-size-field" id="resize-new-h" value="1" min="1" max="2000">
             </div>
             <div class="panel-subtitle" style="text-align:center;">Anchor Artwork</div>
             <div id="resize-anchor-grid">
@@ -711,6 +721,10 @@
                     <button class="btn tool-btn" data-tool="vpen" onclick="uiAction(() => handleToolBtn('vpen'))">🖊️ PEN (open)</button>
                     <button class="btn tool-btn" data-tool="vshape" onclick="uiAction(() => handleToolBtn('vshape'))">🔷 SHAPE (closed)</button>
                     <button class="btn tool-btn" data-tool="vedit" onclick="uiAction(() => handleToolBtn('vedit'))">🖐️ EDIT PTS</button>
+                </div>
+                <div class="row" id="vectorEditSubModeRow">
+                    <button class="btn" id="vertexDeleteModeBtn" onclick="uiAction(toggleVertexDeleteMode)">🗑️ DELETE PTS</button>
+                    <button class="btn" id="lineExtendModeBtn" onclick="uiAction(toggleLineExtendMode)">➕ EXT LINE</button>
                 </div>
                 <div class="row" style="align-items:center; gap:8px;">
                     <span style="font-size:10px; color:#888; flex:none;">Width</span>
@@ -879,6 +893,7 @@
         </div>
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
+        <div id="portraitIsolationHint">👆 Tap a tile to isolate it</div>
 
         <button id="undoFab" onclick="uiAction(undo)">↩️</button>
         <button id="redoFab" onclick="uiAction(redo)">↪️</button>
@@ -932,7 +947,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_28';
+const BUILD_VERSION = 'V1_29';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1405,6 +1420,14 @@ let zoomIndex = ZOOM_STEPS.indexOf(10);
 
 let viewport, container, pixelCursor;
 let currentTool = 'pencil', isDrawing = false, isEditing = false;
+// Two sub-modes of the vedit (Edit Points) tool, toggled by their own
+// buttons rather than being separate currentTool values -- the active
+// tool stays 'vedit' throughout, these just change what a tap on an
+// existing point does. Mutually exclusive with each other and with plain
+// drag-to-move (turning one on turns the other off). See
+// toggleVertexDeleteMode/toggleLineExtendMode and the vedit pointer
+// handlers.
+let vertexDeleteMode = false, lineExtendMode = false;
 window.pixelToolState={current:'pencil',brushSize:8,brushSoftness:100,softEraserSize:8,softEraserSoftness:35};
 window.pixelToolDefs={pencil:{label:'✏️ PENCIL TOOL'},brush:{label:'🖌️ BRUSH TOOL'},softBrush:{label:'🖌️ SOFT BRUSH TOOL'},hardEraser:{label:'🧹 HARD ERASER TOOL'},softEraser:{label:'🧹 SOFT ERASER TOOL'}};
 // Portrait mode's 40x40 tiles are small enough that size-adjustable/soft
@@ -1442,6 +1465,14 @@ let portraitActiveTileKey = '0,0';
 // turned on -- tapping/drawing elsewhere no longer switches tiles. See
 // syncPortraitPaletteForPoint and updatePortraitTileControls' toggle handler.
 let portraitTileIsolation = false;
+// While true, the app is in "pick a tile to isolate" mode: the Layers
+// panel is closed, the tile-opacity slider stays hidden, and the tool is
+// forced to Pan so the next stationary tap on a tile (Portrait mode's
+// existing tap-to-switch-tile gesture) both selects and isolates that
+// tile in one step, rather than requiring "tap tile, then tap Isolate"
+// as two separate actions. See updatePortraitTileControls' button and
+// the pan-tool tap handler.
+let portraitIsolationPickMode = false;
 // Range is 0.5-1.0 (50%-100%), not 0-1.0: below 50% the non-isolated tiles
 // become distracting/visible enough to defeat the point of isolating one.
 let portraitTileIsolationOpacity = 0.78;
@@ -2290,6 +2321,21 @@ function syncPortraitPaletteForPoint(x,y,force=false,resetIsolation=false){
     updatePortraitTileOverlay();
     updatePortraitTileControls();
 }
+// Completes the "Isolate Portrait Tile" pick flow started by the button in
+// updatePortraitTileControls(): the tapped tile becomes both the active
+// tile and the isolated tile in one step, and the opacity slider becomes
+// visible now that there is something to adjust. Called only while
+// portraitIsolationPickMode is true, from the pan-tool stationary-tap
+// handler.
+function finishPortraitIsolationPick(x,y){
+    const key=portraitTileKeyForPoint(x,y); if(!key) return;
+    portraitIsolationPickMode=false;
+    portraitActiveTileKey=key;
+    const pal=ensurePortraitTilePalette(key);
+    replaceVisiblePalette(pal);
+    portraitTileIsolation=true;
+    invalidateDocumentRender('portrait-isolation',true);
+}
 // Replaces each tile's editable palette with the first unique opaque
 // colours encountered in that region of an image. Follows the GIMP-inspired
 // portrait workflow: scan in normal row-major order, ignore transparent
@@ -2330,19 +2376,35 @@ function updatePortraitTileOverlay(){
     masks.forEach(([n,l,t,ww,hh])=>{if(ww<=0||hh<=0)return;const d=document.createElement('div');d.className='pt-mask';d.style.cssText='left:'+l+'px;top:'+t+'px;width:'+ww+'px;height:'+hh+'px;opacity:'+portraitTileIsolationOpacity;o.appendChild(d);});
 }
 function updatePortraitTileControls(){
+    const hint=document.getElementById('portraitIsolationHint'); if(hint) hint.style.display=portraitIsolationPickMode?'block':'none';
     const list=document.getElementById('layersList'); if(!list)return;
     const old=document.getElementById('portraitTileControls'); if(old)old.remove();
     if(selectedProfile!=='portrait'||portraitTileCount()<=1)return;
     const box=document.createElement('div'); box.id='portraitTileControls'; box.style.cssText='padding:8px 6px;border-bottom:1px solid #333;';
     const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;';
-    const b=document.createElement('button'); b.className='btn'; b.style.flex='1'; b.innerText=portraitTileIsolation?'SHOW OTHER TILES':'ISOLATE PORTRAIT TILE';
+    const b=document.createElement('button'); b.className='btn'; b.style.flex='1'; b.innerText=portraitTileIsolation?'SHOW OTHER TILES':(portraitIsolationPickMode?'TAP A TILE…':'ISOLATE PORTRAIT TILE');
     // Turning isolation on freezes the palette/overlay to whichever tile is
     // active right now (see syncPortraitPaletteForPoint); turning it off
     // releases the freeze. There is no separate lock step -- isolation
     // itself is the lock.
+    //
+    // Turning isolation ON goes through a pick step first rather than
+    // isolating whatever tile happened to be active: close the Layers
+    // panel (so the canvas is visible to tap), leave the opacity slider
+    // hidden (nothing to adjust until a tile is actually chosen), and
+    // force the Pan tool so the very next stationary tap lands on the
+    // canvas as a tile-select rather than a draw stroke. The pan-tool tap
+    // handler finishes the job by calling finishPortraitIsolationPick().
     b.onclick=()=>{
-        portraitTileIsolation=!portraitTileIsolation;
-        invalidateDocumentRender('portrait-isolation',true);
+        if(portraitTileIsolation){
+            portraitTileIsolation=false;
+            invalidateDocumentRender('portrait-isolation',true);
+            return;
+        }
+        portraitIsolationPickMode=true;
+        closePanel();
+        handleToolBtn('pan');
+        updatePortraitTileControls();
     }; row.appendChild(b);
     box.appendChild(row);
     if(portraitTileIsolation){ const label=document.createElement('div');label.style.cssText='font-size:9px;color:#888;margin-top:6px;';label.innerText='other tiles opacity';box.appendChild(label); const sl=document.createElement('input');sl.type='range';sl.min=50;sl.max=100;sl.value=Math.round(portraitTileIsolationOpacity*100);sl.style.width='100%';sl.oninput=()=>{portraitTileIsolationOpacity=sl.value/100;updatePortraitTileOverlay();};box.appendChild(sl);}
@@ -2416,7 +2478,7 @@ function applyPanelVisibility() {
 }
 function historyEntryLabel(entry, index) {
     if (entry.label) return entry.label;
-    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', tree:'Layer / group change', canvasResize:'Resize Canvas', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
+    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', tree:'Layer / group change', canvasResize:'Resize Canvas', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', removeSpline:'Delete vector point', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
     let label = names[entry.type] || 'Edit';
     if (entry.layer && entry.layer.name) label += ': ' + entry.layer.name;
     if (entry.layerId) { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer) label += ': ' + layer.name; }
@@ -3365,20 +3427,32 @@ function applyCanvasResize(newW,newH,ax=.5,ay=.5){
     pushUndo({type:'canvasResize',before,after});
     return true;
 }
-function openResizeCanvasSheet(){
+// returnToGalleryOnCancel: true when this sheet was opened via the gallery
+// card's context menu (ctx-resize), which opens the project first just to
+// get gridW/gridH/frames in scope, then shows this modal on top. Cancelling
+// in that flow should back out to the gallery, not leave the project open
+// underneath as if the person had chosen to enter it -- see V1_29 bugfix notes.
+function openResizeCanvasSheet(returnToGalleryOnCancel){
     if(!frames.length)return;
     const modal=document.getElementById('resize-canvas-modal');
     document.getElementById('resize-current-size').textContent=`Current: ${gridW} × ${gridH}`;
-    document.getElementById('resize-new-w').textContent=gridW;
-    document.getElementById('resize-new-h').textContent=gridH;
+    document.getElementById('resize-new-w').value=gridW;
+    document.getElementById('resize-new-h').value=gridH;
     modal.dataset.w=gridW; modal.dataset.h=gridH; modal.dataset.ax='.5'; modal.dataset.ay='.5';
+    modal.dataset.returnToGallery = returnToGalleryOnCancel ? '1' : '';
     document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.toggle('active',b.dataset.anchor==='.5,.5'));
     modal.classList.add('open');
 }
-function closeResizeCanvasSheet(){document.getElementById('resize-canvas-modal').classList.remove('open');}
+function closeResizeCanvasSheet(returnToGallery){
+    const modal=document.getElementById('resize-canvas-modal');
+    const shouldReturn = returnToGallery!==undefined ? returnToGallery : (modal.dataset.returnToGallery === '1');
+    modal.classList.remove('open');
+    modal.dataset.returnToGallery = '';
+    if(shouldReturn){ showGallery(); }
+}
 function setResizeDimension(which,v){
     const modal=document.getElementById('resize-canvas-modal'); modal.dataset[which]=String(Math.max(1,Math.min(2000,v)));
-    document.getElementById(which==='w'?'resize-new-w':'resize-new-h').textContent=modal.dataset[which];
+    document.getElementById(which==='w'?'resize-new-w':'resize-new-h').value=modal.dataset[which];
 }
 
 /* ============================================================
@@ -3405,13 +3479,14 @@ let currentPenWidth = 1; // grid units, used for new vector strokes/shapes
 let debugUnrestrictedVector = false; // debug-only: smooth display-resolution vector rendering instead of pixel-snapped
 let forceCustomKeyboard = false; // debug-only: use the custom on-screen keyboard even on desktop (for testing it without a touch device)
 
-// Desktop (has a real keyboard/mouse, no touch) uses a native <input> for
-// things like renaming a layer, since it already has a working keyboard
-// and doesn't need our on-screen one. Touch devices use the custom
-// keyboard. forceCustomKeyboard (Debug drawer) overrides this for testing.
+// The app previously used a custom on-screen keyboard for touch devices
+// (no real keyboard/mouse). It now uses the device's native keyboard
+// (e.g. iOS Safari's own keyboard) everywhere instead, so this always
+// returns false. forceCustomKeyboard (Debug drawer) still overrides this
+// for testing the custom keyboard UI itself.
 function shouldUseCustomKeyboard() {
     if (forceCustomKeyboard) return true;
-    return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
+    return false;
 }
 
 // Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/canvasRotation.
@@ -3552,11 +3627,28 @@ function resetCanvasRotation() { canvasRotation = 0; layoutAll(); }
 // splines while the Edit Points tool is selected -- without this, a
 // committed spline (as opposed to one still being drafted) has no visual
 // indicator of where its points are, making them impossible to grab.
+// Shows draggable-point handles on the active vector layer's committed
+// splines while the Edit Points tool is selected -- without this, a
+// committed spline (as opposed to one still being drafted) has no visual
+// indicator of where its points are, making them impossible to grab.
+// Also shown while Extend Line mode is active with the Pen tool selected,
+// restricted to just the two endpoints of each open spline -- the only
+// points that mode can act on -- with in-between points hidden so the
+// two grabbable ends are unambiguous.
 function updateVectorHandles() {
     const el = document.getElementById('vectorHandlesOverlay');
-    if (!el) return;
+    const subRow = document.getElementById('vectorEditSubModeRow');
     const layer = activeLayer();
-    if (currentTool !== 'vedit' || !layer || layer.type !== 'vector') { el.style.display = 'none'; return; }
+    const isVectorLayer = layer && layer.type === 'vector';
+    const editActive = currentTool === 'vedit' && isVectorLayer;
+    const extendActive = lineExtendMode && currentTool === 'vpen' && isVectorLayer;
+    if (subRow) subRow.style.display = editActive ? '' : 'none';
+    if (!editActive) vertexDeleteMode = false;
+    if (!editActive && currentTool !== 'vpen') lineExtendMode = false;
+    const delBtn = document.getElementById('vertexDeleteModeBtn'); if (delBtn) delBtn.classList.toggle('active', vertexDeleteMode);
+    const extBtn = document.getElementById('lineExtendModeBtn'); if (extBtn) extBtn.classList.toggle('active', lineExtendMode);
+    if (!el) return;
+    if (!editActive && !extendActive) { el.style.display = 'none'; return; }
     el.style.display = 'block';
     el.style.width = (gridW * scale) + 'px';
     el.style.height = (gridH * scale) + 'px';
@@ -3564,18 +3656,52 @@ function updateVectorHandles() {
     el.height = Math.max(1, gridH * scale);
     const ctx = el.getContext('2d');
     ctx.clearRect(0, 0, el.width, el.height);
-    layer.splines.forEach(sp => {
-        sp.points.forEach(p => {
-            const px = p.x * scale, py = p.y * scale;
-            ctx.beginPath();
-            ctx.arc(px, py, 5, 0, Math.PI * 2);
-            ctx.fillStyle = '#ffffff';
-            ctx.fill();
-            ctx.lineWidth = 1.5;
-            ctx.strokeStyle = '#000000';
-            ctx.stroke();
+    const drawHandle = (p) => {
+        const px = p.x * scale, py = p.y * scale;
+        ctx.beginPath();
+        ctx.arc(px, py, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#000000';
+        ctx.stroke();
+    };
+    if (extendActive) {
+        // Only the two ends of each open spline -- the in-between points
+        // aren't valid extend targets, so showing them would just invite
+        // taps that don't do anything.
+        layer.splines.forEach(sp => {
+            if (sp.closed || sp.points.length < 1) return;
+            drawHandle(sp.points[0]);
+            if (sp.points.length > 1) drawHandle(sp.points[sp.points.length - 1]);
         });
-    });
+        return;
+    }
+    layer.splines.forEach(sp => { sp.points.forEach(drawHandle); });
+}
+// Turns "Delete Points" mode on/off. While on, tapping an existing point
+// with the Edit Points tool deletes it instead of grabbing it for a drag
+// (see startVectorEditDrag). Also closes the Tools drawer, the same as
+// Extend Line, so the canvas is immediately tappable.
+function toggleVertexDeleteMode() {
+    vertexDeleteMode = !vertexDeleteMode;
+    if (vertexDeleteMode) { lineExtendMode = false; closeDrawer(); }
+    updateVectorHandles();
+}
+// Turns "Extend Line" mode on/off. Unlike Delete Points, this isn't a
+// vedit sub-mode -- turning it on closes the Tools drawer and switches
+// the active tool to Pen, since extending is a drawing action (see
+// startVectorFreehand/updateVectorFreehand/endVectorFreehand). Only the
+// two endpoints of each open spline are shown as handles while this is on
+// (see updateVectorHandles) since those are the only valid touch targets.
+function toggleLineExtendMode() {
+    lineExtendMode = !lineExtendMode;
+    if (lineExtendMode) {
+        vertexDeleteMode = false;
+        closeDrawer();
+        handleToolBtn('vpen');
+    }
+    updateVectorHandles();
 }
 
 // Redraws the pixel-grid overlay (a 1px line between each grid cell) to
@@ -4113,9 +4239,9 @@ function beginTreeDrag(node,row,event){
     if(layerSelectionMode && !isNodeSelected(node))return;
     if(event.button!=null && event.button!==0)return;
     const startX=event.clientX,startY=event.clientY; const nodes=layerSelectionMode?collectSelectedRootsSorted().map(e=>e.node):[node];
-    let timer=setTimeout(()=>{treeDragState={node,nodes,startX,startY,row,moved:false};row.classList.add('dragging');row.setPointerCapture?.(event.pointerId);},260);
+    let timer=setTimeout(()=>{treeDragState={node,nodes,startX,startY,row,moved:false};row.classList.add('dragging');row.style.touchAction='none';row.setPointerCapture?.(event.pointerId);},260);
     const move=e=>{if(!treeDragState){if(Math.hypot(e.clientX-startX,e.clientY-startY)>10){clearTimeout(timer);}return;} if(Math.hypot(e.clientX-treeDragState.startX,e.clientY-treeDragState.startY)>8)treeDragState.moved=true;clearDragIndicators();const target=getDropTargetAt(e.clientX,e.clientY);if(target&&!canDropNodes(treeDragState.nodes,target,'inside'))return;if(target){const tid=nodeId(target).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); const rect=document.querySelector('[data-node-id="'+tid+'"]')?.getBoundingClientRect();let mode='inside';if(target.kind!=='group'){mode=(e.clientY-(rect?.top||0))<(rect?.height||40)/2?'before':'after';}else if(e.clientX>(rect?.left||0)+36 && e.clientY-(rect?.top||0)>(rect?.height||40)*.25 && e.clientY-(rect?.top||0)<(rect?.height||40)*.75){mode='inside';}else mode=(e.clientY-(rect?.top||0))<(rect?.height||40)/2?'before':'after';if(canDropNodes(treeDragState.nodes,target,mode)){const tid2=nodeId(target).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); const el=document.querySelector('[data-node-id="'+tid2+'"]');if(el)el.classList.add('drop-'+mode);treeDragState.target=target;treeDragState.mode=mode;}}};
-    const up=e=>{clearTimeout(timer);document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);if(treeDragState){const st=treeDragState;clearDragIndicators();treeDragState=null;st.row.classList.remove('dragging');if(st.moved&&st.target){suppressNextTreeClick=true;performTreeDrop(st.nodes,st.target,st.mode);}}};
+    const up=e=>{clearTimeout(timer);document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);if(treeDragState){const st=treeDragState;clearDragIndicators();treeDragState=null;st.row.classList.remove('dragging');st.row.style.touchAction='';if(st.moved&&st.target){suppressNextTreeClick=true;performTreeDrop(st.nodes,st.target,st.mode);}}};
     document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up,{once:false});
 }
 
@@ -4134,14 +4260,14 @@ function renderLayersPanel() {
     const renderLayerRow=(node,depth)=>{
         const layer=node.layer, i=layers.indexOf(layer); if(!layer)return;
         const row=document.createElement('div');
-        row.className='layer-row'+(i===activeLayerIndex?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.touchAction='none';
+        row.className='layer-row'+(i===activeLayerIndex?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node);
         row.style.paddingLeft=(6+depth*18)+'px';
         const colorTag=document.createElement('button'); colorTag.className='layer-color-tag'+(layer.color?'':' no-color'); colorTag.style.background=layer.color||'transparent'; colorTag.title='Layer colour tag'; colorTag.setAttribute('aria-label','Change layer colour tag'); colorTag.onclick=e=>{e.stopPropagation();cycleLayerColor(layer.id);};
         const thumb=document.createElement('img'); thumb.src=makeThumbnail(layer,largeLayerThumbs?64:28); thumb.style.cssText='width:'+(largeLayerThumbs?64:28)+'px;height:'+(largeLayerThumbs?64:28)+'px;border-radius:4px;flex:none;border:1px solid #444;';
         const vis=document.createElement('button'); vis.className='layer-icon-btn layer-vis'+(layer.visible?'':' off'); vis.innerText=layer.visible?'\u{1F441}\uFE0F':'\u{1F6AB}'; vis.onclick=e=>{e.stopPropagation();layer.visible=!layer.visible;layer.applyVisualState();refreshHookedComposites();renderLayersPanel();};
         const sel=document.createElement('input'); sel.type='checkbox'; sel.checked=isNodeSelected(node); sel.style.display=layerSelectionMode?'block':'none'; sel.disabled=layerSelectionMode&&selectionContainsDescendantOfSelected(node); sel.onclick=e=>{e.stopPropagation();selectTreeNode(node,sel.checked);renderLayersPanel();};
         const name=document.createElement('div'); name.className='layer-name'; name.innerText=layer.name;
-        name.onclick=e=>{e.stopPropagation(); if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();return;} const commit=v=>{v=(v||'').trim();if(v)layer.name=v;renderLayersPanel();}; if(shouldUseCustomKeyboard())openCustomKeyboard(layer.name,commit);else{const input=document.createElement('input');input.type='text';input.className='layer-name-input';input.value=layer.name;input.onclick=ev=>ev.stopPropagation();input.onkeydown=ev=>{if(ev.key==='Enter')input.blur();if(ev.key==='Escape'){input.value=layer.name;input.blur();}};input.onblur=()=>commit(input.value);name.replaceWith(input);input.focus();input.select();}};
+        name.onclick=e=>{e.stopPropagation(); if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();return;} if(i!==activeLayerIndex){setActiveLayer(i);return;} const commit=v=>{v=(v||'').trim();if(v)layer.name=v;renderLayersPanel();}; if(shouldUseCustomKeyboard())openCustomKeyboard(layer.name,commit);else{const input=document.createElement('input');input.type='text';input.className='layer-name-input';input.value=layer.name;input.onclick=ev=>ev.stopPropagation();input.onkeydown=ev=>{if(ev.key==='Enter')input.blur();if(ev.key==='Escape'){input.value=layer.name;input.blur();}};input.onblur=()=>commit(input.value);name.replaceWith(input);input.focus();input.select();}};
         const badge=document.createElement('div'); badge.className='layer-type-badge'; badge.innerText=layer.type;
         const foundNode=findNode(f.layerTree,nodeId(node));
         const parent=foundNode?foundNode.parent:null;
@@ -4160,7 +4286,7 @@ function renderLayersPanel() {
         if(!layerSelectionMode && i===activeLayerIndex){const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
     };
     const renderGroupRow=(node,depth)=>{
-        const row=document.createElement('div'); row.className='layer-row group-row'+(activeGroupId===node.id?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.touchAction='none'; row.style.paddingLeft=(depth*18)+'px';
+        const row=document.createElement('div'); row.className='layer-row group-row'+(activeGroupId===node.id?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.paddingLeft=(depth*18)+'px';
         const exp=document.createElement('button'); exp.className='layer-icon-btn'; exp.style.minWidth='34px'; exp.innerText=node.collapsed?'\u25B6':'\u25BC'; exp.onclick=e=>{e.stopPropagation();node.collapsed=!node.collapsed;renderLayersPanel();};
         const sel=document.createElement('input'); sel.type='checkbox'; sel.checked=isNodeSelected(node); sel.style.display=layerSelectionMode?'block':'none'; sel.disabled=layerSelectionMode&&selectionContainsDescendantOfSelected(node); sel.onclick=e=>{e.stopPropagation();selectTreeNode(node,sel.checked);renderLayersPanel();};
         const vis=document.createElement('button'); vis.className='layer-icon-btn layer-vis'+(node.visible?'':' off'); vis.innerText=node.visible?'\u{1F441}\uFE0F':'\u{1F6AB}'; vis.onclick=e=>{e.stopPropagation();node.visible=!node.visible;applyGroupVisualState(node);renderLayersPanel();};
@@ -4540,6 +4666,7 @@ function applyHistoryEntry(entry, forward) {
         if(forward){if(!layers.includes(entry.layer)){layers.splice(Math.min(entry.index,layers.length),0,entry.layer);container.appendChild(entry.layer.el);reindexDom();entry.layer.applyVisualState();}}
         else {entry.layer.el.remove();const idx=layers.indexOf(entry.layer);if(idx!==-1)layers.splice(idx,1);if(activeLayerIndex>=layers.length)activeLayerIndex=Math.max(0,layers.length-1);}
     } else if(entry.type==='addSpline') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){if(forward)layer.splines.splice(Math.min(entry.index,layer.splines.length),0,entry.spline);else{const i=layer.splines.indexOf(entry.spline);if(i!==-1)layer.splines.splice(i,1);}layer.layoutCSS();} }
+    else if(entry.type==='removeSpline') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){if(forward){const i=layer.splines.indexOf(entry.spline);if(i!==-1)layer.splines.splice(i,1);}else{layer.splines.splice(Math.min(entry.index,layer.splines.length),0,entry.spline);}layer.layoutCSS();updateVectorHandles();} }
     else if(entry.type==='editSplinePoints') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer&&entry.spline){entry.spline.points=(forward?entry.after:entry.before).map(p=>({x:p.x,y:p.y}));layer.layoutCSS();} }
     else if(entry.type==='clearVectorLayer') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){layer.splines=forward?[]:entry.before.map(cloneSpline);layer.layoutCSS();} }
     if(openPanelName==='layers') renderLayersPanel(); updateVectorHandles(); refreshHookedComposites();
@@ -4563,6 +4690,40 @@ function redo(nodeOverride) {
 
 // Deep-copies one spline (including its point list) for undo snapshots.
 function cloneSpline(sp) { return { closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }; }
+
+// Removes one point from a spline (Delete Points mode). Because sp.points
+// is a flat ordered array and the renderer (catmullRomPath) connects
+// consecutive entries, splicing out the middle point of a three-point run
+// automatically makes the curve run directly between its former neighbors
+// -- no separate "reconnect" step is needed. One undo entry per deletion.
+//
+// Two different undo shapes depending on outcome: an ordinary deletion
+// (points remain) reuses the editSplinePoints before/after shape. Deleting
+// a spline's only remaining point removes the whole spline from
+// layer.splines -- editSplinePoints has no way to represent "this spline
+// object is no longer in the array" (its interpreter mutates .points in
+// place, it never touches array membership), so that case uses a
+// dedicated removeSpline entry instead (the inverse of addSpline: forward
+// removes, backward re-inserts at the original index -- addSpline itself
+// couldn't be reused here since its forward direction means insert, the
+// opposite of what actually happened at push time).
+function deleteVectorPoint(layer, hit) {
+    const sp = hit.spline;
+    const before = sp.points.map(p => ({ x: p.x, y: p.y }));
+    if (sp.points.length <= 1) {
+        const idx = layer.splines.indexOf(sp);
+        if (idx === -1) return;
+        layer.splines.splice(idx, 1);
+        layer.layoutCSS();
+        updateVectorHandles();
+        pushUndo({ type: 'removeSpline', frameIndex: activeFrameIndex, layerId: layer.id, spline: sp, index: idx });
+        return;
+    }
+    sp.points.splice(hit.index, 1);
+    layer.layoutCSS();
+    updateVectorHandles();
+    pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: sp, before, after: sp.points.map(p => ({ x: p.x, y: p.y })) });
+}
 
 // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y for undo/redo (desktop convenience; touch users use the on-screen buttons).
 function setupKeyboardShortcuts() {
@@ -5247,6 +5408,25 @@ function findNearestVectorPoint(layer, x, y) {
     const threshold = Math.max(1, 14 / scale); // ~14 screen px touch target, in grid units
     return (best && bestDist <= threshold) ? best : null;
 }
+// Like findNearestVectorPoint, but only considers the first/last point of
+// each open (non-closed) spline -- the two ends a line can be extended
+// from. A closed shape has no "end" to extend, so its points are skipped
+// entirely rather than matched.
+function findNearestVectorEndpoint(layer, x, y) {
+    let best = null, bestDist = Infinity;
+    layer.splines.forEach(sp => {
+        if (sp.closed || sp.points.length < 1) return;
+        const candidates = [{ idx: 0, end: 'start' }];
+        if (sp.points.length > 1) candidates.push({ idx: sp.points.length - 1, end: 'end' });
+        candidates.forEach(({ idx, end }) => {
+            const p = sp.points[idx];
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d < bestDist) { bestDist = d; best = { spline: sp, point: p, index: idx, end }; }
+        });
+    });
+    const threshold = Math.max(1, 14 / scale);
+    return (best && bestDist <= threshold) ? best : null;
+}
 
 /* ============================================================
    TOOLS / DRAWING (only pixel layers can be painted on)
@@ -5421,6 +5601,13 @@ function handleSwatchClick(c, isT = false) {
 const APPLY_LAST_COLOUR_TOOLS = ['pencil','brush','softBrush','vpen','bucket','line','rect','ellipse'];
 // Switches the active tool. Remembers the previous tool when switching to the eyedropper, so it can auto-restore after one sample.
 function handleToolBtn(t) {
+    // Cancel the Portrait tile-isolation pick flow (see updatePortraitTileControls'
+    // Isolate button) if the person switches to any tool other than Pan
+    // while it's active -- this is the true single entry point every tool
+    // switch goes through (including Pan itself, which isn't one of
+    // pixelToolDefs' tools and so never reaches window.selectPixelTool),
+    // unlike selectPixelTool which only some tool switches reach.
+    if (portraitIsolationPickMode && t !== 'pan') { portraitIsolationPickMode = false; updatePortraitTileControls(); }
     // Portrait mode disables tools that don't fit its per-tile, fixed-size,
     // curated-palette model (Colour to Alpha bypasses the tile palette
     // entirely by design). PORTRAIT_TOOL_FALLBACK covers the pixelToolDefs
@@ -5520,7 +5707,7 @@ function setupDrawingEvents() {
     const g = {
         cameraGesture: null, xform: null, pendingTouch: null, shapeStart: null,
         selDragOrigin: null, moveBuffer: null, currentEditSnapshot: null,
-        suppressStroke: false, vecDragTarget: null, vecFreehand: null, lastBrushPos: null, manualPan: null,
+        suppressStroke: false, vecDragTarget: null, vecFreehand: null, vecExtend: null, lastBrushPos: null, manualPan: null,
         strokeTileKey: null // Portrait mode: tile the current stroke started in; see startStroke/onMove.
     };
 
@@ -5739,9 +5926,17 @@ function setupDrawingEvents() {
         g.selDragOrigin = null;
     };
 
-    // -- Edit Points tool: drag the nearest existing vector point ------
+    // -- Edit Points tool: drag the nearest existing vector point, or (in
+    //    the two sub-modes below) delete a point or extend a line end.
     const startVectorEditDrag = (x, y) => {
         const layer = activeLayer();
+        if (!layer || layer.type !== 'vector') { g.vecDragTarget = null; return; }
+        if (vertexDeleteMode) {
+            const hit = findNearestVectorPoint(layer, x, y);
+            if (hit) deleteVectorPoint(layer, hit);
+            g.vecDragTarget = null;
+            return;
+        }
         g.vecDragTarget = (layer && layer.type === 'vector') ? findNearestVectorPoint(layer, x, y) : null;
         traceLog('vedit start: ' + (g.vecDragTarget ? 'grabbed a point' : 'no point within reach'));
     };
@@ -5757,13 +5952,35 @@ function setupDrawingEvents() {
     // -- Pen/Shape tools: freehand-drag records a path and auto-fits a
     //    spline on release; a stationary tap instead commits a single
     //    point immediately (see commitFreehandSpline).
+    //    Extend Line mode (lineExtendMode) repurposes this same freehand
+    //    gesture: if the touch starts near an existing open spline's
+    //    endpoint, the drag extends that spline instead of starting a new
+    //    one. Missing the endpoint falls back to drawing a normal new
+    //    line, same as with the mode off.
     const startVectorFreehand = (x, y) => {
         const layer = activeLayer();
         if (!layer || layer.type !== 'vector') { console.warn('vpen/vshape: active layer is not a vector layer, ignoring'); return; }
+        if (lineExtendMode && currentTool === 'vpen') {
+            const hit = findNearestVectorEndpoint(layer, x, y);
+            if (hit) {
+                g.vecExtend = { layer, spline: hit.spline, end: hit.end, before: hit.spline.points.map(p => ({ x: p.x, y: p.y })) };
+                traceLog('line-extend stroke started, grabbed ' + hit.end + ' end');
+                return;
+            }
+        }
         g.vecFreehand = { points: [{ x, y }], moved: false, isShape: currentTool === 'vshape' };
         traceLog('vpen/vshape stroke started at (' + x + ',' + y + ')');
     };
     const updateVectorFreehand = (x, y) => {
+        if (g.vecExtend) {
+            const t = g.vecExtend;
+            const last = t.end === 'start' ? t.spline.points[0] : t.spline.points[t.spline.points.length - 1];
+            if (Math.hypot(x - last.x, y - last.y) <= 0.15) return;
+            if (t.end === 'start') t.spline.points.unshift({ x, y }); else t.spline.points.push({ x, y });
+            t.layer.layoutCSS();
+            updateVectorHandles();
+            return;
+        }
         if (!g.vecFreehand) return;
         const last = g.vecFreehand.points[g.vecFreehand.points.length - 1];
         if (Math.hypot(x - last.x, y - last.y) <= 0.15) return;
@@ -5775,7 +5992,21 @@ function setupDrawingEvents() {
             layer.layoutCSS();
         }
     };
+    // On release, an in-progress line extension collapses every point
+    // added during the drag into a single before/after undo step -- the
+    // same one-transaction-per-operation convention as the rest of the
+    // app (see section 18 of the handoff doc), not one entry per touchmove.
+    // A stationary tap on the endpoint (no movement) commits no change and
+    // pushes no undo entry, since nothing was actually extended.
     const endVectorFreehand = () => {
+        if (g.vecExtend) {
+            const t = g.vecExtend;
+            g.vecExtend = null;
+            const after = t.spline.points.map(p => ({ x: p.x, y: p.y }));
+            const changed = after.length !== t.before.length || after.some((p, i) => p.x !== t.before[i].x || p.y !== t.before[i].y);
+            if (changed) pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: t.layer.id, spline: t.spline, before: t.before, after });
+            return;
+        }
         if (!g.vecFreehand) return;
         const layer = activeLayer();
         if (layer && layer.type === 'vector') {
@@ -6059,7 +6290,11 @@ function setupDrawingEvents() {
             const fy = ct ? ct.clientY : e.clientY;
             if (isInsideCanvas(fx, fy)) {
                 const [tx, ty] = getPosFromClient(fx, fy);
-                syncPortraitPaletteForPoint(tx, ty, true);
+                if (portraitIsolationPickMode) {
+                    finishPortraitIsolationPick(tx, ty);
+                } else {
+                    syncPortraitPaletteForPoint(tx, ty, true);
+                }
             }
         }
         const fab = document.getElementById('rotationResetFab');
@@ -6978,7 +7213,7 @@ function openNewCanvasSheet() {
             const lock = selectedProfile === 'portrait';
             if (lock) {
                 ncmWidth = 40; ncmHeight = 40;
-                wBtn.textContent = '40'; hBtn.textContent = '40';
+                wBtn.value = '40'; hBtn.value = '40';
             }
         };
         btn.addEventListener('pointerup', chooseProfile);
@@ -7010,11 +7245,15 @@ function openNewCanvasSheet() {
     sizeBox.style.cssText='display:flex;flex-direction:column;gap:6px;';
     const sizeTitle=document.createElement('div'); sizeTitle.className='panel-subtitle'; sizeTitle.textContent='Canvas Size'; sizeBox.appendChild(sizeTitle);
     const sizeRow=document.createElement('div'); sizeRow.style.cssText='display:flex;align-items:center;gap:8px;';
-    const wBtn=document.createElement('button'); wBtn.type='button'; wBtn.className='resize-size-field'; wBtn.textContent=String(ncmWidth);
+    const wBtn=document.createElement('input'); wBtn.type='number'; wBtn.inputMode='numeric'; wBtn.min='1'; wBtn.max='2000'; wBtn.className='resize-size-field'; wBtn.value=String(ncmWidth);
     const xSep=document.createElement('div'); xSep.textContent='×'; xSep.style.cssText='color:#888;font-size:20px;';
-    const hBtn=document.createElement('button'); hBtn.type='button'; hBtn.className='resize-size-field'; hBtn.textContent=String(ncmHeight);
-    wBtn.onclick=()=>openNumericKeyboard(ncmWidth,v=>{ncmWidth=Math.max(1,Math.min(2000,v));wBtn.textContent=ncmWidth;});
-    hBtn.onclick=()=>openNumericKeyboard(ncmHeight,v=>{ncmHeight=Math.max(1,Math.min(2000,v));hBtn.textContent=ncmHeight;});
+    const hBtn=document.createElement('input'); hBtn.type='number'; hBtn.inputMode='numeric'; hBtn.min='1'; hBtn.max='2000'; hBtn.className='resize-size-field'; hBtn.value=String(ncmHeight);
+    wBtn.oninput=()=>{ncmWidth=Math.max(1,Math.min(2000,parseInt(wBtn.value,10)||1));};
+    hBtn.oninput=()=>{ncmHeight=Math.max(1,Math.min(2000,parseInt(hBtn.value,10)||1));};
+    wBtn.onblur=()=>{wBtn.value=String(ncmWidth);};
+    hBtn.onblur=()=>{hBtn.value=String(ncmHeight);};
+    wBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ wBtn.blur(); openNumericKeyboard(ncmWidth,v=>{ncmWidth=Math.max(1,Math.min(2000,v));wBtn.value=ncmWidth;}); } };
+    hBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ hBtn.blur(); openNumericKeyboard(ncmHeight,v=>{ncmHeight=Math.max(1,Math.min(2000,v));hBtn.value=ncmHeight;}); } };
     sizeRow.append(wBtn,xSep,hBtn); sizeBox.appendChild(sizeRow); sheet.appendChild(sizeBox);
 
     const createBtn = document.createElement('button');
@@ -7201,7 +7440,7 @@ document.getElementById('ctx-resize').addEventListener('click', () => {
     closeGalleryCtxMenu();
     if (!id) return;
     openProjectFromStore(id);
-    openResizeCanvasSheet();
+    openResizeCanvasSheet(true);
 });
 
 document.getElementById('ctx-export').addEventListener('click', () => {
@@ -7321,10 +7560,17 @@ const numericBackdrop = document.getElementById('numericKeyboardBackdrop');
 numericBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeNumericKeyboard(true); }, {passive:false});
 numericBackdrop.addEventListener('mousedown', () => closeNumericKeyboard(true));
 document.getElementById('numericDoneBtn').addEventListener('click', () => closeNumericKeyboard(true));
-document.getElementById('resize-cancel-btn').addEventListener('click', closeResizeCanvasSheet);
+document.getElementById('resize-cancel-btn').addEventListener('click', () => closeResizeCanvasSheet());
 document.getElementById('resize-canvas-modal').addEventListener('click', e => { if(e.target.id==='resize-canvas-modal') closeResizeCanvasSheet(); });
-document.getElementById('resize-new-w').addEventListener('click', () => { const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.w,v=>setResizeDimension('w',v)); });
-document.getElementById('resize-new-h').addEventListener('click', () => { const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.h,v=>setResizeDimension('h',v)); });
+document.getElementById('resize-new-w').addEventListener('input', function(){ setResizeDimension('w', parseInt(this.value,10)||1); });
+document.getElementById('resize-new-h').addEventListener('input', function(){ setResizeDimension('h', parseInt(this.value,10)||1); });
+document.getElementById('resize-new-w').addEventListener('blur', function(){ this.value=document.getElementById('resize-canvas-modal').dataset.w; });
+document.getElementById('resize-new-h').addEventListener('blur', function(){ this.value=document.getElementById('resize-canvas-modal').dataset.h; });
+// forceCustomKeyboard (Debug drawer) also exercises the built-in numeric
+// keypad on these two fields, same as it does for the text keyboard via
+// shouldUseCustomKeyboard() elsewhere -- see V1_29 bugfix notes.
+document.getElementById('resize-new-w').addEventListener('focus', function(){ if(shouldUseCustomKeyboard()){ this.blur(); const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.w,v=>setResizeDimension('w',v)); } });
+document.getElementById('resize-new-h').addEventListener('focus', function(){ if(shouldUseCustomKeyboard()){ this.blur(); const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.h,v=>setResizeDimension('h',v)); } });
 document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListener('click', () => {
     const [ax,ay]=btn.dataset.anchor.split(','); const m=document.getElementById('resize-canvas-modal'); m.dataset.ax=ax; m.dataset.ay=ay;
     document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
@@ -7332,7 +7578,7 @@ document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListe
 document.getElementById('resize-apply-btn').addEventListener('click', () => {
     const m=document.getElementById('resize-canvas-modal');
     applyCanvasResize(Number(m.dataset.w),Number(m.dataset.h),Number(m.dataset.ax),Number(m.dataset.ay));
-    closeResizeCanvasSheet();
+    closeResizeCanvasSheet(false);
 });
 requestAnimationFrame(() => { buildCustomKeyboard(); });
 drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeDrawer(); }, {passive: false});
