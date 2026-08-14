@@ -893,7 +893,7 @@
         </div>
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
-        <div id="portraitIsolationHint">👆 Tap a tile to isolate it</div>
+        <div id="portraitIsolationHint">👇 Tap a tile to isolate it</div>
 
         <button id="undoFab" onclick="uiAction(undo)">↩️</button>
         <button id="redoFab" onclick="uiAction(redo)">↪️</button>
@@ -2272,6 +2272,21 @@ function portraitTileKeyForPoint(x,y){
     if(selectedProfile!=='portrait' || x<0 || y<0 || x>=gridW || y>=gridH) return null;
     return Math.floor(x/40)+','+Math.floor(y/40);
 }
+// Clamps (x,y) to stay inside the same 40x40 tile as (originX,originY),
+// for tools that draw/extend along a continuous point stream rather than
+// a discrete line-interpolation step (e.g. the vector Pen tool -- pixel
+// tools use a different clip, see the linePixels cut in onMove). Returns
+// the original point unchanged outside Portrait mode or if either point
+// resolves to no tile (e.g. off-canvas).
+function clampPointToPortraitTile(x,y,originX,originY){
+    if(selectedProfile!=='portrait') return [x,y];
+    const originKey=portraitTileKeyForPoint(originX,originY);
+    if(!originKey) return [x,y];
+    const tx=Math.floor(originX/40), ty=Math.floor(originY/40);
+    const minX=tx*40, maxX=Math.min(gridW,minX+40)-0.001;
+    const minY=ty*40, maxY=Math.min(gridH,minY+40)-0.001;
+    return [Math.max(minX,Math.min(maxX,x)), Math.max(minY,Math.min(maxY,y))];
+}
 // Shared by PixelLayer.plot() (blocks the actual draw) and the pixel-cursor
 // preview (hides the cursor) so both agree on the same boundary using the
 // same rule -- see the handoff's danger-zones entry on same-named wrappers
@@ -2585,6 +2600,13 @@ function openDrawer(which) {
     backdrop.classList.toggle('debug-open', which === 'debug');
     drawerOpenName = which;
     if (which === 'debug') { refreshDebugStats(); renderLogToggleButtons(); }
+    // Delete Points is a one-shot "I'm about to tap a point to remove it"
+    // mode, not a standing preference -- closing the Tools drawer to make
+    // the canvas tappable (see toggleVertexDeleteMode) already leaves the
+    // canvas mid-gesture; reopening the drawer afterwards means the person
+    // is done with that gesture, so the mode (and its button's active
+    // state) resets rather than silently staying armed for the next tap.
+    if (which === 'tools' && vertexDeleteMode) { vertexDeleteMode = false; updateVectorHandles(); }
 }
 // Closes whichever side drawer (Tools/Debug) is open.
 function closeDrawer() {
@@ -5749,6 +5771,13 @@ function setupDrawingEvents() {
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getEventPos(e);
         if(currentTool==='brush'||currentTool==='hardEraser'||currentTool==='softEraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
+        // Mid-stroke, the cursor must agree with where the stroke itself
+        // stops at a Portrait tile boundary (g.strokeTileKey, set in
+        // startStroke and enforced in onMove's linePixels clip) -- without
+        // this the cursor kept following the raw finger position past the
+        // edge the actual pixels were being clipped at, which looked like
+        // the tool was drawing across tiles even though it wasn't.
+        if (isDrawing && g.strokeTileKey && portraitTileKeyForPoint(x,y) !== g.strokeTileKey) { hideCursor(); return; }
         if (x >= 0 && x < gridW && y >= 0 && y < gridH && !isPointOutsidePortraitIsolation(x, y)) {
             pixelCursor.classList.add('visible');
             pixelCursor.style.left = (x * scale) + "px";
@@ -5963,25 +5992,43 @@ function setupDrawingEvents() {
         if (lineExtendMode && currentTool === 'vpen') {
             const hit = findNearestVectorEndpoint(layer, x, y);
             if (hit) {
-                g.vecExtend = { layer, spline: hit.spline, end: hit.end, before: hit.spline.points.map(p => ({ x: p.x, y: p.y })) };
+                // rawAdded tracks only the new points from this drag, kept
+                // separate from t.spline.points (which also gets every raw
+                // point pushed live, purely so the on-canvas preview updates
+                // during the drag the same way a fresh Pen stroke does).
+                // rawAdded is what actually gets simplified on release --
+                // see endVectorFreehand -- so an extended line ends up with
+                // the same point density as an equivalent fresh Pen stroke,
+                // not one point per touchmove event.
+                g.vecExtend = { layer, spline: hit.spline, end: hit.end, before: hit.spline.points.map(p => ({ x: p.x, y: p.y })), rawAdded: [], originX: hit.point.x, originY: hit.point.y };
                 traceLog('line-extend stroke started, grabbed ' + hit.end + ' end');
                 return;
             }
         }
-        g.vecFreehand = { points: [{ x, y }], moved: false, isShape: currentTool === 'vshape' };
+        g.vecFreehand = { points: [{ x, y }], moved: false, isShape: currentTool === 'vshape', originX: x, originY: y };
         traceLog('vpen/vshape stroke started at (' + x + ',' + y + ')');
     };
+    // Portrait mode: the vector Pen tool must stay within the 40x40 tile it
+    // started in, same as pencil/brush -- see clampPointToPortraitTile and
+    // its doc comment. Both branches below clamp the incoming point against
+    // their own origin (the touch-start point for a new line, the grabbed
+    // endpoint for an extension) before using it, rather than dropping
+    // points once the finger leaves the tile, so the line still tracks the
+    // finger right up to the boundary instead of freezing mid-tile.
     const updateVectorFreehand = (x, y) => {
         if (g.vecExtend) {
             const t = g.vecExtend;
+            [x, y] = clampPointToPortraitTile(x, y, t.originX, t.originY);
             const last = t.end === 'start' ? t.spline.points[0] : t.spline.points[t.spline.points.length - 1];
             if (Math.hypot(x - last.x, y - last.y) <= 0.15) return;
             if (t.end === 'start') t.spline.points.unshift({ x, y }); else t.spline.points.push({ x, y });
+            t.rawAdded.push({ x, y });
             t.layer.layoutCSS();
             updateVectorHandles();
             return;
         }
         if (!g.vecFreehand) return;
+        [x, y] = clampPointToPortraitTile(x, y, g.vecFreehand.originX, g.vecFreehand.originY);
         const last = g.vecFreehand.points[g.vecFreehand.points.length - 1];
         if (Math.hypot(x - last.x, y - last.y) <= 0.15) return;
         g.vecFreehand.points.push({ x, y });
@@ -6002,6 +6049,17 @@ function setupDrawingEvents() {
         if (g.vecExtend) {
             const t = g.vecExtend;
             g.vecExtend = null;
+            // Simplify just the newly-added run (same RDP pass/epsilon a
+            // fresh Pen stroke gets via simplifyPoints in the plain-vpen
+            // branch below) before merging it back onto the spline --
+            // otherwise every raw touchmove sample stays as its own point,
+            // which is denser than a stroke drawn from scratch.
+            const simplified = t.rawAdded.length >= 2 ? simplifyPoints(t.rawAdded, 0.6) : t.rawAdded.slice();
+            t.spline.points = t.end === 'start'
+                ? simplified.slice().reverse().concat(t.before)
+                : t.before.concat(simplified);
+            t.layer.layoutCSS();
+            updateVectorHandles();
             const after = t.spline.points.map(p => ({ x: p.x, y: p.y }));
             const changed = after.length !== t.before.length || after.some((p, i) => p.x !== t.before[i].x || p.y !== t.before[i].y);
             if (changed) pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: t.layer.id, spline: t.spline, before: t.before, after });
@@ -6195,6 +6253,12 @@ function setupDrawingEvents() {
             const cx = touches ? touches[0].clientX : e.clientX;
             const cy = touches ? touches[0].clientY : e.clientY;
             if (Math.hypot(cx - g.manualPan.startX, cy - g.manualPan.startY) > 6) g.manualPan.moved = true;
+            // Portrait tile-isolation pick mode: still track whether the
+            // touch moved (above) so a real drag doesn't get misread as a
+            // tap-to-pick down in the pointerup handler, but never actually
+            // scroll the viewport out from under the picker -- the person
+            // is choosing a tile, not panning. See finishPortraitIsolationPick.
+            if (portraitIsolationPickMode) return;
             // Clamped so a one-finger pan can't scroll the canvas completely
             // out of view -- see clampPanScrollWithinEdgeMargin/MIN_CANVAS_PEEK.
             viewport.scrollLeft = clampPanScrollWithinEdgeMargin(g.manualPan.scrollLeft - (cx - g.manualPan.x), viewport.scrollWidth - viewport.clientWidth);
