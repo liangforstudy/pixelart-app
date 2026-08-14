@@ -1132,7 +1132,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_35';
+const BUILD_VERSION = 'V1_36';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -2534,6 +2534,15 @@ function replaceVisiblePalette(colours){
         pal.length=0;
         copy.forEach(c=>createSwatch(c));
         // createSwatch rebuilt the same tile palette; preserve its original order.
+    } else if(spritePaletteEditActive && spriteAnimFrameEditSnapshot){
+        // Mirrors the Portrait branch above exactly, just against this
+        // animation's own palette array (spriteAnimEnsurePalette) instead
+        // of a Portrait tile's -- createSwatch appends back into it as
+        // swatches are (re)created below.
+        const pal=spriteAnimEnsurePalette(spriteAnimFrameEditSnapshot.animName)||[];
+        const copy=[...colours];
+        pal.length=0;
+        copy.forEach(c=>createSwatch(c));
     } else copySafeColours(colours).forEach(c=>createSwatch(c));
     selectedColor=colours[0]||'#000000';
     updateUI(); updateColorPickerAvailability();
@@ -5712,11 +5721,11 @@ function updateColorPickerAvailability() {
     const picker = document.getElementById('colorPicker');
     const wrap = document.getElementById('pickerContainer');
     if (!picker || !wrap) return;
-    const full = selectedProfile === 'portrait' && countCustomSwatches() >= PORTRAIT_PALETTE_LIMIT;
+    const full = (selectedProfile === 'portrait' || spritePaletteEditActive) && countCustomSwatches() >= PORTRAIT_PALETTE_LIMIT;
     picker.disabled = full;
     wrap.style.opacity = full ? '0.35' : '1';
     wrap.style.pointerEvents = full ? 'none' : 'auto';
-    wrap.title = full ? 'Portrait palette is full (15 colours)' : 'Add colour';
+    wrap.title = full ? (spritePaletteEditActive ? 'This sprite\'s palette is full (15 colours)' : 'Portrait palette is full (15 colours)') : 'Add colour';
 }
 
 // Adds a new colour swatch to the palette, enforcing the Portrait profile's colour cap if active.
@@ -5736,6 +5745,9 @@ function createSwatch(color) {
     if (selectedProfile === 'portrait') {
         const pal=ensurePortraitTilePalette(portraitActiveTileKey);
         if (pal.length >= PORTRAIT_PALETTE_LIMIT) { updateColorPickerAvailability(); return; }
+    } else if (spritePaletteEditActive && spriteAnimFrameEditSnapshot) {
+        const pal=spriteAnimEnsurePalette(spriteAnimFrameEditSnapshot.animName)||[];
+        if (pal.length >= PORTRAIT_PALETTE_LIMIT) { updateColorPickerAvailability(); return; }
     } else if (countCustomSwatches() >= 999) return;
 
     const wrapper = document.createElement('div');
@@ -5745,7 +5757,7 @@ function createSwatch(color) {
     s.style.backgroundColor = hex;
     const badge = document.createElement('div');
     badge.className = 'delete-badge'; badge.innerText = '×';
-    badge.onclick = (e) => { e.stopPropagation(); const removed=rgbToHex(wrapper.querySelector('.swatch')?.style.backgroundColor||'').toUpperCase(); wrapper.remove(); if(selectedProfile==='portrait'){ const pal=ensurePortraitTilePalette(portraitActiveTileKey); const ix=pal.indexOf(removed); if(ix>=0)pal.splice(ix,1); } updateColorPickerAvailability(); updateUI(); };
+    badge.onclick = (e) => { e.stopPropagation(); const removed=rgbToHex(wrapper.querySelector('.swatch')?.style.backgroundColor||'').toUpperCase(); wrapper.remove(); if(selectedProfile==='portrait'){ const pal=ensurePortraitTilePalette(portraitActiveTileKey); const ix=pal.indexOf(removed); if(ix>=0)pal.splice(ix,1); } else if(spritePaletteEditActive && spriteAnimFrameEditSnapshot){ const pal=spriteAnimEnsurePalette(spriteAnimFrameEditSnapshot.animName)||[]; const ix=pal.indexOf(removed); if(ix>=0)pal.splice(ix,1); } updateColorPickerAvailability(); updateUI(); };
     wrapper.onmousedown = wrapper.ontouchstart = (e) => {
         if (isConfirmingClear) return;
         if (isEditing) {
@@ -8361,19 +8373,55 @@ function spriteAnimResolvedAnim() {
     return a ? a.resolvedFrom : null;
 }
 function spriteAnimDirectionCount() {
-    const a = spriteAnimResolvedAnim();
+    return spriteAnimDirectionCountFor(spriteAnimResolvedAnim());
+}
+// Computed from the actual sheet height, never hardcoded -- this is what
+// makes an unusual row count (a direction-agnostic 1-row sheet like
+// Sleep, or a hypothetical 16-direction sheet) work automatically with no
+// special-casing. See section 55.1/the person's 16-direction request.
+// Factored out from spriteAnimDirectionCount (which reads the currently-
+// active animation) so selectSpriteAnimAnimation can also ask "how many
+// rows does the animation I'm about to switch TO have" before actually
+// switching -- needed to preserve the current direction across an
+// animation switch instead of always resetting it to 0.
+function spriteAnimDirectionCountFor(a) {
     if (!a || !a.frameHeight) return 8;
     const sheet = spriteAnimProject.sheets[a.name] && spriteAnimProject.sheets[a.name].anim;
     if (!sheet) return 8;
-    // Computed from the actual sheet height, never hardcoded -- this is
-    // what makes an unusual row count (a direction-agnostic 1-row sheet
-    // like Sleep, or a hypothetical 16-direction sheet) work automatically
-    // with no special-casing. See section 55.1/the person's 16-direction request.
     return Math.max(1, Math.round((sheet.naturalHeight || sheet.height) / a.frameHeight));
 }
 function spriteAnimFrameCount() {
     const a = spriteAnimResolvedAnim();
     return a ? a.durations.length : 0;
+}
+
+// Lazily scans (once, then caches) the given animation's own -Anim.png
+// sheet for its first 15 unique opaque colours, row-major order,
+// transparent pixels skipped -- mirrors samplePortraitTilePalettes'
+// scanning rule exactly, just scoped to one whole sheet (every frame,
+// every direction) instead of one 40x40 tile. Returns the animation's
+// resolved name's palette array directly (not a copy) so callers can
+// push/splice it in place, matching ensurePortraitTilePalette's own
+// contract. Returns null if the animation has no sheet loaded (e.g. an
+// unresolvable alias).
+function spriteAnimEnsurePalette(animName) {
+    if (!spriteAnimProject) return null;
+    if (spriteAnimProject.palettes.has(animName)) return spriteAnimProject.palettes.get(animName);
+    const sheets = spriteAnimProject.sheets[animName];
+    if (!sheets || !sheets.anim) return null;
+    const sheet = sheets.anim;
+    const w = sheet.naturalWidth || sheet.width, h = sheet.naturalHeight || sheet.height;
+    const data = sheet.getContext('2d').getImageData(0, 0, w, h).data;
+    const arr = [], seen = new Set();
+    for (let y = 0; y < h && arr.length < PORTRAIT_PALETTE_LIMIT; y++) {
+        for (let x = 0; x < w && arr.length < PORTRAIT_PALETTE_LIMIT; x++) {
+            const i = (y * w + x) * 4; if (data[i+3] === 0) continue;
+            const hex = rgbToHexBytes(data[i], data[i+1], data[i+2]).toUpperCase();
+            if (!seen.has(hex)) { seen.add(hex); arr.push(hex); }
+        }
+    }
+    spriteAnimProject.palettes.set(animName, arr);
+    return arr;
 }
 
 /* ---- Import flow -------------------------------------------------------- */
@@ -8412,6 +8460,13 @@ function closeSpriteAnimEditor() {
    canvas at the same cell rect, then every snapshotted global is
    restored and the sprite-anim screen reappears. */
 let spriteAnimFrameEditSnapshot = null;
+// True only while frame-edit mode's palette is loaded and its 15-colour
+// cap should be enforced (see createSwatch/updateColorPickerAvailability)
+// -- kept as its own flag rather than folded into selectedProfile==='pixelArt'
+// checks, since selectedProfile is 'pixelArt' during frame editing (see
+// spriteAnimEnterFrameEditMode) but plain Pixel Art projects opened
+// normally must NOT get this cap.
+let spritePaletteEditActive = false;
 
 function spriteAnimEnterFrameEditMode() {
     const anim = spriteAnimResolvedAnim();
@@ -8454,6 +8509,16 @@ function spriteAnimEnterFrameEditMode() {
     currentProjectId = null;
     currentProjectName = anim.name + ' - Frame ' + (frame + 1);
     resetHistory();
+
+    // Loads the palette panel from this animation's own 15-colour (+
+    // transparency) cap, scanned/cached by spriteAnimEnsurePalette, and
+    // flags spritePaletteEditActive so createSwatch/updateColorPickerAvailability
+    // enforce that same cap while this mode is active -- the person's
+    // explicit requirement that each PMD -Anim.png sheet stays within the
+    // format's real 15-colour limit, the same way Portrait mode already
+    // enforces its own per-tile cap.
+    spritePaletteEditActive = true;
+    replaceVisiblePalette(spriteAnimEnsurePalette(anim.name) || []);
 
     document.getElementById('sprite-anim-screen').style.display = 'none';
     revealPixelCanvas();
@@ -8499,6 +8564,7 @@ function spriteAnimExitFrameEditMode() {
     currentProjectId = snap.currentProjectId; currentProjectName = snap.currentProjectName;
     selectedProfile = snap.selectedProfile; currentTool = snap.currentTool;
     spriteAnimFrameEditSnapshot = null;
+    spritePaletteEditActive = false;
 
     const doneBtn = document.getElementById('spriteAnimFrameEditDoneBtn');
     if (doneBtn) doneBtn.style.display = 'none';
@@ -8588,6 +8654,19 @@ async function importSpriteAnimZip(arrayBuffer) {
         anims: parsed.anims,
         order: parsed.order,
         sheets,
+        // Per-animation colour palette (max 15 opaque colours + transparency,
+        // scanned from that animation's own -Anim.png sheet at import time),
+        // Map<animName, string[]>. Each PNG in this format is limited to 15
+        // colours plus transparency across its entire sheet (every frame,
+        // every direction) -- the person's explicit requirement, matching
+        // the same cap this app's Portrait profile already enforces per
+        // tile, just scoped per sprite animation's own PNG here instead of
+        // per 40x40 tile. Lazily populated by spriteAnimEnsurePalette
+        // (mirrors ensurePortraitTilePalette's lazy-Map-entry pattern)
+        // rather than scanned for every animation up front, since a
+        // package can have 30+ animations and most won't be visited in
+        // any given session.
+        palettes: new Map(),
     };
     spriteAnimOffsetMarkerCache.clear();
 
@@ -8596,7 +8675,14 @@ async function importSpriteAnimZip(arrayBuffer) {
     const unresolved = parsed.order.filter(n => { const a = parsed.anims.get(n); return a.copyOfName && !a.resolvedFrom; });
     if (unresolved.length) showSpriteAnimMissingNameToast(unresolved);
 
-    spriteAnimState.activeAnimName = parsed.order.find(n => !parsed.anims.get(n).copyOfName || parsed.anims.get(n).resolvedFrom) || parsed.order[0] || null;
+    // Default to Idle if the package has one (matching Idle's new
+    // always-first position in the Animations list, see
+    // renderSpriteAnimAnimList) -- otherwise fall back to the first
+    // resolvable (non-broken-alias) animation in file order, same as
+    // before.
+    const idleAnim = parsed.anims.get('Idle');
+    spriteAnimState.activeAnimName = (idleAnim && (!idleAnim.copyOfName || idleAnim.resolvedFrom)) ? 'Idle'
+        : parsed.order.find(n => !parsed.anims.get(n).copyOfName || parsed.anims.get(n).resolvedFrom) || parsed.order[0] || null;
     spriteAnimState.activeDirection = 0;
     spriteAnimState.activeFrameIndex = 0;
 
@@ -8647,7 +8733,18 @@ function renderSpriteAnimAnimList() {
     const list = document.getElementById('spriteAnimAnimList');
     list.innerHTML = '';
     if (!spriteAnimProject) return;
-    spriteAnimProject.order.forEach((name, i) => {
+    // Idle is always shown first in this list, per the person's request --
+    // this only affects the displayed order (and its 1-based numbering,
+    // which follows suit so "1." is always whichever animation is drawn
+    // first, matching the reference tool's own plain position-in-list
+    // numbering rather than a stored XML index). spriteAnimProject.order
+    // itself is never reordered -- that array is also what
+    // buildAnimDataXml/exportSpriteAnimZip iterate to write the file, and
+    // reordering it would silently reorder the exported <Anim> elements
+    // too, which the person didn't ask for and could break round-trip
+    // fidelity for anyone relying on the file's original element order.
+    const displayOrder = spriteAnimProject.order.slice().sort((a, b) => (a === 'Idle' ? -1 : b === 'Idle' ? 1 : 0));
+    displayOrder.forEach((name, i) => {
         const anim = spriteAnimProject.anims.get(name);
         const el = document.createElement('div');
         el.className = 'spriteAnimListItem' + (name === spriteAnimState.activeAnimName ? ' active' : '') + (anim.copyOfName ? ' alias' : '');
@@ -8664,7 +8761,13 @@ function selectSpriteAnimAnimation(name) {
     const anim = spriteAnimProject.anims.get(name);
     if (anim.copyOfName && !anim.resolvedFrom) { showSpriteAnimMissingNameToast([name]); return; }
     spriteAnimState.activeAnimName = name;
-    spriteAnimState.activeDirection = 0;
+    // Keep whichever direction the person was already looking at, rather
+    // than always snapping back to Down -- only clamp if the new
+    // animation actually has fewer rows than the currently-selected
+    // direction index (e.g. switching to a 1-row direction-agnostic
+    // animation like Sleep while direction 5 was selected).
+    const dirCount = spriteAnimDirectionCountFor(anim.resolvedFrom);
+    spriteAnimState.activeDirection = Math.min(spriteAnimState.activeDirection, dirCount - 1);
     spriteAnimState.activeFrameIndex = 0;
     spriteAnimState.tickCounter = 0;
     renderSpriteAnimAnimList();
@@ -9193,14 +9296,6 @@ function setupSpriteAnimOffsetDrag() {
     canvas.addEventListener('pointercancel', end);
     canvas.addEventListener('pointerleave', end);
 }
-
-
-
-
-
-
-
-
 </script>
 </body>
 </html>
