@@ -947,7 +947,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_29';
+const BUILD_VERSION = 'V1_30';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1234,6 +1234,21 @@ const debugLogEntries = [];
 let logTouchEnabled = false;
 let logJsEnabled = false;
 let logTraceEnabled = false;
+// These three are declared before panelVisibility exists (see its
+// declaration further down, which is where they're normally persisted
+// from/to -- see savePanelVisibility), so their saved values are read
+// directly from localStorage here instead of via panelVisibility.debugOptions,
+// which doesn't exist yet at this point in top-level execution order.
+// setLogToggle below keeps both copies in sync on every change.
+try {
+    const savedPV = JSON.parse(localStorage.getItem('pixelAppPanelVisibility') || 'null');
+    const savedDO = savedPV && savedPV.debugOptions;
+    if (savedDO) {
+        if (typeof savedDO.logTouch === 'boolean') logTouchEnabled = savedDO.logTouch;
+        if (typeof savedDO.logJs === 'boolean') logJsEnabled = savedDO.logJs;
+        if (typeof savedDO.logTrace === 'boolean') logTraceEnabled = savedDO.logTrace;
+    }
+} catch (e) {}
 
 // Adds one entry to the in-memory debug log and re-renders the Log panel.
 // category is one of 'touch' | 'js' | 'trace', used purely for colour-
@@ -1292,6 +1307,10 @@ function setLogToggle(kind, on) {
     if (kind === 'touch') logTouchEnabled = on;
     else if (kind === 'js') logJsEnabled = on;
     else if (kind === 'trace') logTraceEnabled = on;
+    panelVisibility.debugOptions.logTouch = logTouchEnabled;
+    panelVisibility.debugOptions.logJs = logJsEnabled;
+    panelVisibility.debugOptions.logTrace = logTraceEnabled;
+    savePanelVisibility();
     renderLogToggleButtons();
 }
 // Syncs the three log-toggle buttons' highlighted state to logTouchEnabled/logJsEnabled/logTraceEnabled.
@@ -1344,8 +1363,12 @@ function estimateMemoryBytes() {
 }
 // Debug-only: switches vector layers between the normal pixel-snapped
 // rendering and the old smooth/display-resolution one, for comparison.
+// Persisted in panelVisibility.debugOptions so it survives a reload --
+// see the localStorage note near panelVisibility's declaration.
 function toggleDebugUnrestrictedVector() {
     debugUnrestrictedVector = !debugUnrestrictedVector;
+    panelVisibility.debugOptions.unrestrictedVector = debugUnrestrictedVector;
+    savePanelVisibility();
     const btn = document.getElementById('debugVectorToggleBtn');
     if (btn) btn.classList.toggle('active', debugUnrestrictedVector);
     frames.forEach(f => f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); }));
@@ -1353,8 +1376,11 @@ function toggleDebugUnrestrictedVector() {
 
 // Debug-only: forces the custom on-screen keyboard even on a desktop
 // (non-touch) device, for testing it without needing a touch screen.
+// Persisted the same way as toggleDebugUnrestrictedVector above.
 function toggleForceCustomKeyboard() {
     forceCustomKeyboard = !forceCustomKeyboard;
+    panelVisibility.debugOptions.forceCustomKeyboard = forceCustomKeyboard;
+    savePanelVisibility();
     const btn = document.getElementById('forceKeyboardToggleBtn');
     if (btn) btn.classList.toggle('active', forceCustomKeyboard);
 }
@@ -1814,14 +1840,29 @@ let MAX_UNDO = 40; // action cap; the memory budget is the primary safety limit
 // especially now that it's live-adjustable (see setHistoryMemoryBudgetMiB
 // and the History Memory Budget slider in the Debug drawer) rather than
 // a fixed constant either way.
-let HISTORY_MEMORY_BUDGET = 64 * 1024 * 1024; // 64 MiB default
 const HISTORY_MEMORY_BUDGET_MIN_MB = 8, HISTORY_MEMORY_BUDGET_MAX_MB = 512;
+// Restored from panelVisibility.debugOptions the same way logTouchEnabled/
+// logJsEnabled/logTraceEnabled are above -- this is also declared before
+// panelVisibility exists, so it reads localStorage directly rather than
+// via panelVisibility.debugOptions.
+let HISTORY_MEMORY_BUDGET = (() => {
+    let mb = 64;
+    try {
+        const savedPV = JSON.parse(localStorage.getItem('pixelAppPanelVisibility') || 'null');
+        const savedMb = savedPV && savedPV.debugOptions && savedPV.debugOptions.historyMemoryBudgetMiB;
+        if (typeof savedMb === 'number' && savedMb >= HISTORY_MEMORY_BUDGET_MIN_MB && savedMb <= HISTORY_MEMORY_BUDGET_MAX_MB) mb = savedMb;
+    } catch (e) {}
+    return mb * 1024 * 1024;
+})();
 // Applies a new history memory budget (in MiB) from the Debug drawer slider,
 // clamped to a sane range, and re-runs the prune immediately so a lowered
 // budget takes effect right away rather than waiting for the next edit.
+// Persisted to panelVisibility.debugOptions on every change.
 function setHistoryMemoryBudgetMiB(mb) {
     const clamped = Math.max(HISTORY_MEMORY_BUDGET_MIN_MB, Math.min(HISTORY_MEMORY_BUDGET_MAX_MB, Number(mb) || 64));
     HISTORY_MEMORY_BUDGET = clamped * 1024 * 1024;
+    panelVisibility.debugOptions.historyMemoryBudgetMiB = clamped;
+    savePanelVisibility();
     const label = document.getElementById('historyMemoryBudgetLabel');
     if (label) label.textContent = clamped + ' MiB';
     pruneHistoryLimit();
@@ -2448,8 +2489,17 @@ const panelTabDefinitions = [
     { name:'history', label:'Undo History', fixed:false },
     { name:'debug', label:'Debug', fixed:false }
 ];
-let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:true, history:false, debug:true };
-try { const saved=JSON.parse(localStorage.getItem('pixelAppPanelVisibility')||'null'); if(saved && typeof saved==='object') panelVisibility={...panelVisibility,...saved}; } catch(e) {}
+let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:true, history:false, debug:true,
+    // Debug drawer toggle state, persisted alongside panel-tab visibility
+    // in the same pixelAppPanelVisibility localStorage entry (by request --
+    // see the handoff doc's note on this rather than a separate key).
+    // Nested under debugOptions rather than flattened into the object's
+    // top level so it stays visually distinct from the panel-tab booleans
+    // above, even though nothing currently iterates this object's keys in
+    // a way that would actually break if it were flat.
+    debugOptions: { unrestrictedVector:false, forceCustomKeyboard:false, logTouch:false, logJs:false, logTrace:false, historyMemoryBudgetMiB:64 }
+};
+try { const saved=JSON.parse(localStorage.getItem('pixelAppPanelVisibility')||'null'); if(saved && typeof saved==='object') panelVisibility={...panelVisibility,...saved,debugOptions:{...panelVisibility.debugOptions,...(saved.debugOptions||{})}}; } catch(e) {}
 function savePanelVisibility(){ try{ localStorage.setItem('pixelAppPanelVisibility', JSON.stringify(panelVisibility)); }catch(e){} }
 
 function renderPanelManager() {
@@ -2599,7 +2649,18 @@ function openDrawer(which) {
     // when Debug specifically is the one opening.
     backdrop.classList.toggle('debug-open', which === 'debug');
     drawerOpenName = which;
-    if (which === 'debug') { refreshDebugStats(); renderLogToggleButtons(); }
+    if (which === 'debug') {
+        refreshDebugStats();
+        renderLogToggleButtons();
+        // These two toggles only update their own button's .active class
+        // from inside their own click handler (toggleDebugUnrestrictedVector/
+        // toggleForceCustomKeyboard), which never runs on page load -- so a
+        // value restored from panelVisibility.debugOptions needs syncing to
+        // the button here too, or the button would show "off" while the
+        // underlying state is actually "on" until the first tap.
+        const vecBtn = document.getElementById('debugVectorToggleBtn'); if (vecBtn) vecBtn.classList.toggle('active', debugUnrestrictedVector);
+        const kbBtn = document.getElementById('forceKeyboardToggleBtn'); if (kbBtn) kbBtn.classList.toggle('active', forceCustomKeyboard);
+    }
     // Delete Points is a one-shot "I'm about to tap a point to remove it"
     // mode, not a standing preference -- closing the Tools drawer to make
     // the canvas tappable (see toggleVertexDeleteMode) already leaves the
@@ -3498,8 +3559,8 @@ function resetCameraTransform() {
 let showGridLines = false;
 let largeLayerThumbs = false;
 let currentPenWidth = 1; // grid units, used for new vector strokes/shapes
-let debugUnrestrictedVector = false; // debug-only: smooth display-resolution vector rendering instead of pixel-snapped
-let forceCustomKeyboard = false; // debug-only: use the custom on-screen keyboard even on desktop (for testing it without a touch device)
+let debugUnrestrictedVector = panelVisibility.debugOptions.unrestrictedVector; // debug-only: smooth display-resolution vector rendering instead of pixel-snapped
+let forceCustomKeyboard = panelVisibility.debugOptions.forceCustomKeyboard; // debug-only: use the custom on-screen keyboard even on desktop (for testing it without a touch device)
 
 // The app previously used a custom on-screen keyboard for touch devices
 // (no real keyboard/mouse). It now uses the device's native keyboard
