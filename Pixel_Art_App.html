@@ -666,7 +666,6 @@
                 <div class="spriteAnimSubLabel">Edit Sprite (current frame)</div>
                 <div id="spriteAnimEditButtons">
                     <button class="btn" id="spriteAnimToolsBtn" onclick="uiAction(() => { spriteAnimEnterFrameEditMode(); openDrawer('tools'); })">🛠️ TOOLS</button>
-                    <button class="btn" id="spriteAnimLayersBtnRef" onclick="uiAction(() => { spriteAnimEnterFrameEditMode(); togglePanel('layers'); })">📚 LAYERS</button>
                 </div>
             </div>
 
@@ -1132,7 +1131,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_36';
+const BUILD_VERSION = 'V1_37';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
