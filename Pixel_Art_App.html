@@ -52,11 +52,28 @@
         .canvas-container {
             position: relative; border: 2px solid #333; flex-shrink: 0;
             touch-action: none; border-radius: 8px; overflow: hidden;
-            background-color: #808080;
-            background-image: linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666),
-                              linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666);
             cursor: none;
         }
+        /* Checkerboard profile system (Roadmap item 10): built-in profiles
+           set --checker-a/--checker-b (and optionally --checker-solid) as
+           CSS custom properties on the element itself via
+           applyCheckerProfile(), so one shared .checkerboard-bg rule
+           (below) drives every checkerboard-style background instead of
+           each site hardcoding its own colours. Canvas, PMD preview, and
+           the opacity slider each track their own profile selection
+           independently; gallery card thumbnails always follow whatever
+           the canvas is currently set to (see galleryFlattenLayers-
+           adjacent thumbnail rendering -- not an independent profile).
+        */
+        .checkerboard-bg {
+            --checker-a: #808080; --checker-b: #666666; --checker-size: 20px;
+            background-color: var(--checker-a);
+            background-image: linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%, var(--checker-b)),
+                              linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%, var(--checker-b));
+            background-size: var(--checker-size) var(--checker-size);
+            background-position: 0 0, calc(var(--checker-size) / 2) calc(var(--checker-size) / 2);
+        }
+        .checkerboard-bg.checker-solid { background-image: none; background-color: var(--checker-a); }
 
         .layer-canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; display: block; pointer-events: none; }
         .layer-canvas.reference-canvas { image-rendering: auto; }
@@ -173,7 +190,7 @@
         .spriteAnimListItem.active { background: #0078d4; color: #fff; font-weight: bold; }
         .spriteAnimListItem.alias { color: #9ac; font-style: italic; }
         #spriteAnimPreviewWrap {
-            flex: none; position: relative; height: 220px; background: #11111b repeating-conic-gradient(#191924 0% 25%, #11111b 0% 50%) 50% / 20px 20px;
+            flex: none; position: relative; height: 220px;
             border: 1px solid #2a2a2a; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden;
         }
         #spriteAnimCanvas { image-rendering: pixelated; image-rendering: crisp-edges; }
@@ -232,10 +249,7 @@
             font-size: 9px; color: #555; margin-top: 4px; text-align: center; padding: 0 8px;
         }
         .gallery-card .thumb-wrap {
-            width: 100%; aspect-ratio: 1 / 1; background: #808080;
-            background-image: linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666),
-                              linear-gradient(45deg, #666666 25%, transparent 25%, transparent 75%, #666666 75%, #666666);
-            background-size: 10px 10px; background-position: 0 0, 5px 5px;
+            width: 100%; aspect-ratio: 1 / 1;
             overflow: hidden; display: flex; align-items: center; justify-content: center;
             flex: none;
         }
@@ -574,7 +588,7 @@
            with a finger and has no room for a value label. Built as a div
            with a fill bar + leading-edge label, driven by pointer events
            so it works uniformly across touch and mouse. */
-        .ios-slider { position: relative; flex: 1; height: 34px; background: #10151d; border: 1px solid rgba(255,255,255,.14); border-radius: 17px; overflow: hidden; touch-action: none; cursor: pointer; }
+        .ios-slider { position: relative; flex: 1; height: 34px; border: 1px solid rgba(255,255,255,.14); border-radius: 17px; overflow: hidden; touch-action: none; cursor: pointer; --checker-size: 10px; }
         .ios-slider-fill { position: absolute; top: 0; left: 0; bottom: 0; background: linear-gradient(180deg, #3d9bff, #0078d4); border-radius: 17px 0 0 17px; transition: none; }
         .ios-slider-fill.full { border-radius: 17px; }
         .ios-slider-label { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
@@ -644,7 +658,7 @@
             </div>
 
             <!-- Layered preview: Shadow (bottom) -> Anim (middle) -> Offsets markers (top), per the person's explicit layering instruction -->
-            <div id="spriteAnimPreviewWrap">
+            <div id="spriteAnimPreviewWrap" class="checkerboard-bg">
                 <canvas id="spriteAnimCanvas" width="1" height="1"></canvas>
                 <div id="spriteAnimEmptyHint">Import a sprite .zip to begin</div>
             </div>
@@ -832,7 +846,7 @@
     <div id="pixel-canvas-screen">
         <div id="viewport">
             <div id="canvasWrap">
-                <div class="canvas-container" id="container">
+                <div class="canvas-container checkerboard-bg" id="container">
                     <div id="pixel-cursor"></div>
                     <canvas id="floatBuffer" class="layer-canvas"></canvas>
                     <canvas id="shapePreview" class="layer-canvas" style="z-index:160; display:none; opacity:0.85;"></canvas>
@@ -1049,6 +1063,27 @@
             </div>
         </div>
 
+        <div class="floating-panel" id="panel-customisation">
+            <div class="panel-title">Customisation</div>
+            <div style="font-size:10px;color:#777;text-align:center;">Personalize how the editor looks and is arranged.</div>
+            <div id="customisationMenu" class="row">
+                <button class="btn" onclick="uiAction(() => openCustomisationSection('tools'))">🛠️ CUSTOMIZE TOOLS</button>
+            </div>
+            <div id="customisationMenu2" class="row">
+                <button class="btn" onclick="uiAction(() => openCustomisationSection('checker'))">🏁 CHECKERBOARD PATTERNS</button>
+            </div>
+            <div id="customisationSection-tools" style="display:none;">
+                <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
+                <div class="panel-subtitle">Tool Button Arrangement</div>
+                <div style="font-size:10px;color:#777;text-align:center;padding:6px 0;">Not built yet -- see Roadmap item 2. Reordering the Tools drawer's buttons will live here once it exists.</div>
+            </div>
+            <div id="customisationSection-checker" style="display:none;">
+                <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
+                <div class="panel-subtitle">Checkerboard Profiles</div>
+                <div id="checkerProfilePicker"></div>
+            </div>
+        </div>
+
         <div class="floating-panel" id="panel-history">
             <div class="panel-title">Undo History</div>
             <div style="font-size:10px;color:#777;text-align:center;">Tap an earlier step to undo back to it. Grey steps can be restored with redo.</div>
@@ -1081,6 +1116,7 @@
             <button class="fbtn" id="tab-layers" data-panel-tab="layers" onclick="togglePanel('layers')">📚 LAYERS</button>
             <button class="fbtn" id="tab-file" data-panel-tab="file" onclick="togglePanel('file')">📁 FILE</button>
             <button class="fbtn" id="tab-panel" data-panel-tab="panel" onclick="togglePanel('panel')">▦ PANEL</button>
+            <button class="fbtn" id="tab-customisation" data-panel-tab="customisation" onclick="togglePanel('customisation')">🎛️ CUSTOMISE</button>
             <button class="fbtn" id="tab-history" data-panel-tab="history" data-optional-panel="history" onclick="togglePanel('history')">↩️ HISTORY</button>
             <button class="fbtn" id="tab-debug" data-panel-tab="debug" onclick="toggleDrawer('debug')">⚙️ DEBUG</button>
         </div>
@@ -1161,7 +1197,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_38';
+const BUILD_VERSION = 'V1_39';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -2909,9 +2945,10 @@ const panelTabDefinitions = [
     { name:'layers', label:'Layers', fixed:false },
     { name:'file', label:'File', fixed:false },
     { name:'history', label:'Undo History', fixed:false },
-    { name:'debug', label:'Debug', fixed:false }
+    { name:'debug', label:'Debug', fixed:false },
+    { name:'customisation', label:'Customisation', fixed:false }
 ];
-let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:true, history:false, debug:true,
+let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:true, history:false, debug:true, customisation:true,
     // Debug drawer toggle state, persisted alongside panel-tab visibility
     // in the same pixelAppPanelVisibility localStorage entry (by request --
     // see the handoff doc's note on this rather than a separate key).
@@ -2923,6 +2960,152 @@ let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:tr
 };
 try { const saved=JSON.parse(localStorage.getItem('pixelAppPanelVisibility')||'null'); if(saved && typeof saved==='object') panelVisibility={...panelVisibility,...saved,debugOptions:{...panelVisibility.debugOptions,...(saved.debugOptions||{})}}; } catch(e) {}
 function savePanelVisibility(){ try{ localStorage.setItem('pixelAppPanelVisibility', JSON.stringify(panelVisibility)); }catch(e){} }
+
+// Checkerboard colour profiles (Roadmap item 10). Deliberately a separate,
+// top-level localStorage key -- not folded into pixelAppPanelVisibility --
+// since this is a real display preference a person would want kept even
+// if Debug-specific settings were ever reset separately, not a diagnostic
+// toggle.
+const CHECKER_BUILTIN_PROFILES = {
+    gray:  { name: 'Gray (default)', a: '#808080', b: '#666666', solid: false },
+    bw:    { name: 'Black & White',  a: '#ffffff', b: '#bfbfbf', solid: false },
+    blue:  { name: 'Dark Blue',      a: '#11111b', b: '#191924', solid: false }, // promoted from the PMD preview's previous hardcoded rule
+    solid: { name: 'Solid Grey',     a: '#3a3a3a', b: '#3a3a3a', solid: true }
+};
+// canvas/pmd/opacitySlider each track their own selection independently;
+// gallery card thumbnails intentionally have no entry here -- they always
+// mirror whatever "canvas" is currently set to (see applyCheckerProfile
+// callers) rather than being a fourth independent selection. `custom`
+// holds each screen's own picked pair of colours (V1_39) -- selecting
+// profileKey 'custom' for a screen makes it read from here instead of
+// CHECKER_BUILTIN_PROFILES; "both the same colour" is just picking the
+// same hex for a/b, not a separate solid flag, since the person can
+// already reach a two-tone-identical look that way without a third state
+// to track.
+let checkerSettings = { canvas: 'gray', pmd: 'blue', opacitySlider: 'gray',
+    custom: { canvas: { a: '#808080', b: '#666666' }, pmd: { a: '#808080', b: '#666666' }, opacitySlider: { a: '#808080', b: '#666666' } }
+};
+try { const savedCk=JSON.parse(localStorage.getItem('pixelAppSettingsCheckBoard')||'null'); if(savedCk && typeof savedCk==='object') checkerSettings={...checkerSettings,...savedCk,custom:{...checkerSettings.custom,...(savedCk.custom||{})}}; } catch(e) {}
+function saveCheckerSettings(){ try{ localStorage.setItem('pixelAppSettingsCheckBoard', JSON.stringify(checkerSettings)); }catch(e){} }
+// Applies a profile's colours as CSS custom properties directly on the
+// given element(s) -- one shared .checkerboard-bg CSS rule (see
+// stylesheet) reads these, so this function never needs to touch
+// background-image/background-color itself. `els` can be a single element
+// or an array (gallery cards call this once per card, sharing "canvas"'s
+// current profile). `screenKey` is only needed to resolve a 'custom'
+// profileKey back to that screen's own saved colour pair.
+function applyCheckerProfile(els, profileKey, screenKey) {
+    let profile;
+    if (profileKey === 'custom') {
+        const c = checkerSettings.custom[screenKey] || checkerSettings.custom.canvas;
+        profile = { a: c.a, b: c.b, solid: c.a === c.b };
+    } else {
+        profile = CHECKER_BUILTIN_PROFILES[profileKey] || CHECKER_BUILTIN_PROFILES.gray;
+    }
+    (Array.isArray(els) ? els : [els]).forEach(el => {
+        if (!el) return;
+        el.style.setProperty('--checker-a', profile.a);
+        el.style.setProperty('--checker-b', profile.b);
+        el.classList.toggle('checker-solid', !!profile.solid);
+    });
+}
+// Applies every screen's currently-saved profile selection to its
+// element(s). Call once at bootstrap, and again after saving a change
+// from the picker UI.
+function applyAllCheckerProfiles() {
+    applyCheckerProfile(document.getElementById('container'), checkerSettings.canvas, 'canvas');
+    applyCheckerProfile(document.getElementById('spriteAnimPreviewWrap'), checkerSettings.pmd, 'pmd');
+    document.querySelectorAll('.gallery-card .thumb-wrap').forEach(el => applyCheckerProfile(el, checkerSettings.canvas, 'canvas'));
+    document.querySelectorAll('.ios-slider').forEach(el => applyCheckerProfile(el, checkerSettings.opacitySlider, 'opacitySlider'));
+}
+function setCheckerProfile(screen, profileKey) {
+    checkerSettings[screen] = profileKey;
+    saveCheckerSettings();
+    applyAllCheckerProfiles();
+    renderCheckerProfilePicker();
+}
+// The Customisation panel is a two-item menu (Customize Tools /
+// Checkerboard Patterns), each opening its own sub-section in place --
+// same "menu, then drill in" shape as opening a floating panel itself,
+// just nested one level deeper since both live inside one panel rather
+// than being separate top-level panels.
+function openCustomisationSection(section) {
+    document.getElementById('customisationMenu').style.display = 'none';
+    document.getElementById('customisationMenu2').style.display = 'none';
+    document.getElementById('customisationSection-tools').style.display = section === 'tools' ? '' : 'none';
+    document.getElementById('customisationSection-checker').style.display = section === 'checker' ? '' : 'none';
+    if (section === 'checker') renderCheckerProfilePicker();
+}
+function closeCustomisationSection() {
+    document.getElementById('customisationMenu').style.display = '';
+    document.getElementById('customisationMenu2').style.display = '';
+    document.getElementById('customisationSection-tools').style.display = 'none';
+    document.getElementById('customisationSection-checker').style.display = 'none';
+}
+// Renders the Customisation panel's checkerboard picker: one row per
+// independently-tracked screen (canvas, PMD preview, opacity slider),
+// each with a button per built-in profile. Gallery cards aren't listed
+// here since they always mirror "canvas", not their own selection.
+function renderCheckerProfilePicker() {
+    const wrap = document.getElementById('checkerProfilePicker');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const screens = [
+        { key: 'canvas', label: 'Canvas (gallery cards follow this too)' },
+        { key: 'pmd', label: 'PMD Player Preview' },
+        { key: 'opacitySlider', label: 'Layers Panel Opacity Slider' }
+    ];
+    screens.forEach(s => {
+        const label = document.createElement('div');
+        label.style.cssText = 'font-size:9px;color:#888;padding:4px 0 2px;text-transform:uppercase;';
+        label.innerText = s.label;
+        wrap.appendChild(label);
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.flexWrap = 'wrap';
+        Object.keys(CHECKER_BUILTIN_PROFILES).forEach(key => {
+            const profile = CHECKER_BUILTIN_PROFILES[key];
+            const btn = document.createElement('button');
+            btn.className = 'btn' + (checkerSettings[s.key] === key ? ' active' : '');
+            btn.innerText = profile.name;
+            btn.onclick = () => uiAction(() => setCheckerProfile(s.key, key));
+            row.appendChild(btn);
+        });
+        const customBtn = document.createElement('button');
+        customBtn.className = 'btn' + (checkerSettings[s.key] === 'custom' ? ' active' : '');
+        customBtn.innerText = 'Custom';
+        customBtn.onclick = () => uiAction(() => setCheckerProfile(s.key, 'custom'));
+        row.appendChild(customBtn);
+        wrap.appendChild(row);
+        if (checkerSettings[s.key] === 'custom') {
+            const custom = checkerSettings.custom[s.key];
+            const customRow = document.createElement('div');
+            customRow.className = 'row';
+            customRow.style.alignItems = 'center';
+            const aLabel = document.createElement('span'); aLabel.style.cssText = 'font-size:9px;color:#888;'; aLabel.innerText = 'A';
+            const aInput = document.createElement('input'); aInput.type = 'color'; aInput.value = custom.a;
+            const bLabel = document.createElement('span'); bLabel.style.cssText = 'font-size:9px;color:#888;'; bLabel.innerText = 'B';
+            const bInput = document.createElement('input'); bInput.type = 'color'; bInput.value = custom.b;
+            const sameLabel = document.createElement('label'); sameLabel.style.cssText = 'font-size:9px;color:#888;display:flex;align-items:center;gap:4px;';
+            const sameCheckbox = document.createElement('input'); sameCheckbox.type = 'checkbox'; sameCheckbox.checked = custom.a === custom.b;
+            sameLabel.append(sameCheckbox, document.createTextNode('same colour'));
+            aInput.oninput = () => { setCheckerCustomColor(s.key, 'a', aInput.value); if (sameCheckbox.checked) { bInput.value = aInput.value; setCheckerCustomColor(s.key, 'b', aInput.value); } };
+            bInput.oninput = () => { setCheckerCustomColor(s.key, 'b', bInput.value); if (bInput.value !== aInput.value) sameCheckbox.checked = false; };
+            sameCheckbox.onchange = () => { if (sameCheckbox.checked) { bInput.value = aInput.value; setCheckerCustomColor(s.key, 'b', aInput.value); } };
+            customRow.append(aLabel, aInput, bLabel, bInput, sameLabel);
+            wrap.appendChild(customRow);
+        }
+    });
+}
+// Updates one colour ('a' or 'b') of a screen's custom checkerboard pair
+// and re-applies immediately, so the live preview updates as the person
+// drags the native colour picker (matching how every other colour input
+// in this app behaves) rather than only on close/confirm.
+function setCheckerCustomColor(screenKey, slot, hex) {
+    checkerSettings.custom[screenKey][slot] = hex;
+    saveCheckerSettings();
+    applyAllCheckerProfiles();
+}
 
 function renderPanelManager() {
     const list = document.getElementById('panelManagerList');
@@ -3034,6 +3217,7 @@ function openPanel(name) {
         if (name === 'layers') { renderLayersPanel(); renderFramesPanel(); }
         if (name === 'panel') renderPanelManager();
         if (name === 'history') renderUndoHistory();
+        if (name === 'customisation') closeCustomisationSection();
     } catch (err) {
         console.error('openPanel(' + name + ') content failed:', err && err.message);
     }
@@ -5138,7 +5322,8 @@ function mkLayerIconBtn(text, onClick) {
 // programmatically (e.g. after an external change) without re-dragging.
 function mkIosSlider(initialValue, onChange) {
     const el = document.createElement('div');
-    el.className = 'ios-slider';
+    el.className = 'ios-slider checkerboard-bg';
+    applyCheckerProfile(el, checkerSettings.opacitySlider, 'opacitySlider'); // freshly-created each render, so apply here rather than relying solely on the global sweep
     const fill = document.createElement('div');
     fill.className = 'ios-slider-fill';
     const label = document.createElement('span');
@@ -8272,7 +8457,8 @@ function renderGallery() {
         card.dataset.id = proj.id;
 
         const thumbWrap = document.createElement('div');
-        thumbWrap.className = 'thumb-wrap';
+        thumbWrap.className = 'thumb-wrap checkerboard-bg';
+        applyCheckerProfile(thumbWrap, checkerSettings.canvas, 'canvas'); // gallery cards always mirror the canvas profile, not an independent selection
         if (proj.thumbnailDataURL) {
             const img = document.createElement('img');
             img.src = proj.thumbnailDataURL;
@@ -8766,6 +8952,7 @@ drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
 setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
 setupEdgeSwipe('rightEdgeZone', 'debug', 'left');
 renderToolButtons();
+applyAllCheckerProfiles();
 renderLogToggleButtons();
 document.getElementById('viewport').addEventListener('scroll', () => { updateRotationFab(); updateUndoRedoFabs(); });
 window.addEventListener('resize', () => { updateRotationFab(); updateUndoRedoFabs(); if (viewport) updateCanvasWrapPadding(); });
