@@ -415,6 +415,7 @@
         .side-drawer {
             position: fixed; top: 0; bottom: 0; width: 280px; max-width: 84vw;
             background: #1c1c1c; z-index: 950; overflow-y: auto;
+            -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
             padding: 10px; padding-top: max(16px, env(safe-area-inset-top));
             padding-bottom: max(16px, env(safe-area-inset-bottom));
             box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
@@ -431,6 +432,28 @@
            normal 950 tier -- this override is Debug-specific. */
         #debugDrawer { z-index: 9000; }
         #drawerBackdrop.debug-open { z-index: 8999; }
+        /* Debug drawer split-pane layout: the drawer itself stops being a
+           single scroll container (overriding .side-drawer's own
+           overflow-y:auto) and becomes a fixed-height flex column with two
+           independently-scrollable panes -- settings/controls on top, the
+           JS log on the bottom -- separated by a draggable divider. Built
+           because iOS's own on-device inspector ("Console Messages") can
+           cover the bottom of a single long scrolling drawer regardless of
+           in-app z-index (it's OS/browser chrome, outside the page's own
+           DOM, so no CSS here can rank above it) -- a fixed split means
+           the log pane has its own dedicated, resizable region rather than
+           depending on scrolling an unpredictable amount past other
+           content to reach it.
+        */
+        #debugDrawer { overflow-y: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
+        #debugDrawerControls { flex: 0 0 auto; max-height: 60%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; margin: 0 -10px; padding: 0 10px 4px; }
+        #debugDrawerSplitHandle {
+            flex: none; height: 22px; margin: 4px -10px 0; display: flex; align-items: center; justify-content: center;
+            cursor: row-resize; touch-action: none; background: #232323; border-top: 1px solid #333; border-bottom: 1px solid #333;
+        }
+        #debugDrawerSplitHandle::before { content: ''; width: 36px; height: 4px; border-radius: 2px; background: #555; }
+        #debugDrawerSplitHandle.dragging::before { background: #0078d4; }
+        #debugLogPane { flex: 1 1 auto; min-height: 60px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; margin: 4px -10px 0; padding: 0 10px max(16px, env(safe-area-inset-bottom)); }
 
         #rotationResetFab {
             position: fixed; z-index: 870; display: none;
@@ -605,6 +628,7 @@
         #debugLog {
             font-size: 9px; font-family: monospace; background: #000; border-radius: 6px;
             padding: 6px; white-space: pre-wrap; word-break: break-word; color: #7fdb7f;
+            margin-bottom: 12px;
         }
         .log-error { color: #ff6b6b !important; }
         .log-warn { color: #ffd166 !important; }
@@ -1132,7 +1156,7 @@
     <div id="drawerBackdrop"></div>
     <!-- Debug drawer: kept outside #pixel-canvas-screen, alongside the on-screen keyboard, so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
         <div class="side-drawer right" id="debugDrawer">
-            <div id="debugDrawerControls" style="position:sticky; top:0; z-index:2; background:#1c1c1c; display:flex; flex-direction:column; gap:8px; padding-bottom:4px;">
+            <div id="debugDrawerControls" style="display:flex; flex-direction:column; gap:8px;">
                 <div class="panel-title">JS Logs</div>
                 <div id="buildVersionLabel" style="font-size:11px;color:#0af;text-align:center;font-weight:bold;letter-spacing:0.5px;"></div>
                 <div id="debugStats"></div>
@@ -1160,18 +1184,6 @@
                 <div class="row">
                     <button class="btn" id="forceEnableRasterToolsBtn" onclick="uiAction(toggleForceEnableRasterTools)">🔓 FORCE-ENABLE RASTER TOOLS</button>
                 </div>
-                <div class="panel-subtitle">[TEMP] Group Blend-Mode Prep (Session 7a)</div>
-                <div class="row">
-                    <button class="btn" id="testFlattenGroupBtn" onclick="uiAction(testFlattenFirstGroup)">🧪 PREVIEW FIRST GROUP FLATTEN</button>
-                </div>
-                <div id="testFlattenGroupPreviewWrap" style="display:none;padding:6px 0;text-align:center;">
-                    <div style="font-size:10px;color:#888;margin-bottom:4px;">Live output of flattenGroupSubtreeToCanvas() on the first group found -- diagnostic only, not the real render path yet.</div>
-                    <div id="testFlattenGroupPreviewHost" style="display:inline-block;border:2px solid #f43f5e;background:repeating-conic-gradient(#444 0% 25%, #333 0% 50%) 0 0/16px 16px;"></div>
-                </div>
-                <div class="panel-subtitle">[TEMP] Group Blend Wiring Check (Session 7b-1)</div>
-                <div class="row">
-                    <button class="btn" id="testGroupBlendWiringBtn" onclick="uiAction(testGroupBlendWiring)">🧪 CHECK BLEND WIRING (writes to Log below)</button>
-                </div>
                 <div class="panel-subtitle">Log Capture</div>
                 <div class="row">
                     <button class="btn" id="logToggle-touch" onclick="uiAction(() => setLogToggle('touch', !logTouchEnabled))">👆 TOUCH</button>
@@ -1183,7 +1195,8 @@
                     <button class="btn" onclick="uiAction(clearDebugLog)">🧹 CLEAR LOG</button>
                 </div>
             </div>
-            <div id="debugLog"></div>
+            <div id="debugDrawerSplitHandle" title="Drag to resize"></div>
+            <div id="debugLogPane"><div id="debugLog"></div></div>
         </div>
 
     <!-- Global on-screen keyboard: kept outside #pixel-canvas-screen so it remains usable from the Hub. -->
@@ -1582,7 +1595,8 @@ function renderDebugLog() {
         return '<div class="' + cls + '">[' + e.t + '] [' + e.category + '] ' + escapeHtml(e.msg) + '</div>';
     }).join('');
     const panel = document.getElementById('debugDrawer');
-    if (panel && panel.classList.contains('open')) panel.scrollTop = panel.scrollHeight;
+    const logPane = document.getElementById('debugLogPane');
+    if (panel && panel.classList.contains('open') && logPane) logPane.scrollTop = logPane.scrollHeight;
 }
 // Empties the debug log.
 function clearDebugLog() { debugLogEntries.length = 0; renderDebugLog(); }
@@ -3289,6 +3303,48 @@ function closeDrawer() {
 function toggleDrawer(which) {
     if (drawerOpenName === which) { closeDrawer(); return; }
     openDrawer(which);
+}
+
+// Debug drawer split-pane divider: drag #debugDrawerSplitHandle to resize
+// how much vertical space #debugDrawerControls (settings/toggles) takes
+// vs. #debugLogPane (the JS log) -- see the CSS comment above
+// #debugDrawerControls for why this split exists at all (iOS's own
+// on-device inspector can cover the bottom of a single long scrolling
+// drawer, since it's OS/browser chrome outside the page's own DOM and
+// therefore unaffected by any in-app z-index). Persisted so the person's
+// chosen split survives reloads, same pattern as pixelAppPanelVisibility.
+let debugDrawerSplitPct = 45; // % of available height given to the controls pane
+try { const saved = parseFloat(localStorage.getItem('pixelAppDebugDrawerSplitPct')); if (!isNaN(saved) && saved >= 15 && saved <= 85) debugDrawerSplitPct = saved; } catch(e) {}
+function applyDebugDrawerSplit() {
+    const controls = document.getElementById('debugDrawerControls');
+    if (controls) controls.style.maxHeight = debugDrawerSplitPct + '%';
+}
+function setupDebugDrawerSplitHandle() {
+    const handle = document.getElementById('debugDrawerSplitHandle');
+    const drawer = document.getElementById('debugDrawer');
+    if (!handle || !drawer) return;
+    applyDebugDrawerSplit();
+    let dragging = false;
+    handle.addEventListener('pointerdown', e => {
+        dragging = true;
+        handle.classList.add('dragging');
+        handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        const rect = drawer.getBoundingClientRect();
+        const pct = ((e.clientY - rect.top) / rect.height) * 100;
+        debugDrawerSplitPct = Math.max(15, Math.min(85, pct));
+        applyDebugDrawerSplit();
+    });
+    const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        try { localStorage.setItem('pixelAppDebugDrawerSplitPct', String(debugDrawerSplitPct)); } catch(e) {}
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
 }
 // Watches a 20px screen-edge strip for a horizontal swipe and opens the
 // given drawer once the finger has moved far enough in from the edge.
@@ -5524,7 +5580,7 @@ function exportSpritesheet() {
     const sheet = document.createElement('canvas');
     sheet.width = gridW * frames.length; sheet.height = gridH;
     const sctx = sheet.getContext('2d');
-    frames.forEach((f, i) => sctx.drawImage(flattenLayersToCanvas(f.layers), i * gridW, 0));
+    frames.forEach((f, i) => sctx.drawImage(flattenLayersToCanvas(f.layerTree), i * gridW, 0));
     const link = document.createElement('a');
     link.download = 'spritesheet.png';
     link.href = sheet.toDataURL();
@@ -6742,10 +6798,19 @@ function applyCanvasSizeToolGating() {
 // would size this function's own output canvas differently from what
 // compositeMaskOrClip draws into it, a mismatch, not a real per-group
 // sizing capability.
-function flattenGroupSubtreeToCanvas(groupNode, gW, gH) {
+// Composites an array of layer-tree nodes (a full frame's layerTree, or a
+// group's children) into one flat offscreen canvas, correctly respecting
+// group blend modes/opacity/nesting -- unlike flattenLayersToCanvas() and
+// galleryFlattenLayers() before V1_39, which iterated the pre-flattened
+// `layers` array where group boundaries (and therefore group blendMode)
+// don't exist at all. This is the actual general-purpose entry point;
+// flattenGroupSubtreeToCanvas() is now a thin wrapper over this for its
+// own recursive nested-group case.
+function flattenTreeToCanvas(nodes, gW, gH, smoothing) {
     const out = document.createElement('canvas');
     out.width = gW; out.height = gH;
     const octx = out.getContext('2d');
+    if (smoothing === false) octx.imageSmoothingEnabled = false;
     // Walks a node array (a group's children, or the top-level layerTree)
     // left-to-right (bottom-to-top in stacking order, matching the
     // existing flat-array convention every other render path already
@@ -6760,15 +6825,16 @@ function flattenGroupSubtreeToCanvas(groupNode, gW, gH) {
                 const visible = parentVisible && node.visible;
                 const opacity = parentOpacity * node.opacity;
                 if (!visible || opacity <= 0) continue;
-                // Nested group: recurse into its own offscreen canvas first
-                // (so its own blend mode, if any, could in principle be
-                // applied at this point in a future pass -- Session 7b's
-                // concern, not reproduced here), then draw that flattened
-                // result onto the running composite at the accumulated
-                // opacity.
-                const nested = flattenGroupSubtreeToCanvas(node, gW, gH);
+                // Nested group: recurse into its own offscreen canvas first,
+                // then draw that flattened result onto the running composite
+                // at the accumulated opacity AND the group's own blendMode
+                // (Fix List item 4 -- this was previously always
+                // 'source-over' regardless of what the group/layer's actual
+                // blendMode was, which is why thumbnails/exports showed the
+                // pre-blend appearance).
+                const nested = flattenTreeToCanvas(node.children, gW, gH, smoothing);
                 octx.globalAlpha = opacity;
-                octx.globalCompositeOperation = 'source-over';
+                octx.globalCompositeOperation = node.blendMode || 'source-over';
                 octx.drawImage(nested, 0, 0);
                 continue;
             }
@@ -6779,109 +6845,28 @@ function flattenGroupSubtreeToCanvas(groupNode, gW, gH) {
             const opacity = parentOpacity * l.opacity;
             if (!visible || opacity <= 0) continue;
             octx.globalAlpha = opacity;
-            octx.globalCompositeOperation = 'source-over';
+            octx.globalCompositeOperation = l.blendMode || 'source-over';
             if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue; // reference layers stay guide-only, excluded, matching flattenLayersToCanvas
             const next = nodes[i + 1];
             const aboveLayer = next && next.kind === 'layer' ? next.layer : null;
             if (l.type === 'vector' && debugUnrestrictedVector) { octx.drawImage(l.el, 0, 0, gW, gH); continue; }
             if (aboveLayer && aboveLayer.visible && (aboveLayer.type === 'mask' || aboveLayer.type === 'clip') && aboveLayer.hookedTo === l.id) {
-                octx.drawImage(compositeMaskOrClip(l, aboveLayer), 0, 0);
+                try { octx.drawImage(compositeMaskOrClip(l, aboveLayer), 0, 0); } catch(e) { octx.drawImage(l.el, 0, 0); }
             } else {
                 octx.drawImage(l.el, 0, 0);
             }
         }
     }
-    walk(groupNode.children, true, 1);
+    walk(nodes, true, 1);
     octx.globalAlpha = 1;
     octx.globalCompositeOperation = 'source-over';
     return out;
 }
-
-// [TEMP -- Session 7a diagnostic only, not part of the real feature.]
-// Finds the first group node in the active frame's layer tree and runs
-// flattenGroupSubtreeToCanvas() on it, showing the result in the Debug
-// drawer so it can be spot-checked against live edits without needing
-// the browser console. Mirrors the same defensive checks used during
-// manual console testing (activeFrameIndex/frames.length, groupNode
-// presence) so a missing project/group reports clearly instead of
-// throwing. Intended to be removed once Session 7b wires
-// flattenGroupSubtreeToCanvas into the real live-rendering path, at
-// which point this manual preview is no longer needed for verification.
-function testFlattenFirstGroup() {
-    const wrap = document.getElementById('testFlattenGroupPreviewWrap');
-    const host = document.getElementById('testFlattenGroupPreviewHost');
-    if (!wrap || !host) return;
-    host.innerHTML = '';
-    const f = frames[activeFrameIndex];
-    if (!f) { wrap.style.display = 'block'; host.textContent = 'No active frame -- open a project first.'; return; }
-    const tree = ensureFrameLayerTree(f);
-    const groupNode = tree.find(n => n.kind === 'group');
-    if (!groupNode) { wrap.style.display = 'block'; host.textContent = 'No group found in this frame -- add a group with a few layers to test.'; return; }
-    const canvas = flattenGroupSubtreeToCanvas(groupNode, gridW, gridH);
-    canvas.style.cssText = 'display:block;max-width:200px;max-height:200px;image-rendering:pixelated;';
-    host.appendChild(canvas);
-    wrap.style.display = 'block';
-}
-
-// [TEMP -- Session 7b-1 diagnostic only, not part of the real feature.]
-// Reports the live state of the group-blend DOM wrapper mechanism to the
-// on-screen Debug Log (pushDebugLog), so it can be checked on iOS via
-// "Export Log to Clipboard" without needing a desktop browser console.
-// Checks: does the first group in the active frame have a wrapper div
-// when its blendMode isn't 'source-over'; does that wrapper actually
-// contain the group's member layer canvases; do the CSS isolation/
-// mix-blend-mode properties on it match group.blendMode. Reports each
-// check's pass/fail plainly rather than just dumping raw state, so a
-// failure is identifiable from the log text alone. Intended to be
-// removed once Session 7b-2 is complete and this mechanism is considered
-// stable, at which point manual diagnostic checks like this are no
-// longer needed for verification.
-function testGroupBlendWiring() {
-    const f = frames[activeFrameIndex];
-    if (!f) { pushDebugLog('error', ['[BlendTest] No active frame -- open a project first.'], 'js'); return; }
-    const tree = ensureFrameLayerTree(f);
-    const groupNode = tree.find(n => n.kind === 'group');
-    if (!groupNode) { pushDebugLog('error', ['[BlendTest] No group found in this frame.'], 'js'); return; }
-    const mode = groupNode.blendMode || 'source-over';
-    pushDebugLog('log', ['[BlendTest] Group "' + groupNode.name + '" blendMode=' + mode + ' children=' + groupNode.children.length], 'js');
-    const wrap = document.getElementById(groupBlendWrapperId(groupNode.id));
-    if (mode === 'source-over') {
-        pushDebugLog('log', ['[BlendTest] Mode is Normal/source-over -- no wrapper expected. Wrapper present: ' + (!!wrap) + ' (should be false, or true-but-harmless if a previous non-Normal test left it -- reindexDom() prunes it on next call).'], 'js');
-        return;
-    }
-    if (!wrap) { pushDebugLog('error', ['[BlendTest] FAIL -- no wrapper div found for a non-Normal group. Expected id: ' + groupBlendWrapperId(groupNode.id)], 'js'); return; }
-    pushDebugLog('log', ['[BlendTest] Wrapper found: #' + wrap.id], 'js');
-    // Session 7b-1 corrected fix: isolation MUST be "isolate" here, not
-    // absent -- see getOrCreateGroupBlendWrapper's comment. Without it,
-    // the group's own member layers don't composite against each other
-    // before the group-vs-backdrop blend happens (confirmed via live
-    // testing: two same-group layers showed zero blending against each
-    // other with isolation absent, even with no external backdrop).
-    pushDebugLog(wrap.style.isolation === 'isolate' ? 'log' : 'error', ['[BlendTest] wrapper.style.isolation="' + wrap.style.isolation + '" (expected "isolate")'], 'js');
-    pushDebugLog('log', ['[BlendTest] wrapper.style.mixBlendMode="' + wrap.style.mixBlendMode + '" (expected "' + mode + '")'], 'js');
-    const memberLayerIds = [];
-    (function collect(nodes){(nodes||[]).forEach(n=>{if(n.kind==='layer'&&n.layer)memberLayerIds.push(n.layer.id);else if(n.kind==='group')collect(n.children);});})(groupNode.children);
-    let allInside = true, missing = [];
-    memberLayerIds.forEach(id => {
-        const layerObj = layers.find(l => l.id === id);
-        if (!layerObj) return;
-        if (!wrap.contains(layerObj.el)) { allInside = false; missing.push(id); }
-    });
-    pushDebugLog(allInside ? 'log' : 'error', ['[BlendTest] All ' + memberLayerIds.length + ' member layer canvases inside wrapper: ' + allInside + (missing.length ? ' (missing: ' + missing.join(',') + ')' : '')], 'js');
-    // Checks the wrapper's own position in #container, not just its
-    // contents -- this is what catches the real bug found live: the
-    // wrapper's position was only ever set once, at creation time, and
-    // never repositioned on later reindexDom() calls, so it could end up
-    // stuck as #container's first child regardless of where the group
-    // logically sits in the stack -- meaning it had nothing to blend
-    // against but the canvas background, no matter how correct its own
-    // CSS/contents were. A group that isn't the bottom-most thing in the
-    // document should have SOME previous sibling in #container.
-    const prevSibling = wrap.previousElementSibling;
-    pushDebugLog('log', ['[BlendTest] wrapper previous sibling in #container: ' + (prevSibling ? prevSibling.tagName + '#' + (prevSibling.id || '(no id)') : 'NONE -- wrapper is #container\'s first child, so it can only blend against the canvas background, not any layer beneath it. If a backdrop layer should exist below this group, this indicates the wrapper is stuck in the wrong stacking position.')], 'js');
-    const isolationOk = wrap.style.isolation === 'isolate';
-    const blendOk = wrap.style.mixBlendMode === mode;
-    pushDebugLog(isolationOk && blendOk && allInside ? 'log' : 'error', ['[BlendTest] OVERALL: ' + (isolationOk && blendOk && allInside ? 'PASS -- wiring looks correct' : 'FAIL -- see lines above for which check failed') + '. This test only confirms DOM/CSS wiring -- it CANNOT confirm the blend actually renders correctly on screen, including between the group\'s own member layers, or against the correct backdrop (see the previous-sibling line above). Visual confirmation is still required.'], 'js');
+// Retained for the recursive nested-group case above and any other
+// existing call sites -- a group's own children array is just a `nodes`
+// array like any other, so this is now a one-line wrapper.
+function flattenGroupSubtreeToCanvas(groupNode, gW, gH) {
+    return flattenTreeToCanvas(groupNode.children, gW, gH);
 }
 
 function rgbToHex(rgb) {
@@ -7812,30 +7797,15 @@ function activeLayerHasLiveHook() {
     return !!(above && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === layer.id);
 }
 
-// Composites a given list of layers (bottom to top, respecting visibility/opacity, with mask/clip effects applied) into one flat offscreen canvas. Reference layers are intentionally excluded -- they are guides, not final art.
-function flattenLayersToCanvas(layerList) {
-    const out = document.createElement('canvas');
-    out.width = gridW; out.height = gridH;
-    const octx = out.getContext('2d');
-    for (let i = 0; i < layerList.length; i++) {
-        const l = layerList[i];
-        if (l.type === 'mask' || l.type === 'clip') continue; // composited in when we reach their target below
-        if (!l.visible) continue;
-        octx.globalAlpha = l.opacity;
-        if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue; // reference layers stay guide-only, excluded from export
-        if (l.type === 'vector' && debugUnrestrictedVector) { octx.drawImage(l.el, 0, 0, gridW, gridH); continue; }
-        const above = layerList[i + 1];
-        if (above && above.visible && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id) {
-            octx.drawImage(compositeMaskOrClip(l, above), 0, 0);
-        } else {
-            octx.drawImage(l.el, 0, 0);
-        }
-    }
-    octx.globalAlpha = 1;
-    return out;
+// Composites a frame's layer tree (bottom to top, respecting visibility/opacity/blendMode -- including group blendMode/nesting -- with mask/clip effects applied) into one flat offscreen canvas. Reference layers are intentionally excluded -- they are guides, not final art.
+// Takes a layerTree array, NOT a flat layers array (V1_39 fix -- see
+// flattenTreeToCanvas's doc comment for why: a flat array has no group
+// boundaries, so a group's own blendMode was previously unreachable here).
+function flattenLayersToCanvas(layerTree) {
+    return flattenTreeToCanvas(layerTree, gridW, gridH);
 }
-// Shorthand for flattenLayersToCanvas() on the current frame's layers.
-function flattenToCanvas() { return flattenLayersToCanvas(layers); }
+// Shorthand for flattenLayersToCanvas() on the current frame's layer tree.
+function flattenToCanvas() { return flattenLayersToCanvas(frames[activeFrameIndex].layerTree); }
 
 // Generic "tap again to confirm" button: first tap arms it (button text
 // changes, auto-cancels after timeoutMs); a second tap within that window
@@ -8316,7 +8286,7 @@ function generateThumbnailDataURL(framesArr, gW, gH) {
         const ctx = out.getContext('2d');
         ctx.imageSmoothingEnabled = false;
         // Use frame 0 as the thumbnail source
-        const src = galleryFlattenLayers(framesArr[0].layers, gW, gH);
+        const src = galleryFlattenLayers(ensureFrameLayerTree(framesArr[0]), gW, gH);
         const ratio = Math.min(size / gW, size / gH);
         const dw = Math.round(gW * ratio);
         const dh = Math.round(gH * ratio);
@@ -8327,27 +8297,11 @@ function generateThumbnailDataURL(framesArr, gW, gH) {
     }
 }
 
-// Flatten helper for gallery thumbnails/export (accepts explicit w/h)
-function galleryFlattenLayers(layerList, gW, gH) {
-    const out = document.createElement('canvas');
-    out.width = gW || gridW; out.height = gH || gridH;
-    const octx = out.getContext('2d');
-    octx.imageSmoothingEnabled = false;
-    for (let i = 0; i < layerList.length; i++) {
-        const l = layerList[i];
-        if (l.type === 'mask' || l.type === 'clip') continue;
-        if (!l.visible) continue;
-        octx.globalAlpha = l.opacity;
-        if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue;
-        const above = layerList[i + 1];
-        if (above && above.visible && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id) {
-            try { octx.drawImage(compositeMaskOrClip(l, above), 0, 0); } catch(e) { octx.drawImage(l.el, 0, 0); }
-        } else {
-            octx.drawImage(l.el, 0, 0);
-        }
-    }
-    octx.globalAlpha = 1;
-    return out;
+// Flatten helper for gallery thumbnails/export (accepts explicit w/h).
+// Takes a layerTree array, NOT a flat layers array (V1_39 fix -- same
+// reasoning as flattenLayersToCanvas above).
+function galleryFlattenLayers(layerTree, gW, gH) {
+    return flattenTreeToCanvas(layerTree, gW || gridW, gH || gridH, false);
 }
 
 // ── Save current editor state into the store ────────────────
@@ -8596,6 +8550,20 @@ function openNewCanvasModal() {
     sheet.appendChild(importBtn);
     updateNewCanvasImportButton();
 
+    // Loads a .pxproj.json project file directly from this sheet (V1_39),
+    // same reasoning/reuse as the long-press Import sheet's own Load
+    // Project button added earlier -- reuses #projectInput and
+    // loadProjectFile() as-is rather than folding project-loading into
+    // the image-import path above, since the two have nothing in common
+    // file-format-wise.
+    const loadProjBtn = document.createElement('button');
+    loadProjBtn.id = 'newCanvasModalLoadProjectBtn';
+    loadProjBtn.className = 'btn-start';
+    loadProjBtn.style.cssText = 'width:100%; height:40px; background:#3a3a3a; border:1px solid #555; color:white; border-radius:8px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:12px; margin-top:8px;';
+    loadProjBtn.textContent = '📂 Load Project';
+    loadProjBtn.onclick = () => { closeNewCanvasModal(); document.getElementById('projectInput').click(); };
+    sheet.appendChild(loadProjBtn);
+
     const hintEl = document.createElement('div');
     hintEl.id = 'new-canvas-modal-hint';
     hintEl.style.cssText = 'font-size:9px; color:#888; text-align:center; min-height:18px;';
@@ -8661,7 +8629,8 @@ function openImportSheet() {
     hintBox.innerHTML = '<strong>How to import:</strong><br>' +
         '1. Tap the button below to pick an image from your photos or files.<br>' +
         '2. The canvas size is matched to the image (capped at 2000px per side).<br>' +
-        '3. The image is placed on a new pixel layer you can paint over.';
+        '3. The image is placed on a new pixel layer you can paint over.<br>' +
+        '4. To open an existing project instead, use <strong>Load Project</strong> below.';
     sheet.appendChild(hintBox);
 
     const importBtn = document.createElement('button');
@@ -8672,6 +8641,14 @@ function openImportSheet() {
     importBtn.onclick = () => { pendingImportKind='pixel'; document.getElementById('hubImageInput').click(); };
     sheet.appendChild(importBtn);
     const refBtn=document.createElement('button'); refBtn.className='btn-start'; refBtn.style.cssText='width:100%; height:46px; background:#3a3a3a; margin-top:6px;'; refBtn.textContent='🖼️ Reference Layer'; refBtn.onclick=()=>{pendingImportKind='reference';document.getElementById('hubImageInput').click();}; sheet.appendChild(refBtn);
+    // Loads a .pxproj.json project file directly from this same sheet
+    // (V1_39), rather than requiring the person to first create a blank
+    // canvas and use File > Load Project. Reuses the existing #projectInput
+    // element and its onchange -> loadProjectFile() handler as-is -- a
+    // project file has nothing in common with the image-decoding path
+    // hubImageInput's onchange takes, so this deliberately isn't folded
+    // into pendingImportKind/hubImageInput at all.
+    const loadProjBtn=document.createElement('button'); loadProjBtn.className='btn-start'; loadProjBtn.style.cssText='width:100%; height:46px; background:#3a3a3a; margin-top:6px;'; loadProjBtn.textContent='📂 Load Project (.pxproj.json)'; loadProjBtn.onclick=()=>{ closeNewCanvasModal(); document.getElementById('projectInput').click(); }; sheet.appendChild(loadProjBtn);
 
     const cancelBtn = document.createElement('button');
     cancelBtn.id = 'ncm-cancel';
@@ -8815,7 +8792,7 @@ document.getElementById('ctx-export').addEventListener('click', () => {
     const proj = projectStore.find(p => p.id === id);
     if (!proj) return;
     try {
-        const out = galleryFlattenLayers(proj.frames[proj.activeFrameIndex || 0].layers, proj.gridW, proj.gridH);
+        const out = galleryFlattenLayers(ensureFrameLayerTree(proj.frames[proj.activeFrameIndex || 0]), proj.gridW, proj.gridH);
         const link = document.createElement('a');
         link.download = (proj.name || 'pixel') + '.png';
         link.href = out.toDataURL();
@@ -8953,6 +8930,7 @@ setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
 setupEdgeSwipe('rightEdgeZone', 'debug', 'left');
 renderToolButtons();
 applyAllCheckerProfiles();
+setupDebugDrawerSplitHandle();
 renderLogToggleButtons();
 document.getElementById('viewport').addEventListener('scroll', () => { updateRotationFab(); updateUndoRedoFabs(); });
 window.addEventListener('resize', () => { updateRotationFab(); updateUndoRedoFabs(); if (viewport) updateCanvasWrapPadding(); });
