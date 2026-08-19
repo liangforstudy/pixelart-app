@@ -527,12 +527,14 @@
         .selection-count { font-size:10px; color:#aaa; text-align:center; width:100%; padding:2px 0; }
         .layer-row { display: flex; align-items: center; gap: 6px; background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 6px; position: relative; overflow: hidden; }
         .layer-row.active-layer { border-color: #0078d4; background: #22334a; }
+        .layer-row.has-controls-strip { border-radius: 6px 6px 0 0; border-bottom: none; margin-bottom: 0; }
         /* Touch-friendly colour tag shared by ordinary layers and groups. */
         .layer-color-tag { flex: none; width: 10px; min-width: 10px; height: 38px; margin: -6px 0 -6px -6px; padding: 0; border: 0; border-right: 1px solid rgba(255,255,255,.10); background: transparent; cursor: pointer; }
         .layer-color-tag:active { filter: brightness(1.25); }
         .layer-color-tag.no-color { background: transparent !important; }
         .layer-icon-btn { flex: none; width: 26px; height: 26px; background: transparent; border: none; color: #fff; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .layer-icon-btn:disabled { opacity: 0.25; }
+        .layer-icon-btn.soft-disabled { opacity: 0.25; cursor: default; }
         .layer-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
         .layer-name-input { flex: 1; font-size: 16px; background: #1c1c1c; border: 1px solid #0078d4; border-radius: 4px; color: #fff; padding: 2px 4px; min-width: 0; transform-origin: left center; }
 
@@ -564,9 +566,23 @@
         @keyframes kbCaretBlink { 50% { opacity: 0; } }
         .layer-type-badge { flex: none; font-size: 8px; color: #888; text-transform: uppercase; border: 1px solid #444; border-radius: 4px; padding: 2px 4px; }
         .layer-vis.off { opacity: 0.3; }
-        .layer-opacity-row { display: flex; align-items: center; gap: 6px; padding: 0 6px 4px; }
-        .layer-opacity-row input[type=range] { flex: 1; }
+        .layer-opacity-row { display: flex; align-items: center; gap: 6px; padding: 6px; background: #1e2c3f; border: 1px solid #0078d4; border-top: 1px solid rgba(255,255,255,.12); border-radius: 0 0 6px 6px; margin-top: -4px; }
         .layer-opacity-row span { font-size: 10px; color: #888; width: 30px; text-align: right; }
+        .layer-opacity-caption { flex: none; font-size: 9px; color: #888; text-transform: lowercase; width: 30px; line-height: 1.15; }
+        /* iOS-style "loading bar" slider -- replaces the native
+           <input type=range>, which is too thin/hard to grab precisely
+           with a finger and has no room for a value label. Built as a div
+           with a fill bar + leading-edge label, driven by pointer events
+           so it works uniformly across touch and mouse. */
+        .ios-slider { position: relative; flex: 1; height: 34px; background: #10151d; border: 1px solid rgba(255,255,255,.14); border-radius: 17px; overflow: hidden; touch-action: none; cursor: pointer; }
+        .ios-slider-fill { position: absolute; top: 0; left: 0; bottom: 0; background: linear-gradient(180deg, #3d9bff, #0078d4); border-radius: 17px 0 0 17px; transition: none; }
+        .ios-slider-fill.full { border-radius: 17px; }
+        .ios-slider-label { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+        .long-press-tooltip {
+            position: fixed; z-index: 2000; background: #1c1c1c; color: #eee; border: 1px solid #444;
+            border-radius: 6px; padding: 6px 10px; font-size: 11px; max-width: 220px; text-align: center;
+            pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+        }
 
         #framesList { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0; }
         .frame-btn { flex: 0 0 auto; width: 46px; height: 38px; }
@@ -822,6 +838,7 @@
                     <canvas id="shapePreview" class="layer-canvas" style="z-index:160; display:none; opacity:0.85;"></canvas>
                     <div id="gridOverlay" style="position:absolute; top:0; left:0; pointer-events:none; z-index:170; display:none;"></div>
                     <canvas id="vectorHandlesOverlay" class="layer-canvas reference-canvas" style="z-index:175; display:none;"></canvas>
+                    <canvas id="gradientBackboneOverlay" class="layer-canvas reference-canvas" style="z-index:176; display:none;"></canvas>
                     <canvas id="selectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:177;display:none;"></canvas>
                     <div id="selectionBox"></div>
                     <canvas id="wandSelectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:178;display:none;"></canvas>
@@ -840,22 +857,13 @@
             <div class="row">
                 <button class="btn" id="gridToggleBtn" onclick="uiAction(toggleGridLines)">▦ GRID LINES: OFF</button>
             </div>
-            <div class="row">
-                <button class="btn tool-btn" data-tool="eyedrop" data-category="utility" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
-                <button class="btn tool-btn" id="colorToAlphaToolBtn" data-tool="colorToAlpha" data-category="effects" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
-                <button class="btn tool-btn" data-tool="pan" data-category="utility" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
-            </div>
+            <div class="row" id="toolRow-utility"></div>
             <div id="pixelToolsSection">
-<div class="row"><button class="btn tool-btn" data-tool="pencil" data-category="raster" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button><button class="btn tool-btn" id="brushToolBtn" data-tool="brush" data-category="raster" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button></div>
-<div class="row"><button class="btn tool-btn" id="softBrushToolBtn" data-tool="softBrush" data-category="raster" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" id="hardEraserToolBtn" data-tool="hardEraser" data-category="raster" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" id="softEraserToolBtn" data-tool="softEraser" data-category="raster" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
+<div class="row" id="toolRow-raster1"></div>
+<div class="row" id="toolRow-raster2"></div>
 <div id="pixelToolControls" style="display:none;padding:6px 0"><label id="brushSizeRow">Brush size <input id="pixel-brush-size" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-value">8 px</output></label><label id="brushSoftnessRow">Brush softness <input id="pixel-brush-softness" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-value">100%</output></label><label id="softEraserSizeRow">Soft eraser size <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8"><output id="pixel-soft-eraser-size-value">8 px</output></label><label id="softEraserSoftnessRow">Soft eraser softness <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35"><output id="pixel-soft-eraser-softness-value">35%</output></label></div>
-                <div class="row">
-                    <button class="btn tool-btn" data-tool="bucket" data-category="fill" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
-                </div>
-                <div class="row">
-                    <button class="btn tool-btn" data-tool="wand" data-category="selection" onclick="uiAction(() => handleToolBtn('wand'))">🪄 WAND</button>
-                    <button class="btn tool-btn" data-tool="lasso" data-category="selection" onclick="uiAction(() => handleToolBtn('lasso'))">〰️ LASSO</button>
-                </div>
+                <div class="row" id="toolRow-bucket"></div>
+                <div class="row" id="toolRow-wandLasso"></div>
                 <div id="bucketControls" style="display:none;">
                     <div class="panel-subtitle" id="bucketToleranceSubtitle">FILL TOLERANCE</div>
                     <div class="row" style="align-items:center;">
@@ -894,12 +902,7 @@
                     </div>
                     <div id="wandSelectionCount" style="font-size:10px;color:#aaa;text-align:center;">No wand selection</div>
                 </div>
-                <div class="row">
-                    <button class="btn tool-btn" data-tool="select" data-category="selection" onclick="uiAction(() => handleToolBtn('select'))">🔲 SELECT</button>
-                    <button class="btn tool-btn" data-tool="line" data-category="vector" onclick="uiAction(() => handleToolBtn('line'))">📏 LINE</button>
-                    <button class="btn tool-btn" data-tool="rect" data-category="vector" onclick="uiAction(() => handleToolBtn('rect'))">⬛ RECT</button>
-                    <button class="btn tool-btn" data-tool="ellipse" data-category="vector" onclick="uiAction(() => handleToolBtn('ellipse'))">⭕ ELLIPSE</button>
-                </div>
+                <div class="row" id="toolRow-shapes"></div>
                 <div id="selectionToolsSection" style="display:none;">
                     <div class="panel-subtitle">Selection</div>
                     <div class="row">
@@ -911,11 +914,7 @@
             </div>
             <div id="vectorToolsSection">
                 <div class="panel-subtitle">Vector (freehand-drag draws + smooths; a quick tap-in-place places a single point)</div>
-                <div class="row">
-                    <button class="btn tool-btn" data-tool="vpen" data-category="vector" onclick="uiAction(() => handleToolBtn('vpen'))">🖊️ PEN (open)</button>
-                    <button class="btn tool-btn" data-tool="vshape" data-category="vector" onclick="uiAction(() => handleToolBtn('vshape'))">🔷 SHAPE (closed)</button>
-                    <button class="btn tool-btn" data-tool="vedit" data-category="vector" onclick="uiAction(() => handleToolBtn('vedit'))">🖐️ EDIT PTS</button>
-                </div>
+                <div class="row" id="toolRow-vector"></div>
                 <div class="row" id="vectorEditSubModeRow">
                     <button class="btn" id="vertexDeleteModeBtn" onclick="uiAction(toggleVertexDeleteMode)">🗑️ DELETE PTS</button>
                     <button class="btn" id="lineExtendModeBtn" onclick="uiAction(toggleLineExtendMode)">➕ EXT LINE</button>
@@ -1724,40 +1723,85 @@ const BLEND_MODE_OPTIONS = ['source-over','multiply','screen','overlay','darken'
 function cssBlendMode(blendMode) { return (!blendMode || blendMode === 'source-over') ? 'normal' : blendMode; }
 window.pixelToolDefs={pencil:{label:'✏️ PENCIL TOOL'},brush:{label:'🖌️ BRUSH TOOL'},softBrush:{label:'🖌️ SOFT BRUSH TOOL'},hardEraser:{label:'🧹 HARD ERASER TOOL'},softEraser:{label:'🧹 SOFT ERASER TOOL'}};
 // TOOL_REGISTRY: single source of truth for all 18 Tools-drawer buttons
-// (id, label, category). This is a NEW, separate, additive structure used
-// only to generate the <button class="tool-btn"> elements themselves --
-// it does not replace or feed into window.pixelToolDefs (which stays
-// exactly as-is: 5 raster-tool entries, load-bearing for
-// selectPixelTool()/updateToolVisibility(), smart-tool-switching territory,
-// intentionally untouched here). Categories: 'raster' (size-adjustable
-// pixel painting/erasing), 'fill' (bucket -- distinct from raster since it
-// stays enabled at any canvas size), 'selection' (wand/lasso/select),
-// 'vector' (pen/shape/edit-points), 'effects' (colour-to-alpha), 'utility'
-// (eyedrop/pan, not part of the drawable-tool set at all).
+// (id, label, category, section). This is the generation source for the
+// actual <button class="tool-btn"> elements -- each entry's `section` is
+// the id of the row container it renders into (containers stay in their
+// original HTML positions, interleaved with their non-tool sibling
+// controls like #bucketControls/#wandControls, so layout is unchanged;
+// only the button elements themselves are generated rather than
+// hand-written). `elId`, where present, is applied as the generated
+// button's id so other code that already targets these buttons by id
+// (visibility toggles, etc.) keeps working unchanged. Categories: 'raster'
+// (size-adjustable pixel painting/erasing), 'fill' (bucket -- distinct
+// from raster since it stays enabled at any canvas size), 'selection'
+// (wand/lasso/select), 'vector' (pen/shape/edit-points), 'effects'
+// (colour-to-alpha), 'utility' (eyedrop/pan, not part of the
+// drawable-tool set at all).
 const TOOL_REGISTRY = [
-    { id:'eyedrop',      label:'💧 SELECT A COLOUR', category:'utility' },
-    { id:'colorToAlpha', label:'🎨 COLOUR TO ALPHA',  category:'effects', elId:'colorToAlphaToolBtn' },
-    { id:'pan',          label:'✋ PAN',              category:'utility' },
-    { id:'pencil',       label:'✏️ PENCIL TOOL',      category:'raster' },
-    { id:'brush',        label:'🖌️ BRUSH TOOL',       category:'raster', elId:'brushToolBtn' },
-    { id:'softBrush',    label:'🖌️ SOFT BRUSH',       category:'raster', elId:'softBrushToolBtn' },
-    { id:'hardEraser',   label:'🧹 HARD ERASER',      category:'raster', elId:'hardEraserToolBtn' },
-    { id:'softEraser',   label:'🧹 SOFT ERASER',      category:'raster', elId:'softEraserToolBtn' },
-    { id:'bucket',       label:'🪣 FILL',             category:'fill' },
-    { id:'wand',         label:'🪄 WAND',             category:'selection' },
-    { id:'lasso',        label:'〰️ LASSO',            category:'selection' },
-    { id:'select',       label:'🔲 SELECT',           category:'selection' },
-    { id:'line',         label:'📏 LINE',             category:'vector' },
-    { id:'rect',         label:'⬛ RECT',             category:'vector' },
-    { id:'ellipse',      label:'⭕ ELLIPSE',          category:'vector' },
-    { id:'vpen',         label:'🖊️ PEN (open)',       category:'vector' },
-    { id:'vshape',       label:'🔷 SHAPE (closed)',   category:'vector' },
-    { id:'vedit',        label:'🖐️ EDIT PTS',         category:'vector' }
+    { id:'eyedrop',      label:'💧 SELECT A COLOUR', category:'utility', section:'toolRow-utility' },
+    { id:'colorToAlpha', label:'🎨 COLOUR TO ALPHA',  category:'effects', elId:'colorToAlphaToolBtn', section:'toolRow-utility' },
+    { id:'pan',          label:'✋ PAN',              category:'utility', section:'toolRow-utility' },
+    { id:'pencil',       label:'✏️ PENCIL TOOL',      category:'raster', section:'toolRow-raster1' },
+    { id:'brush',        label:'🖌️ BRUSH TOOL',       category:'raster', elId:'brushToolBtn', section:'toolRow-raster1' },
+    { id:'softBrush',    label:'🖌️ SOFT BRUSH',       category:'raster', elId:'softBrushToolBtn', section:'toolRow-raster2' },
+    { id:'hardEraser',   label:'🧹 HARD ERASER',      category:'raster', elId:'hardEraserToolBtn', section:'toolRow-raster2' },
+    { id:'softEraser',   label:'🧹 SOFT ERASER',      category:'raster', elId:'softEraserToolBtn', section:'toolRow-raster2' },
+    { id:'bucket',       label:'🪣 FILL',             category:'fill', section:'toolRow-bucket' },
+    { id:'wand',         label:'🪄 WAND',             category:'selection', section:'toolRow-wandLasso' },
+    { id:'lasso',        label:'〰️ LASSO',            category:'selection', section:'toolRow-wandLasso' },
+    { id:'select',       label:'🔲 SELECT',           category:'selection', section:'toolRow-shapes' },
+    { id:'line',         label:'📏 LINE',             category:'vector', section:'toolRow-shapes' },
+    { id:'rect',         label:'⬛ RECT',             category:'vector', section:'toolRow-shapes' },
+    { id:'ellipse',      label:'⭕ ELLIPSE',          category:'vector', section:'toolRow-shapes' },
+    { id:'vpen',         label:'🖊️ PEN (open)',       category:'vector', section:'toolRow-vector' },
+    { id:'vshape',       label:'🔷 SHAPE (closed)',   category:'vector', section:'toolRow-vector' },
+    { id:'vedit',        label:'🖐️ EDIT PTS',         category:'vector', section:'toolRow-vector' },
+    { id:'vmove',        label:'✋↔️ MOVE LINE',       category:'vector', section:'toolRow-vector' }
 ];
 window.TOOL_REGISTRY = TOOL_REGISTRY;
 // Convenience lookup used by the size-gating feature (see
 // applyCanvasSizeToolGating()) to know which tool ids are raster.
 const RASTER_TOOL_IDS = TOOL_REGISTRY.filter(t => t.category === 'raster').map(t => t.id);
+// Vector-only tools (used by updateToolVisibility to show/hide the vector
+// sub-mode row) -- derived from the registry rather than hand-duplicated,
+// so adding a new vector tool to TOOL_REGISTRY (e.g. a future `vmove`)
+// doesn't also require remembering to update a second list here.
+const VECTOR_ONLY_TOOL_IDS = TOOL_REGISTRY.filter(t => t.category === 'vector' && t.id !== 'line' && t.id !== 'rect' && t.id !== 'ellipse').map(t => t.id);
+// Pixel-only tools (used by updateToolVisibility's pixel<->vector
+// smart-switch) -- derived the same way. `line`/`rect`/`ellipse` are
+// registry category 'vector' but are pixel-rasterized shape tools, not
+// editable vector splines, so they're explicitly included here rather
+// than excluded like they are from VECTOR_ONLY_TOOL_IDS above. This
+// derivation is what previously caught `pencil` missing from the old
+// hand-typed pixelOnlyTools array (V1_38 fix, Fix List item 8) -- a tool
+// added to TOOL_REGISTRY under 'raster'/'fill'/'selection'/'effects' is
+// now automatically included here with no second list to remember.
+const PIXEL_ONLY_TOOL_IDS = TOOL_REGISTRY.filter(t => ['raster','fill','selection','effects'].includes(t.category)).map(t => t.id).concat(['line','rect','ellipse']);
+
+// Generates every Tools-drawer tool-btn element from TOOL_REGISTRY and
+// mounts each into its `section` container (see registry comment above).
+// Run once on load, before any code that queries tool-btn elements by
+// selector. Verified equivalent to the previous hand-written HTML via a
+// before/after data-tool + id inventory diff.
+function renderToolButtons() {
+    const bySection = {};
+    TOOL_REGISTRY.forEach(t => { (bySection[t.section] = bySection[t.section] || []).push(t); });
+    Object.keys(bySection).forEach(sectionId => {
+        const container = document.getElementById(sectionId);
+        if (!container) { traceLog('renderToolButtons: missing section container ' + sectionId); return; }
+        container.innerHTML = '';
+        bySection[sectionId].forEach(t => {
+            const btn = document.createElement('button');
+            btn.className = 'btn tool-btn';
+            if (t.elId) btn.id = t.elId;
+            btn.dataset.tool = t.id;
+            btn.dataset.category = t.category;
+            btn.textContent = t.label;
+            btn.onclick = () => uiAction(() => handleToolBtn(t.id));
+            container.appendChild(btn);
+        });
+    });
+}
 // Portrait mode's 40x40 tiles are small enough that size-adjustable/soft
 // brushwork doesn't make sense there -- only fixed-size, hard-edged tools
 // are valid. Any invalid tool auto-redirects to its nearest hard-edged
@@ -1925,6 +1969,7 @@ function cloneLayerForHistory(layer) {
     copy.visible = layer.visible;
     copy.opacity = layer.opacity;
     if (layer.hookedTo != null) copy.hookedTo = layer.hookedTo;
+    if (layer.lockedToTarget) copy.lockedToTarget = layer.lockedToTarget;
     if (layer._lastPasteRect) copy._lastPasteRect = {...layer._lastPasteRect};
     return copy;
 }
@@ -1984,19 +2029,65 @@ function getRootSelectedNodes(){
 // the layer visually, while -1 (Down) means the group is below it.
 // Entering from below places the layer at the group's visual bottom;
 // entering from above places the layer at the group's visual top.
+// Reorders a layer/group one slot up (direction=1) or down (direction=-1)
+// within its parent's children array. Mask/clip layers get special rules
+// here (see Fix List item 10): their only valid position is directly
+// above the pixel/image/vector layer they're hooked to, so arrow-key
+// reordering re-parents them (updates hookedTo) rather than just swapping
+// positions blindly -- Move Down is always disallowed for a mask/clip
+// (would place it below its own target, which is incoherent), and Move Up
+// is only allowed when the layer currently above it is itself
+// pixel/image/vector (a valid new target to re-parent onto); otherwise
+// it's blocked. Re-parenting to a *different* target is therefore always
+// an explicit "move up onto a new target" action, never an incidental
+// side effect of a swap that leaves hookedTo stale.
 function reorderLayerTreeNode(node, direction){
     const f=frames[activeFrameIndex]; if(!f)return;
     const found=findNode(f.layerTree,nodeId(node)); if(!found)return;
+    const isMaskOrClip = node.kind==='layer' && node.layer && (node.layer.type==='mask' || node.layer.type==='clip');
+    if (isMaskOrClip) {
+        if (direction < 0) return; // Move Down always disallowed for mask/clip
+        const arr0 = found.parent?found.parent.children:f.layerTree;
+        const aboveNode = arr0[found.index + 1]; // "up" in the panel is a higher array index (see layers array convention elsewhere in this file)
+        const aboveIsMaskable = aboveNode && aboveNode.kind==='layer' && aboveNode.layer && (aboveNode.layer.type==='pixel' || aboveNode.layer.type==='image' || aboveNode.layer.type==='vector');
+        if (!aboveIsMaskable) return; // nothing valid to re-parent onto
+    }
     const before=captureTreeState();
     const arr=found.parent?found.parent.children:f.layerTree;
     const from=found.index, to=from+direction;
     if(to<0||to>=arr.length)return;
     const adjacent=arr[to];
+    // If a mask/clip is locked to this node and currently sits directly
+    // above it, and this node itself is being moved (not the mask/clip),
+    // carry the mask/clip along so it stays adjacent to its target. Found
+    // before the splice below, since positions shift once the move happens.
+    let lockedMaskNode = null;
+    if (!isMaskOrClip && node.kind==='layer' && node.layer) {
+        const maybeLockedAbove = arr[from + 1];
+        if (maybeLockedAbove && maybeLockedAbove.kind==='layer' && maybeLockedAbove.layer &&
+            (maybeLockedAbove.layer.type==='mask' || maybeLockedAbove.layer.type==='clip') &&
+            maybeLockedAbove.layer.hookedTo === node.layer.id && maybeLockedAbove.layer.lockedToTarget) {
+            lockedMaskNode = maybeLockedAbove;
+        }
+    }
     if(node.kind==='layer' && adjacent && adjacent.kind==='group'){
         arr.splice(from,1); adjacent.collapsed=false;
         if(direction>0) adjacent.children.push(node); else adjacent.children.unshift(node);
     } else {
         const [item]=arr.splice(from,1); arr.splice(to,0,item);
+    }
+    if (isMaskOrClip) node.layer.hookedTo = adjacent.layer.id; // re-parent onto the new target directly below
+    if (lockedMaskNode) {
+        // Re-find the mask's current position (it shifted after the splice
+        // above) and the target's new position, then move the mask to sit
+        // directly above the target again.
+        const maskIdx = arr.indexOf(lockedMaskNode);
+        const targetIdx = arr.indexOf(node);
+        if (maskIdx !== -1 && targetIdx !== -1 && maskIdx !== targetIdx + 1) {
+            arr.splice(maskIdx, 1);
+            const newTargetIdx = arr.indexOf(node);
+            arr.splice(newTargetIdx + 1, 0, lockedMaskNode);
+        }
     }
     syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites();
     pushTreeOperation(node.kind === 'group' ? 'Move group' : 'Move layer', before);
@@ -3299,6 +3390,7 @@ class MaskLayer extends PixelLayer {
         super(name, w, h);
         this.type = 'mask';
         this.hookedTo = null; // id of the pixel layer this mask affects (must be directly below it)
+        this.lockedToTarget = false; // if true, reordering the target layer (via arrows or drag) carries this mask along so it stays directly above it -- see reorderLayerTreeNode()
     }
 }
 
@@ -3310,6 +3402,7 @@ class ClipLayer extends PixelLayer {
         super(name, w, h);
         this.type = 'clip';
         this.hookedTo = null; // id of the pixel layer this clips to (must be directly below it)
+        this.lockedToTarget = false; // if true, reordering the target layer (via arrows or drag) carries this clip along so it stays directly above it -- see reorderLayerTreeNode()
     }
 }
 
@@ -3441,7 +3534,16 @@ class VectorLayer extends Layer {
     }
     render() {
         this.ctx.clearRect(0, 0, gridW, gridH);
-        this.splines.forEach(sp => this.renderSpline(sp, false));
+        // Gradient splines (sp.stops non-null) are handled separately --
+        // their backbone/guide line must never be drawn into this maskable
+        // canvas (see renderGradientFill(), called below once the actual
+        // gradient-fill renderer exists) so that masking a vector layer
+        // only clips the gradient's rendered colour result, never its
+        // edit-time guide line (which lives in a separate, unmasked
+        // overlay -- see updateGradientBackboneOverlay()). A normal
+        // (non-gradient) spline's line IS its content, so it's unaffected
+        // and keeps rendering here exactly as before.
+        this.splines.forEach(sp => { if (!sp.stops) this.renderSpline(sp, false); });
         if (this.draftPreview) this.renderSpline(this.draftPreview, true);
     }
     // Draws onto a scratch canvas via drawFn(scratchCtx), then thresholds
@@ -3592,6 +3694,7 @@ function cloneLayer(l) {
         nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
         if (l.type === 'pixel') nl.blendMode = l.blendMode || 'source-over';
         if (l.hookedTo != null) nl.hookedTo = l.hookedTo;
+        if (l.lockedToTarget) nl.lockedToTarget = l.lockedToTarget;
         nl.redrawFromData();
         return nl;
     }
@@ -4085,6 +4188,7 @@ function resetCanvasRotation() { canvasRotation = 0; layoutAll(); }
 // points that mode can act on -- with in-between points hidden so the
 // two grabbable ends are unambiguous.
 function updateVectorHandles() {
+    updateGradientBackboneOverlay();
     const el = document.getElementById('vectorHandlesOverlay');
     const subRow = document.getElementById('vectorEditSubModeRow');
     const layer = activeLayer();
@@ -4127,6 +4231,47 @@ function updateVectorHandles() {
         return;
     }
     layer.splines.forEach(sp => { sp.points.forEach(drawHandle); });
+}
+// Draws the backbone/guide line for every gradient spline (sp.stops
+// non-null) on the active vector layer into a dedicated overlay canvas,
+// entirely separate from the layer's own maskable render() output (see
+// VectorLayer.render()'s stops check). This mirrors industry precedent
+// (Illustrator/Inkscape): a masking or masked shape's own boundary/guide
+// geometry is never part of the rendered, exportable, maskable content --
+// it's a visible-only-while-editing affordance. Shown only while a
+// gradient-editing tool/mode is active (mirrors updateVectorHandles'
+// editActive gating for point-handles) -- gradients are otherwise fully
+// masked/clipped like any other vector content, with no visible line.
+// currentGradientToolActive is a placeholder condition until the actual
+// gradient tool exists; update this check when that tool is built.
+function updateGradientBackboneOverlay() {
+    const el = document.getElementById('gradientBackboneOverlay');
+    if (!el) return;
+    const layer = activeLayer();
+    const isVectorLayer = layer && layer.type === 'vector';
+    const gradientEditActive = isVectorLayer && typeof currentGradientToolActive !== 'undefined' && currentGradientToolActive;
+    if (!gradientEditActive) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.style.width = (gridW * scale) + 'px';
+    el.style.height = (gridH * scale) + 'px';
+    el.width = Math.max(1, gridW * scale);
+    el.height = Math.max(1, gridH * scale);
+    const ctx = el.getContext('2d');
+    ctx.clearRect(0, 0, el.width, el.height);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.setLineDash([4, 3]);
+    layer.splines.forEach(sp => {
+        if (!sp.stops || sp.points.length < 2) return;
+        ctx.beginPath();
+        sp.points.forEach((p, i) => {
+            const px = p.x * scale, py = p.y * scale;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        if (sp.closed) ctx.closePath();
+        ctx.stroke();
+    });
+    ctx.setLineDash([]);
 }
 // Turns "Delete Points" mode on/off. While on, tapping an existing point
 // with the Edit Points tool deletes it instead of grabbing it for a drag
@@ -4355,14 +4500,14 @@ function updateToolVisibility() {
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
     updateSelectionToolsVisibility();
 
-    const pixelOnlyTools = ['brush', 'bucket', 'wand', 'lasso', 'select', 'line', 'rect', 'ellipse', 'colorToAlpha'];
-    const vectorOnlyTools = ['vpen', 'vshape', 'vedit'];
+    const pixelOnlyTools = PIXEL_ONLY_TOOL_IDS;
+    const vectorOnlyTools = VECTOR_ONLY_TOOL_IDS;
     // Prefer switching to the analogous drawing tool over falling back to
     // the eyedropper: brush<->pen mirror each other as each type's default
     // "just start drawing" tool. Reference layers have no drawing tool of
     // their own, so those still fall back to the eyedropper.
-    if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn('vpen');
-    else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn('brush');
+    if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn(lastVectorTool);
+    else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn(lastPixelTool);
     else if (type === 'reference' && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
 
     // Portrait's 40x40 tiles are too small for size-adjustable/soft
@@ -4454,13 +4599,14 @@ function addVectorLayer() {
 }
 
 // Inserts a mask or clip layer directly above the active layer and hooks
-// it there -- both require a pixel layer selected first, since that's
-// what they attach to and modify.
+// it there -- requires a pixel, image, or vector layer selected first
+// (any layer type that can actually be masked/clipped -- see
+// renderRawPixelLayer()/compositeMaskOrClip(), which support all three).
 function addHookedLayer(kind) {
     const before=captureTreeState();
     const target = activeLayer();
-    if (!target || (target.type !== 'pixel' && target.type !== 'image')) {
-        alert((kind === 'mask' ? 'Mask' : 'Clipping') + ' layers attach to a pixel layer -- select one first.');
+    if (!target || (target.type !== 'pixel' && target.type !== 'image' && target.type !== 'vector')) {
+        alert((kind === 'mask' ? 'Mask' : 'Clipping') + ' layers attach to a pixel, image, or vector layer -- select one first.');
         return;
     }
     try {
@@ -4754,6 +4900,7 @@ function registerBuiltInCommands(){
     registerCommand('tool.vectorPen','Vector Pen',['pen','bezier'],()=>handleToolBtn('vpen'),'Tools');
     registerCommand('tool.vectorShape','Vector Shape',['vector shapes'],()=>handleToolBtn('vshape'),'Tools');
     registerCommand('tool.vectorEdit','Vector Edit',['edit vectors','nodes'],()=>handleToolBtn('vedit'),'Tools');
+    registerCommand('tool.vectorMove','Move Line',['move vector','move spline','drag line'],()=>handleToolBtn('vmove'),'Tools');
     registerCommand('view.resetRotation','Reset Canvas Rotation',['straighten','reset rotation'],resetCanvasRotation,'View');
     registerCommand('layers.new','New Pixel Layer',['new layer','pixel layer','paint layer'],addPixelLayer,'Layers');
     registerCommand('layers.duplicate','Duplicate Selected',['duplicate layer','copy layer'],duplicateSelectedItems,'Layers');
@@ -4826,17 +4973,37 @@ function renderLayersPanel() {
         const parent=foundNode?foundNode.parent:null;
         const arr=parent?parent.children:f.layerTree;
         const pos=arr.indexOf(node);
-        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,1);});
+        const isMaskOrClip = layer.type==='mask' || layer.type==='clip';
+        const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();if(!(isMaskOrClip && up.classList.contains('soft-disabled')))reorderLayerTreeNode(node,1);});
         const upTarget=pos<arr.length-1?arr[pos+1]:null;
-        up.disabled=pos>=arr.length-1;
-        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,-1);});
+        const upTargetIsMaskable = upTarget && upTarget.kind==='layer' && upTarget.layer && (upTarget.layer.type==='pixel' || upTarget.layer.type==='image' || upTarget.layer.type==='vector');
+        if (isMaskOrClip) { up.classList.toggle('soft-disabled', !upTargetIsMaskable); const upTip = upTargetIsMaskable ? ('Move up onto ' + upTarget.layer.name) : 'A mask/clip layer can only move up onto a pixel, image, or vector layer'; attachLongPressTooltip(up, upTip); }
+        else up.disabled=pos>=arr.length-1;
+        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();if(!(isMaskOrClip))reorderLayerTreeNode(node,-1);});
         const downTarget=pos>0?arr[pos-1]:null;
-        down.disabled=pos<=0;
+        if (isMaskOrClip) { down.classList.add('soft-disabled'); attachLongPressTooltip(down, 'A mask/clip layer can\'t move below the layer it\'s attached to'); }
+        else down.disabled=pos<=0;
         const clr=mkLayerIconBtn('\u{1F9F9}',e=>{e.stopPropagation();clearLayerAt(i);}); clr.style.display=layer.type!=='reference'?'flex':'none';
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
-        row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); list.appendChild(row);
-        if(!layerSelectionMode && i===activeLayerIndex){const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);
+        row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); if(!layerSelectionMode && i===activeLayerIndex)row.classList.add('has-controls-strip'); list.appendChild(row);
+        if(!layerSelectionMode && i===activeLayerIndex){const opRow=document.createElement('div');opRow.className='layer-opacity-row';const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';opRow.append(opCaption);const sliderCtl=mkIosSlider(Math.round(layer.opacity*100),v=>{layer.opacity=v/100;layer.applyVisualState();refreshHookedComposites();});opRow.append(sliderCtl.el);
+            // Lock-to-target toggle, mask/clip layers only (see Fix List
+            // item 10). Shares opRow with the opacity slider like the
+            // blend-mode select below does for pixel/image/vector -- the
+            // two conditions never overlap on the same layer type, so
+            // there's no crowding between them.
+            if (layer.type==='mask' || layer.type==='clip') {
+                const lockBtn=document.createElement('button'); lockBtn.className='num-input'; lockBtn.style.flex='none';
+                lockBtn.innerText = layer.lockedToTarget ? '\u{1F512}' : '\u{1F513}';
+                lockBtn.onclick=()=>{layer.lockedToTarget=!layer.lockedToTarget;renderLayersPanel();};
+                const targetLayer = layer.hookedTo ? layers.find(l=>l.id===layer.hookedTo) : null;
+                const tipText = layer.lockedToTarget
+                    ? ('Locked to ' + (targetLayer ? targetLayer.name : 'its target') + ' -- moving it will carry this ' + layer.type + ' along')
+                    : ('Not locked -- tap to lock this ' + layer.type + ' to ' + (targetLayer ? targetLayer.name : 'its target') + ' so moving it carries this ' + layer.type + ' along');
+                attachLongPressTooltip(lockBtn, tipText);
+                opRow.append(lockBtn);
+            }
             // Session 7d: per-layer blend mode, only for layer types that
             // are real visible artwork painted into the normal stack --
             // mask/clip are control data (already display:none, see
@@ -4860,8 +5027,8 @@ function renderLayersPanel() {
         const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,-1);});down.disabled=pos<=0;
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteGroup(node,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=e=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(e.target===exp||e.target===sel||e.target===vis||e.target===name)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();}};
-        row.append(colorTag,exp,sel,vis,icon,name,up,down,del); list.appendChild(row);
-        if(!layerSelectionMode && activeGroupId===node.id){ const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel); const op=document.createElement('div'); op.className='layer-opacity-row'; const sl=document.createElement('input'); sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(node.opacity*100); const lab=document.createElement('span');lab.innerText=sl.value+'%'; sl.oninput=()=>{node.opacity=sl.value/100;lab.innerText=sl.value+'%';applyGroupVisualState(node);}; op.append(sl,lab); const bm=document.createElement('select'); bm.className='num-input'; BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
+        row.append(colorTag,exp,sel,vis,icon,name,up,down,del); if(!layerSelectionMode && activeGroupId===node.id)row.classList.add('has-controls-strip'); list.appendChild(row);
+        if(!layerSelectionMode && activeGroupId===node.id){ const op=document.createElement('div'); op.className='layer-opacity-row'; const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';op.append(opCaption); const sliderCtl=mkIosSlider(Math.round(node.opacity*100),v=>{node.opacity=v/100;applyGroupVisualState(node);}); op.append(sliderCtl.el); const bm=document.createElement('select'); bm.className='num-input'; BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
         if(!node.collapsed)renderNodes(node.children,depth+1);
     };
     renderNodes(f.layerTree,0);
@@ -4960,6 +5127,58 @@ function mkLayerIconBtn(text, onClick) {
     btn.innerText = text;
     btn.onclick = onClick;
     return btn;
+}
+
+// Builds an iOS-style "loading bar" slider (0-100), replacing the native
+// <input type=range> in the Layers panel -- bigger touch target, and the
+// percentage label lives inside the fill (following its leading edge)
+// instead of needing a separate text element. `onChange(value)` fires
+// continuously while dragging, same timing as the old input's `oninput`.
+// Returns { el, setValue(v) } so callers can update the displayed value
+// programmatically (e.g. after an external change) without re-dragging.
+function mkIosSlider(initialValue, onChange) {
+    const el = document.createElement('div');
+    el.className = 'ios-slider';
+    const fill = document.createElement('div');
+    fill.className = 'ios-slider-fill';
+    const label = document.createElement('span');
+    label.className = 'ios-slider-label';
+    fill.appendChild(label);
+    el.appendChild(fill);
+    let value = Math.max(0, Math.min(100, initialValue));
+    const render = () => {
+        fill.style.width = value + '%';
+        fill.classList.toggle('full', value >= 100);
+        label.textContent = Math.round(value) + '%';
+        // Leading-edge placement: label sits just inside the fill's right
+        // edge while there's room, then clamps to stay inside the bar
+        // rather than spilling past it at very low/high values.
+        const barWidth = el.clientWidth || 200;
+        const labelWidth = 34;
+        let left = (value / 100) * barWidth - labelWidth - 6;
+        left = Math.max(6, left);
+        label.style.left = left + 'px';
+    };
+    const setFromClientX = (clientX) => {
+        const rect = el.getBoundingClientRect();
+        value = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+        render();
+        onChange(Math.round(value));
+    };
+    let dragging = false;
+    el.addEventListener('pointerdown', e => { dragging = true; el.setPointerCapture(e.pointerId); setFromClientX(e.clientX); });
+    el.addEventListener('pointermove', e => { if (dragging) setFromClientX(e.clientX); });
+    const endDrag = e => { dragging = false; };
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+    render();
+    // clientWidth is 0 until the element is actually attached to the DOM
+    // by the caller (it's returned, not appended, at this point) -- the
+    // label's leading-edge position depends on real width, so re-render
+    // once more on the next frame after attachment for correct initial
+    // placement instead of leaving it pinned to the 200px fallback.
+    requestAnimationFrame(render);
+    return { el, setValue: v => { value = Math.max(0, Math.min(100, v)); render(); } };
 }
 
 // Builds the TRANSFORM toggle, X/Y/W/H/rotation fields, and reset button shown under a reference layer when it is the active layer.
@@ -5962,6 +6181,39 @@ function findNearestVectorEndpoint(layer, x, y) {
     const threshold = Math.max(1, 14 / scale);
     return (best && bestDist <= threshold) ? best : null;
 }
+// For the Move Line tool (vmove): finds the spline whose path (the line
+// segments between consecutive points, not just the points themselves) is
+// nearest to (x,y), so a touch anywhere along a line's body -- including
+// its exact midpoint -- grabs the whole spline. Distinct from
+// findNearestVectorPoint, which only ever matches a single point.
+function findNearestSpline(layer, x, y) {
+    let best = null, bestDist = Infinity;
+    const distToSegment = (px, py, ax, ay, bx, by) => {
+        const abx = bx - ax, aby = by - ay;
+        const lenSq = abx * abx + aby * aby;
+        let t = lenSq > 0 ? ((px - ax) * abx + (py - ay) * aby) / lenSq : 0;
+        t = Math.max(0, Math.min(1, t));
+        const cx = ax + t * abx, cy = ay + t * aby;
+        return Math.hypot(px - cx, py - cy);
+    };
+    layer.splines.forEach(sp => {
+        if (sp.points.length < 2) {
+            if (sp.points.length === 1) {
+                const d = Math.hypot(sp.points[0].x - x, sp.points[0].y - y);
+                if (d < bestDist) { bestDist = d; best = sp; }
+            }
+            return;
+        }
+        const segCount = sp.closed ? sp.points.length : sp.points.length - 1;
+        for (let i = 0; i < segCount; i++) {
+            const a = sp.points[i], b = sp.points[(i + 1) % sp.points.length];
+            const d = distToSegment(x, y, a.x, a.y, b.x, b.y);
+            if (d < bestDist) { bestDist = d; best = sp; }
+        }
+    });
+    const threshold = Math.max(1, 14 / scale); // same ~14 screen px touch target as point hit-testing
+    return (best && bestDist <= threshold) ? best : null;
+}
 
 /* ============================================================
    TOOLS / DRAWING (only pixel layers can be painted on)
@@ -5990,6 +6242,45 @@ traceLog('flip button listeners attached: H=' + !!document.getElementById('flipH
 function startHold(callback) { if (isConfirmingClear) return; holdTimer = setTimeout(callback, 600); }
 // Cancels a pending long-press timer.
 function clearHold() { clearTimeout(holdTimer); }
+
+// Generic long-press tooltip: shown on a 600ms hold (reuses startHold's
+// timing convention), dismissed on release/cancel/outside tap. Exists
+// because the native `title` attribute -- the app's existing tooltip
+// convention -- never fires on iOS Safari touch (the app's primary
+// platform), only on desktop hover. Attach via attachLongPressTooltip();
+// this pair of functions is the low-level show/hide, reusable beyond any
+// single button.
+let activeTooltipEl = null;
+function showLongPressTooltip(anchorEl, text) {
+    hideLongPressTooltip();
+    const tip = document.createElement('div');
+    tip.className = 'long-press-tooltip';
+    tip.textContent = text;
+    document.body.appendChild(tip);
+    const r = anchorEl.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    let top = r.top - tipRect.height - 8;
+    if (top < 4) top = r.bottom + 8; // flip below if there's no room above
+    let left = r.left + (r.width - tipRect.width) / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
+    tip.style.top = top + 'px';
+    tip.style.left = left + 'px';
+    activeTooltipEl = tip;
+}
+function hideLongPressTooltip() {
+    if (activeTooltipEl) { activeTooltipEl.remove(); activeTooltipEl = null; }
+}
+// Wires long-press-to-reveal-tooltip onto a button, alongside its native
+// title (kept as a no-cost fallback for desktop hover). Doesn't interfere
+// with the button's own click handler -- the tooltip only shows on a
+// sustained hold, and clearHold()/hideLongPressTooltip() both fire on
+// release so a genuine tap-click still goes through normally.
+function attachLongPressTooltip(el, text) {
+    if (!el) return;
+    el.title = text;
+    el.addEventListener('pointerdown', () => startHold(() => showLongPressTooltip(el, text)));
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => el.addEventListener(evt, () => { clearHold(); hideLongPressTooltip(); }));
+}
 
 // Toggles palette edit mode (wiggling swatches with delete badges), like the iOS home-screen jiggle.
 // Shows a dedicated backdrop (like the gallery card context menu's) while
@@ -6131,6 +6422,16 @@ function setupPaletteDragEvents() {
 }
 
 let toolBeforeEyedrop = 'brush';
+// Remembers the most recently used pixel tool and the most recently used
+// vector tool separately, so switching between a pixel layer and a vector
+// layer restores whichever tool was actually last used on that layer type
+// -- e.g. pencil -> (switch to vector layer) -> pen -> (switch back to
+// pixel layer) -> pencil, rather than always landing on a fixed default
+// (brush/vpen). Updated in handleToolBtn(), the single entry point every
+// tool switch goes through, and read by updateToolVisibility()'s
+// pixel<->vector smart-switch.
+let lastPixelTool = 'brush';
+let lastVectorTool = 'vpen';
 // Tracks the most recently selected non-transparent colour, so tools that
 // don't make sense with transparency selected (drawing tools -- see
 // APPLY_LAST_COLOUR_TOOLS below) can restore it instead of leaving the
@@ -6168,6 +6469,15 @@ function handleToolBtn(t) {
     // not size/softness-based), so it needs its own check here.
     if (selectedProfile === 'portrait' && t === 'colorToAlpha') t = 'pencil';
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
+    // Remember the tool actually being switched to, per type, so a later
+    // pixel<->vector layer switch can restore it (see lastPixelTool/
+    // lastVectorTool declaration above). PIXEL_ONLY_TOOL_IDS/
+    // VECTOR_ONLY_TOOL_IDS already exclude eyedrop/pan/colorToAlpha (utility/
+    // effects categories), so those don't overwrite the remembered drawing
+    // tool -- e.g. sampling with the eyedropper doesn't erase what pencil
+    // was remembered before it.
+    if (PIXEL_ONLY_TOOL_IDS.includes(t)) lastPixelTool = t;
+    else if (VECTOR_ONLY_TOOL_IDS.includes(t)) lastVectorTool = t;
     if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); return; }
     currentTool = t;
     if (selectedColor === null && APPLY_LAST_COLOUR_TOOLS.includes(t)) selectedColor = lastNonTransparentColor;
@@ -6285,14 +6595,10 @@ function flattenGroupSubtreeToCanvas(groupNode, gW, gH) {
             if (!visible || opacity <= 0) continue;
             octx.globalAlpha = opacity;
             octx.globalCompositeOperation = 'source-over';
-            if (l.type === 'vector') {
-                if (debugUnrestrictedVector) octx.drawImage(l.el, 0, 0, gW, gH);
-                else octx.drawImage(l.el, 0, 0);
-                continue;
-            }
-            if (l.type !== 'pixel' && l.type !== 'image') continue; // reference layers stay guide-only, excluded, matching flattenLayersToCanvas
+            if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue; // reference layers stay guide-only, excluded, matching flattenLayersToCanvas
             const next = nodes[i + 1];
             const aboveLayer = next && next.kind === 'layer' ? next.layer : null;
+            if (l.type === 'vector' && debugUnrestrictedVector) { octx.drawImage(l.el, 0, 0, gW, gH); continue; }
             if (aboveLayer && aboveLayer.visible && (aboveLayer.type === 'mask' || aboveLayer.type === 'clip') && aboveLayer.hookedTo === l.id) {
                 octx.drawImage(compositeMaskOrClip(l, aboveLayer), 0, 0);
             } else {
@@ -6708,6 +7014,42 @@ function setupDrawingEvents() {
     };
     const endVectorEditDrag = () => { g.vecDragTarget = null; };
 
+    // -- Move Line tool (vmove): grab an entire spline and translate every
+    //    point together, rather than one point at a time (Edit Points).
+    //    A dedicated tool rather than a mode of Edit Points, so a touch
+    //    anywhere on the line -- including exactly on its midpoint --
+    //    unambiguously grabs the whole thing (see findNearestSpline).
+    const startVectorMoveDrag = (x, y) => {
+        const layer = activeLayer();
+        if (!layer || layer.type !== 'vector') { g.vecMoveTarget = null; return; }
+        const spline = findNearestSpline(layer, x, y);
+        g.vecMoveTarget = spline ? { spline, before: spline.points.map(p => ({ x: p.x, y: p.y })), startX: x, startY: y } : null;
+        traceLog('vmove start: ' + (g.vecMoveTarget ? 'grabbed a spline' : 'no spline within reach'));
+    };
+    const updateVectorMoveDrag = (x, y) => {
+        if (!g.vecMoveTarget) return;
+        const t = g.vecMoveTarget;
+        const dx = x - t.startX, dy = y - t.startY;
+        // Translate from the captured `before` snapshot each time (not
+        // cumulatively from the current points), so floating-point drift
+        // can't accumulate across a long drag with many touchmove events.
+        t.spline.points.forEach((p, i) => { p.x = t.before[i].x + dx; p.y = t.before[i].y + dy; });
+        const layer = activeLayer();
+        if (layer) layer.layoutCSS();
+        updateVectorHandles();
+    };
+    const endVectorMoveDrag = () => {
+        const t = g.vecMoveTarget;
+        g.vecMoveTarget = null;
+        if (!t) return;
+        const after = t.spline.points.map(p => ({ x: p.x, y: p.y }));
+        const changed = after.some((p, i) => p.x !== t.before[i].x || p.y !== t.before[i].y);
+        if (changed) {
+            const layer = activeLayer();
+            if (layer) pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: t.spline, before: t.before, after });
+        }
+    };
+
     // -- Pen/Shape tools: freehand-drag records a path and auto-fits a
     //    spline on release; a stationary tap instead commits a single
     //    point immediately (see commitFreehandSpline).
@@ -6815,6 +7157,7 @@ function setupDrawingEvents() {
         if (currentTool === 'select') { startSelectionDrag(x, y); return; }
         if (currentTool === 'lasso') { g.lasso=[{x:x+.5,y:y+.5}]; g.suppressStroke=true; return; }
         if (currentTool === 'vedit') { startVectorEditDrag(x, y); return; }
+        if (currentTool === 'vmove') { startVectorMoveDrag(x, y); return; }
         if (currentTool === 'vpen' || currentTool === 'vshape') { startVectorFreehand(x, y); return; }
         if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
             g.shapeStart = { x, y };
@@ -7036,6 +7379,7 @@ function setupDrawingEvents() {
             else if (currentTool === 'select') updateSelectionDrag(x, y);
             else if (currentTool === 'lasso' && g.lasso) { const p={x:x+.5,y:y+.5},last=g.lasso[g.lasso.length-1]; if(Math.hypot(p.x-last.x,p.y-last.y)>=.5) g.lasso.push(p); }
             else if (currentTool === 'vedit') updateVectorEditDrag(x, y);
+            else if (currentTool === 'vmove') updateVectorMoveDrag(x, y);
             else if (currentTool === 'vpen' || currentTool === 'vshape') updateVectorFreehand(x, y);
             else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && g.shapeStart) {
                 showShapePreview(currentTool, g.shapeStart, { x, y });
@@ -7106,6 +7450,8 @@ function setupDrawingEvents() {
                 if(g.lasso){ performLassoSelection(g.lasso); g.lasso=null; }
             } else if (currentTool === 'vedit') {
                 endVectorEditDrag();
+            } else if (currentTool === 'vmove') {
+                endVectorMoveDrag();
             } else if (currentTool === 'vpen' || currentTool === 'vshape') {
                 endVectorFreehand();
             } else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && g.shapeStart) {
@@ -7161,10 +7507,17 @@ function setupDrawingEvents() {
 // (which may itself be showing a live composite -- see
 // refreshHookedComposites()). Always use this, never layer.el directly,
 // wherever compositing needs the *real* unmodified content.
+// Produces a raw (unmasked, unclipped) canvas snapshot of a layer's own
+// content, for use as the "base" a mask/clip layer composites against.
+// Pixel/image layers store their content as a pixelData grid and get
+// painted cell-by-cell; vector layers have no pixelData -- their content
+// is already rasterized into their own display canvas (`layer.el`) by
+// render(), so that's drawn through directly instead.
 function renderRawPixelLayer(layer) {
     const c = document.createElement('canvas');
     c.width = layer.gridW; c.height = layer.gridH;
     const ctx = c.getContext('2d');
+    if (layer.type === 'vector') { ctx.drawImage(layer.el, 0, 0); return c; }
     for (let x = 0; x < layer.gridW; x++)
         for (let y = 0; y < layer.gridH; y++)
             if (layer.pixelData[x][y]) { ctx.fillStyle = layer.pixelData[x][y]; ctx.fillRect(x, y, 1, 1); }
@@ -7237,12 +7590,14 @@ function compositeMaskOrClip(base, effect) {
 function refreshHookedComposites() {
     for (let i = 0; i < layers.length; i++) {
         const l = layers[i];
-        if (l.type !== 'pixel' && l.type !== 'image') continue;
+        if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue;
         const above = layers[i + 1];
         if (above && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id && above.visible) {
             const composited = compositeMaskOrClip(l, above);
             l.ctx.clearRect(0, 0, l.gridW, l.gridH);
             l.ctx.drawImage(composited, 0, 0);
+        } else if (l.type === 'vector') {
+            l.render();
         } else {
             l.redrawFromData();
         }
@@ -7267,7 +7622,7 @@ function activeLayerHasLiveHook() {
     const layer = activeLayer();
     if (!layer) return false;
     if (layer.type === 'mask' || layer.type === 'clip') return true;
-    if (layer.type !== 'pixel' && layer.type !== 'image') return false;
+    if (layer.type !== 'pixel' && layer.type !== 'image' && layer.type !== 'vector') return false;
     const above = layers[layers.indexOf(layer) + 1];
     return !!(above && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === layer.id);
 }
@@ -7282,12 +7637,8 @@ function flattenLayersToCanvas(layerList) {
         if (l.type === 'mask' || l.type === 'clip') continue; // composited in when we reach their target below
         if (!l.visible) continue;
         octx.globalAlpha = l.opacity;
-        if (l.type === 'vector') {
-            if (debugUnrestrictedVector) octx.drawImage(l.el, 0, 0, gridW, gridH);
-            else octx.drawImage(l.el, 0, 0);
-            continue;
-        }
-        if (l.type !== 'pixel' && l.type !== 'image') continue; // reference layers stay guide-only, excluded from export
+        if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue; // reference layers stay guide-only, excluded from export
+        if (l.type === 'vector' && debugUnrestrictedVector) { octx.drawImage(l.el, 0, 0, gridW, gridH); continue; }
         const above = layerList[i + 1];
         if (above && above.visible && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id) {
             octx.drawImage(compositeMaskOrClip(l, above), 0, 0);
@@ -7620,7 +7971,7 @@ async function copyToClipboard() {
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
     if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', dataURL: l.el.toDataURL() };
-    if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
+    if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo, lockedToTarget: !!l.lockedToTarget };
     if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines };
     return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
 }
@@ -7747,6 +8098,7 @@ function loadProjectFile(file) {
                     else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
                     l.color = ld.color || null;
                     if (ld.type === 'pixel' || ld.type === 'image') l.blendMode = ld.blendMode || 'source-over';
+                    if (ld.type === 'mask' || ld.type === 'clip') l.lockedToTarget = !!ld.lockedToTarget;
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
                     builtFrames[fi].layers[li] = l;
@@ -7801,8 +8153,7 @@ function galleryFlattenLayers(layerList, gW, gH) {
         if (l.type === 'mask' || l.type === 'clip') continue;
         if (!l.visible) continue;
         octx.globalAlpha = l.opacity;
-        if (l.type === 'vector') { octx.drawImage(l.el, 0, 0); continue; }
-        if (l.type !== 'pixel' && l.type !== 'image') continue;
+        if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue;
         const above = layerList[i + 1];
         if (above && above.visible && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id) {
             try { octx.drawImage(compositeMaskOrClip(l, above), 0, 0); } catch(e) { octx.drawImage(l.el, 0, 0); }
@@ -8414,6 +8765,7 @@ drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); close
 drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
 setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
 setupEdgeSwipe('rightEdgeZone', 'debug', 'left');
+renderToolButtons();
 renderLogToggleButtons();
 document.getElementById('viewport').addEventListener('scroll', () => { updateRotationFab(); updateUndoRedoFabs(); });
 window.addEventListener('resize', () => { updateRotationFab(); updateUndoRedoFabs(); if (viewport) updateCanvasWrapPadding(); });
