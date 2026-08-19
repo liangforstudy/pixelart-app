@@ -375,6 +375,16 @@
         }
         #panelBackdrop.open { display: block; }
 
+        /* Dedicated backdrop for swatch edit ("MANAGE COLOURS") mode.
+           Visibly dims the screen, like the gallery card context menu's
+           backdrop, and catches any tap outside the palette so it closes
+           edit mode instead of leaking through to canvas gestures underneath. */
+        #swatchEditBackdrop {
+            position: fixed; inset: 0; z-index: 840; display: none;
+            background: rgba(0,0,0,.55);
+        }
+        #swatchEditBackdrop.open { display: block; }
+
         /* Edge-swipe zones for Tools (left) / Debug+Log (right) drawers.
            Invisible, sit above the canvas so a swipe starting right at the
            screen edge is caught before the canvas gets it. */
@@ -821,6 +831,7 @@
         </div>
 
         <div id="panelBackdrop"></div>
+        <div id="swatchEditBackdrop"></div>
         <div id="leftEdgeZone"></div>
         <div id="rightEdgeZone"></div>
 
@@ -830,20 +841,20 @@
                 <button class="btn" id="gridToggleBtn" onclick="uiAction(toggleGridLines)">▦ GRID LINES: OFF</button>
             </div>
             <div class="row">
-                <button class="btn tool-btn" data-tool="eyedrop" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
-                <button class="btn tool-btn" id="colorToAlphaToolBtn" data-tool="colorToAlpha" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
-                <button class="btn tool-btn" data-tool="pan" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
+                <button class="btn tool-btn" data-tool="eyedrop" data-category="utility" onclick="uiAction(() => handleToolBtn('eyedrop'))">💧 SELECT A COLOUR</button>
+                <button class="btn tool-btn" id="colorToAlphaToolBtn" data-tool="colorToAlpha" data-category="effects" onclick="uiAction(() => handleToolBtn('colorToAlpha'))">🎨 COLOUR TO ALPHA</button>
+                <button class="btn tool-btn" data-tool="pan" data-category="utility" onclick="uiAction(() => handleToolBtn('pan'))">✋ PAN</button>
             </div>
             <div id="pixelToolsSection">
-<div class="row"><button class="btn tool-btn" data-tool="pencil" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button><button class="btn tool-btn" id="brushToolBtn" data-tool="brush" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button></div>
-<div class="row"><button class="btn tool-btn" id="softBrushToolBtn" data-tool="softBrush" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" id="hardEraserToolBtn" data-tool="hardEraser" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" id="softEraserToolBtn" data-tool="softEraser" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
+<div class="row"><button class="btn tool-btn" data-tool="pencil" data-category="raster" onclick="uiAction(() => handleToolBtn('pencil'))">✏️ PENCIL TOOL</button><button class="btn tool-btn" id="brushToolBtn" data-tool="brush" data-category="raster" onclick="uiAction(() => handleToolBtn('brush'))">🖌️ BRUSH TOOL</button></div>
+<div class="row"><button class="btn tool-btn" id="softBrushToolBtn" data-tool="softBrush" data-category="raster" onclick="uiAction(() => handleToolBtn('softBrush'))">🖌️ SOFT BRUSH</button><button class="btn tool-btn" id="hardEraserToolBtn" data-tool="hardEraser" data-category="raster" onclick="uiAction(() => handleToolBtn('hardEraser'))">🧹 HARD ERASER</button><button class="btn tool-btn" id="softEraserToolBtn" data-tool="softEraser" data-category="raster" onclick="uiAction(() => handleToolBtn('softEraser'))">🧹 SOFT ERASER</button></div>
 <div id="pixelToolControls" style="display:none;padding:6px 0"><label id="brushSizeRow">Brush size <input id="pixel-brush-size" type="range" min="1" max="100" value="8"><output id="pixel-brush-size-value">8 px</output></label><label id="brushSoftnessRow">Brush softness <input id="pixel-brush-softness" type="range" min="0" max="100" value="100"><output id="pixel-brush-softness-value">100%</output></label><label id="softEraserSizeRow">Soft eraser size <input id="pixel-soft-eraser-size" type="range" min="1" max="100" value="8"><output id="pixel-soft-eraser-size-value">8 px</output></label><label id="softEraserSoftnessRow">Soft eraser softness <input id="pixel-soft-eraser-softness" type="range" min="0" max="100" value="35"><output id="pixel-soft-eraser-softness-value">35%</output></label></div>
                 <div class="row">
-                    <button class="btn tool-btn" data-tool="bucket" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
+                    <button class="btn tool-btn" data-tool="bucket" data-category="fill" onclick="uiAction(() => handleToolBtn('bucket'))">🪣 FILL</button>
                 </div>
                 <div class="row">
-                    <button class="btn tool-btn" data-tool="wand" onclick="uiAction(() => handleToolBtn('wand'))">🪄 WAND</button>
-                    <button class="btn tool-btn" data-tool="lasso" onclick="uiAction(() => handleToolBtn('lasso'))">〰️ LASSO</button>
+                    <button class="btn tool-btn" data-tool="wand" data-category="selection" onclick="uiAction(() => handleToolBtn('wand'))">🪄 WAND</button>
+                    <button class="btn tool-btn" data-tool="lasso" data-category="selection" onclick="uiAction(() => handleToolBtn('lasso'))">〰️ LASSO</button>
                 </div>
                 <div id="bucketControls" style="display:none;">
                     <div class="panel-subtitle" id="bucketToleranceSubtitle">FILL TOLERANCE</div>
@@ -884,10 +895,10 @@
                     <div id="wandSelectionCount" style="font-size:10px;color:#aaa;text-align:center;">No wand selection</div>
                 </div>
                 <div class="row">
-                    <button class="btn tool-btn" data-tool="select" onclick="uiAction(() => handleToolBtn('select'))">🔲 SELECT</button>
-                    <button class="btn tool-btn" data-tool="line" onclick="uiAction(() => handleToolBtn('line'))">📏 LINE</button>
-                    <button class="btn tool-btn" data-tool="rect" onclick="uiAction(() => handleToolBtn('rect'))">⬛ RECT</button>
-                    <button class="btn tool-btn" data-tool="ellipse" onclick="uiAction(() => handleToolBtn('ellipse'))">⭕ ELLIPSE</button>
+                    <button class="btn tool-btn" data-tool="select" data-category="selection" onclick="uiAction(() => handleToolBtn('select'))">🔲 SELECT</button>
+                    <button class="btn tool-btn" data-tool="line" data-category="vector" onclick="uiAction(() => handleToolBtn('line'))">📏 LINE</button>
+                    <button class="btn tool-btn" data-tool="rect" data-category="vector" onclick="uiAction(() => handleToolBtn('rect'))">⬛ RECT</button>
+                    <button class="btn tool-btn" data-tool="ellipse" data-category="vector" onclick="uiAction(() => handleToolBtn('ellipse'))">⭕ ELLIPSE</button>
                 </div>
                 <div id="selectionToolsSection" style="display:none;">
                     <div class="panel-subtitle">Selection</div>
@@ -901,9 +912,9 @@
             <div id="vectorToolsSection">
                 <div class="panel-subtitle">Vector (freehand-drag draws + smooths; a quick tap-in-place places a single point)</div>
                 <div class="row">
-                    <button class="btn tool-btn" data-tool="vpen" onclick="uiAction(() => handleToolBtn('vpen'))">🖊️ PEN (open)</button>
-                    <button class="btn tool-btn" data-tool="vshape" onclick="uiAction(() => handleToolBtn('vshape'))">🔷 SHAPE (closed)</button>
-                    <button class="btn tool-btn" data-tool="vedit" onclick="uiAction(() => handleToolBtn('vedit'))">🖐️ EDIT PTS</button>
+                    <button class="btn tool-btn" data-tool="vpen" data-category="vector" onclick="uiAction(() => handleToolBtn('vpen'))">🖊️ PEN (open)</button>
+                    <button class="btn tool-btn" data-tool="vshape" data-category="vector" onclick="uiAction(() => handleToolBtn('vshape'))">🔷 SHAPE (closed)</button>
+                    <button class="btn tool-btn" data-tool="vedit" data-category="vector" onclick="uiAction(() => handleToolBtn('vedit'))">🖐️ EDIT PTS</button>
                 </div>
                 <div class="row" id="vectorEditSubModeRow">
                     <button class="btn" id="vertexDeleteModeBtn" onclick="uiAction(toggleVertexDeleteMode)">🗑️ DELETE PTS</button>
@@ -1106,6 +1117,26 @@
                     <input type="range" id="historyMemoryBudgetSlider" min="8" max="512" step="8" oninput="uiAction(() => setHistoryMemoryBudgetMiB(this.value))" style="flex:1;">
                     <span id="historyMemoryBudgetLabel" style="font-size:10px;color:#ccc;width:52px;text-align:right;">64 MiB</span>
                 </div>
+                <div class="panel-subtitle">Raster Tool Size Gate</div>
+                <div class="row" style="align-items:center; gap:6px;">
+                    <input type="range" id="rasterToolGateThresholdSlider" min="10000" max="16000000" step="10000" oninput="uiAction(() => setRasterToolGateThresholdPx(this.value))" style="flex:1;">
+                    <span id="rasterToolGateThresholdLabel" style="font-size:10px;color:#ccc;width:70px;text-align:right;">1,000,000 px</span>
+                </div>
+                <div class="row">
+                    <button class="btn" id="forceEnableRasterToolsBtn" onclick="uiAction(toggleForceEnableRasterTools)">🔓 FORCE-ENABLE RASTER TOOLS</button>
+                </div>
+                <div class="panel-subtitle">[TEMP] Group Blend-Mode Prep (Session 7a)</div>
+                <div class="row">
+                    <button class="btn" id="testFlattenGroupBtn" onclick="uiAction(testFlattenFirstGroup)">🧪 PREVIEW FIRST GROUP FLATTEN</button>
+                </div>
+                <div id="testFlattenGroupPreviewWrap" style="display:none;padding:6px 0;text-align:center;">
+                    <div style="font-size:10px;color:#888;margin-bottom:4px;">Live output of flattenGroupSubtreeToCanvas() on the first group found -- diagnostic only, not the real render path yet.</div>
+                    <div id="testFlattenGroupPreviewHost" style="display:inline-block;border:2px solid #f43f5e;background:repeating-conic-gradient(#444 0% 25%, #333 0% 50%) 0 0/16px 16px;"></div>
+                </div>
+                <div class="panel-subtitle">[TEMP] Group Blend Wiring Check (Session 7b-1)</div>
+                <div class="row">
+                    <button class="btn" id="testGroupBlendWiringBtn" onclick="uiAction(testGroupBlendWiring)">🧪 CHECK BLEND WIRING (writes to Log below)</button>
+                </div>
                 <div class="panel-subtitle">Log Capture</div>
                 <div class="row">
                     <button class="btn" id="logToggle-touch" onclick="uiAction(() => setLogToggle('touch', !logTouchEnabled))">👆 TOUCH</button>
@@ -1131,7 +1162,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_37';
+const BUILD_VERSION = 'V1_38';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1569,6 +1600,32 @@ function toggleForceCustomKeyboard() {
     if (btn) btn.classList.toggle('active', forceCustomKeyboard);
 }
 
+// Debug-only: adjusts the raster-tool size-gating area threshold (total
+// pixels, width x height). Above this threshold, raster tools (pencil,
+// brush, soft brush, hard eraser, soft eraser -- TOOL_REGISTRY's 'raster'
+// category) are disabled in the Tools drawer, per the roadmap item 13
+// decision. Persisted the same way as the other debugOptions fields above.
+function setRasterToolGateThresholdPx(px) {
+    const clamped = Math.max(RASTER_GATE_THRESHOLD_MIN_PX, Math.min(RASTER_GATE_THRESHOLD_MAX_PX, Number(px) || DEFAULT_RASTER_GATE_THRESHOLD_PX));
+    rasterToolGateThresholdPx = clamped;
+    panelVisibility.debugOptions.rasterToolGateThresholdPx = clamped;
+    savePanelVisibility();
+    const label = document.getElementById('rasterToolGateThresholdLabel');
+    if (label) label.textContent = clamped.toLocaleString() + ' px';
+    applyCanvasSizeToolGating();
+}
+
+// Debug-only: force-enables raster tools regardless of canvas area,
+// overriding the size gate. Persisted the same way as the toggles above.
+function toggleForceEnableRasterTools() {
+    forceEnableRasterTools = !forceEnableRasterTools;
+    panelVisibility.debugOptions.forceEnableRasterTools = forceEnableRasterTools;
+    savePanelVisibility();
+    const btn = document.getElementById('forceEnableRasterToolsBtn');
+    if (btn) btn.classList.toggle('active', forceEnableRasterTools);
+    applyCanvasSizeToolGating();
+}
+
 // Prints the current build version to the TRACE log (visible even without
 // opening the Debug drawer to look at the static label) and briefly flashes
 // the version on the button itself, so a tap gives immediate, unambiguous
@@ -1615,6 +1672,14 @@ function refreshDebugStats() {
     const label = document.getElementById('historyMemoryBudgetLabel');
     if (slider && document.activeElement !== slider) slider.value = budgetMb;
     if (label) label.textContent = budgetMb + ' MiB';
+    // Same sync need as the History Memory Budget slider above, for the
+    // raster-tool size-gate threshold slider and its force-enable toggle.
+    const gateSlider = document.getElementById('rasterToolGateThresholdSlider');
+    const gateLabel = document.getElementById('rasterToolGateThresholdLabel');
+    if (gateSlider && document.activeElement !== gateSlider) gateSlider.value = rasterToolGateThresholdPx;
+    if (gateLabel) gateLabel.textContent = rasterToolGateThresholdPx.toLocaleString() + ' px';
+    const forceBtn = document.getElementById('forceEnableRasterToolsBtn');
+    if (forceBtn) forceBtn.classList.toggle('active', forceEnableRasterTools);
 }
 
 /* ============================================================
@@ -1639,7 +1704,60 @@ let currentTool = 'pencil', isDrawing = false, isEditing = false;
 // handlers.
 let vertexDeleteMode = false, lineExtendMode = false;
 window.pixelToolState={current:'pencil',brushSize:8,brushSoftness:100,softEraserSize:8,softEraserSoftness:35};
+// Session 7d: full native CSS mix-blend-mode set, shared by both the
+// group blend-mode dropdown and the new per-layer blend-mode dropdown --
+// a single list instead of two separately hardcoded arrays. Every value
+// here is a real, spec-standard mix-blend-mode keyword (Baseline/widely
+// supported); 'source-over' is the one non-CSS-native entry, meaning
+// "Normal" (CSS calls this 'normal', but 'source-over' matches this
+// codebase's existing canvas globalCompositeOperation naming convention
+// already used elsewhere -- see applyGroupBlendMode/getOrCreateGroupBlendWrapper --
+// so it's kept consistent rather than mixing two different vocabularies
+// for the same "no blending" concept).
+const BLEND_MODE_OPTIONS = ['source-over','multiply','screen','overlay','darken','lighten','color-dodge','color-burn','hard-light','soft-light','difference','exclusion','hue','saturation','color','luminosity'];
+// mix-blend-mode's CSS keyword for "no blending" is 'normal', not
+// 'source-over' -- this codebase's stored blendMode values use
+// 'source-over' throughout (matching canvas globalCompositeOperation
+// naming, see applyGroupBlendMode), so this converts at the one point
+// CSS actually needs the real keyword rather than mixing two
+// vocabularies for the same concept everywhere blendMode is touched.
+function cssBlendMode(blendMode) { return (!blendMode || blendMode === 'source-over') ? 'normal' : blendMode; }
 window.pixelToolDefs={pencil:{label:'✏️ PENCIL TOOL'},brush:{label:'🖌️ BRUSH TOOL'},softBrush:{label:'🖌️ SOFT BRUSH TOOL'},hardEraser:{label:'🧹 HARD ERASER TOOL'},softEraser:{label:'🧹 SOFT ERASER TOOL'}};
+// TOOL_REGISTRY: single source of truth for all 18 Tools-drawer buttons
+// (id, label, category). This is a NEW, separate, additive structure used
+// only to generate the <button class="tool-btn"> elements themselves --
+// it does not replace or feed into window.pixelToolDefs (which stays
+// exactly as-is: 5 raster-tool entries, load-bearing for
+// selectPixelTool()/updateToolVisibility(), smart-tool-switching territory,
+// intentionally untouched here). Categories: 'raster' (size-adjustable
+// pixel painting/erasing), 'fill' (bucket -- distinct from raster since it
+// stays enabled at any canvas size), 'selection' (wand/lasso/select),
+// 'vector' (pen/shape/edit-points), 'effects' (colour-to-alpha), 'utility'
+// (eyedrop/pan, not part of the drawable-tool set at all).
+const TOOL_REGISTRY = [
+    { id:'eyedrop',      label:'💧 SELECT A COLOUR', category:'utility' },
+    { id:'colorToAlpha', label:'🎨 COLOUR TO ALPHA',  category:'effects', elId:'colorToAlphaToolBtn' },
+    { id:'pan',          label:'✋ PAN',              category:'utility' },
+    { id:'pencil',       label:'✏️ PENCIL TOOL',      category:'raster' },
+    { id:'brush',        label:'🖌️ BRUSH TOOL',       category:'raster', elId:'brushToolBtn' },
+    { id:'softBrush',    label:'🖌️ SOFT BRUSH',       category:'raster', elId:'softBrushToolBtn' },
+    { id:'hardEraser',   label:'🧹 HARD ERASER',      category:'raster', elId:'hardEraserToolBtn' },
+    { id:'softEraser',   label:'🧹 SOFT ERASER',      category:'raster', elId:'softEraserToolBtn' },
+    { id:'bucket',       label:'🪣 FILL',             category:'fill' },
+    { id:'wand',         label:'🪄 WAND',             category:'selection' },
+    { id:'lasso',        label:'〰️ LASSO',            category:'selection' },
+    { id:'select',       label:'🔲 SELECT',           category:'selection' },
+    { id:'line',         label:'📏 LINE',             category:'vector' },
+    { id:'rect',         label:'⬛ RECT',             category:'vector' },
+    { id:'ellipse',      label:'⭕ ELLIPSE',          category:'vector' },
+    { id:'vpen',         label:'🖊️ PEN (open)',       category:'vector' },
+    { id:'vshape',       label:'🔷 SHAPE (closed)',   category:'vector' },
+    { id:'vedit',        label:'🖐️ EDIT PTS',         category:'vector' }
+];
+window.TOOL_REGISTRY = TOOL_REGISTRY;
+// Convenience lookup used by the size-gating feature (see
+// applyCanvasSizeToolGating()) to know which tool ids are raster.
+const RASTER_TOOL_IDS = TOOL_REGISTRY.filter(t => t.category === 'raster').map(t => t.id);
 // Portrait mode's 40x40 tiles are small enough that size-adjustable/soft
 // brushwork doesn't make sense there -- only fixed-size, hard-edged tools
 // are valid. Any invalid tool auto-redirects to its nearest hard-edged
@@ -1904,13 +2022,6 @@ function createGroupFromSelected(){
     activeGroupId=group.id; activeLayerId=null; activeLayerIndex=-1;
     clearLayerTreeSelection(); selectTreeNode(group,true);
     syncActiveLayersFromTree(); pushTreeOperation('Create group',before); renderLayersPanel();
-}
-function addEmptyGroup(){
-    const f=frames[activeFrameIndex]; if(!f)return;
-    const before=captureTreeState();
-    const g=makeGroupNode('Group'); insertNodeForActive(g);
-    activeGroupId=g.id; activeLayerId=null; activeLayerIndex=-1;
-    pushTreeOperation('Create empty group',before); renderLayersPanel();
 }
 function removeNodeFromTree(node){
     const f=frames[activeFrameIndex], found=findNode(f.layerTree,nodeId(node));
@@ -2496,12 +2607,35 @@ function portraitTileKeyForPoint(x,y){
     if(selectedProfile!=='portrait' || x<0 || y<0 || x>=gridW || y>=gridH) return null;
     return Math.floor(x/40)+','+Math.floor(y/40);
 }
+// Generalization of the old hardcoded 40x40 Portrait-tile boundary math
+// (roadmap item: keep isPointOutsidePortraitIsolation's mechanism
+// flexible for a future non-Portrait bounded-region need). Returns the
+// rectangular region {minX, minY, maxX, maxY} that (x,y)'s tile occupies,
+// or null if Portrait mode / tile isolation isn't active. Used by
+// clampPointToPortraitTile below. isPointOutsidePortraitIsolation
+// deliberately does NOT call this -- its own tile-key comparison is a
+// cheaper, more direct check for that specific in/out test, and forcing
+// it through a rectangle-construct-then-compare path would add cost with
+// no behavior change. This function is the reusable piece for a future
+// caller that actually needs the rectangle itself, not a mandatory
+// front-door for every tile-boundary check in this file.
+function isolationRegionForPoint(x,y){
+    if(selectedProfile!=='portrait' || !portraitTileIsolation) return null;
+    const tx=Math.floor(x/40), ty=Math.floor(y/40);
+    return { minX:tx*40, minY:ty*40, maxX:Math.min(gridW,tx*40+40)-0.001, maxY:Math.min(gridH,ty*40+40)-0.001 };
+}
 // Clamps (x,y) to stay inside the same 40x40 tile as (originX,originY),
 // for tools that draw/extend along a continuous point stream rather than
 // a discrete line-interpolation step (e.g. the vector Pen tool -- pixel
 // tools use a different clip, see the linePixels cut in onMove). Returns
 // the original point unchanged outside Portrait mode or if either point
-// resolves to no tile (e.g. off-canvas).
+// resolves to no tile (e.g. off-canvas). Note this clamps to originXY's
+// tile regardless of whether tile isolation is currently toggled on
+// (matches the original, pre-generalization behavior) -- so the region
+// is computed directly here rather than via isolationRegionForPoint,
+// which intentionally returns null whenever portraitTileIsolation is
+// off. Kept as its own small inline computation rather than forcing a
+// call through a function with different off-state semantics.
 function clampPointToPortraitTile(x,y,originX,originY){
     if(selectedProfile!=='portrait') return [x,y];
     const originKey=portraitTileKeyForPoint(originX,originY);
@@ -2515,7 +2649,12 @@ function clampPointToPortraitTile(x,y,originX,originY){
 // preview (hides the cursor) so both agree on the same boundary using the
 // same rule -- see the handoff's danger-zones entry on same-named wrappers
 // not being the real choke point; this is deliberately a single function
-// both callers share, not two copies of the same check.
+// both callers share, not two copies of the same check. Unchanged by this
+// session's generalization work -- its tile-key comparison already was
+// the general, single source of truth for this specific in/out question;
+// isolationRegionForPoint above is new, separate infrastructure for a
+// future caller that needs the rectangle itself, not a replacement for
+// this function's own check.
 function isPointOutsidePortraitIsolation(x,y){
     if(selectedProfile!=='portrait' || !portraitTileIsolation) return false;
     return portraitTileKeyForPoint(x,y) !== portraitActiveTileKey;
@@ -2689,7 +2828,7 @@ let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:tr
     // top level so it stays visually distinct from the panel-tab booleans
     // above, even though nothing currently iterates this object's keys in
     // a way that would actually break if it were flat.
-    debugOptions: { unrestrictedVector:false, forceCustomKeyboard:false, logTouch:false, logJs:false, logTrace:false, historyMemoryBudgetMiB:64 }
+    debugOptions: { unrestrictedVector:false, forceCustomKeyboard:false, logTouch:false, logJs:false, logTrace:false, historyMemoryBudgetMiB:64, rasterToolGateThresholdPx:1000000, forceEnableRasterTools:false }
 };
 try { const saved=JSON.parse(localStorage.getItem('pixelAppPanelVisibility')||'null'); if(saved && typeof saved==='object') panelVisibility={...panelVisibility,...saved,debugOptions:{...panelVisibility.debugOptions,...(saved.debugOptions||{})}}; } catch(e) {}
 function savePanelVisibility(){ try{ localStorage.setItem('pixelAppPanelVisibility', JSON.stringify(panelVisibility)); }catch(e){} }
@@ -2814,6 +2953,7 @@ function closePanel() {
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
     document.getElementById('panelBackdrop').classList.remove('open');
     openPanelName = null;
+    exitSwatchEditMode();
 }
 
 /* ============================================================
@@ -2960,6 +3100,15 @@ class Layer {
         this.color = null;
         this.visible = true;
         this.opacity = 1;
+        // Session 7d (roadmap item 12): per-layer blend mode, applied
+        // directly to this layer's own canvas element -- unlike group
+        // blend modes (see getOrCreateGroupBlendWrapper), a single layer
+        // needs no wrapper/isolation: mix-blend-mode on the layer's own
+        // .el already blends correctly against whatever painted earlier
+        // in #container's existing stacking order, which is exactly the
+        // desired "blend this one layer against what's beneath it"
+        // behavior with nothing extra required.
+        this.blendMode = 'source-over';
         this.el = document.createElement('canvas');
         this.el.className = 'layer-canvas';
         this.ctx = this.el.getContext('2d');
@@ -2975,6 +3124,7 @@ class Layer {
         }
         this.el.style.display = (this.visible && this._groupVisible !== false) ? 'block' : 'none';
         this.el.style.opacity = this.opacity * (this._groupOpacity == null ? 1 : this._groupOpacity);
+        this.el.style.mixBlendMode = cssBlendMode(this.blendMode);
     }
 }
 
@@ -3220,7 +3370,15 @@ class ReferenceLayer extends Layer {
 class VectorLayer extends Layer {
     constructor(name) {
         super('vector', name);
-        this.splines = []; // [{closed, filled, color, width, points:[{x,y},...]}, ...]
+        this.splines = []; // [{closed, filled, color, width, points:[{x,y},...], stops}, ...]
+        // stops (optional, defaults to null/absent): reserved for roadmap
+        // item 1 (gradient support). When present, an array of
+        // {position, color} entries describing a gradient along the
+        // spline's points, as an alternative to the single `color` field.
+        // No code currently reads or writes stops except to preserve it
+        // through clone/undo/save-load round-trips (cloneSpline, the
+        // VectorLayer clone path, and project deserialize) -- the gradient
+        // tool itself is not built yet.
         this.draftPreview = null; // in-progress spline being drafted, rendered dashed
     }
     layoutCSS() {
@@ -3421,7 +3579,7 @@ function rgbToHexBytes(r, g, b) {
 function cloneLayer(l) {
     if (l.type === 'image') {
         const nl = new ImageLayer(l.name, l.gridW, l.gridH);
-        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
+        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null; nl.blendMode = l.blendMode || 'source-over';
         nl.imageData.data.set(l.imageData.data);
         nl.redrawFromData();
         return nl;
@@ -3432,14 +3590,15 @@ function cloneLayer(l) {
                  : new PixelLayer(l.name, l.gridW, l.gridH);
         nl.pixelData = l.pixelData.map(col => col.slice());
         nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
+        if (l.type === 'pixel') nl.blendMode = l.blendMode || 'source-over';
         if (l.hookedTo != null) nl.hookedTo = l.hookedTo;
         nl.redrawFromData();
         return nl;
     }
     if (l.type === 'vector') {
         const nl = new VectorLayer(l.name);
-        nl.splines = l.splines.map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }));
-        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
+        nl.splines = l.splines.map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })), stops: sp.stops ? sp.stops.map(s => ({ position: s.position, color: s.color })) : null }));
+        nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null; nl.blendMode = l.blendMode || 'source-over';
         return nl;
     }
     const nl = new ReferenceLayer(l.name, l.image);
@@ -3753,6 +3912,21 @@ let largeLayerThumbs = false;
 let currentPenWidth = 1; // grid units, used for new vector strokes/shapes
 let debugUnrestrictedVector = panelVisibility.debugOptions.unrestrictedVector; // debug-only: smooth display-resolution vector rendering instead of pixel-snapped
 let forceCustomKeyboard = panelVisibility.debugOptions.forceCustomKeyboard; // debug-only: use the custom on-screen keyboard even on desktop (for testing it without a touch device)
+// Raster-tool size-gating (roadmap item 13): above rasterToolGateThresholdPx
+// total pixels (width x height), raster tools are disabled in the Tools
+// drawer, steering the person toward vector/fill/wand tools instead. This
+// is a separate, independent threshold from IMAGE_MODE_MAX_DIMENSION
+// (the existing 999px-per-side PixelLayer/ImageLayer storage-backend
+// check) -- the two are not merged; see roadmap doc item 13's "open
+// question" note for why storage-backend selection is left untouched here.
+const RASTER_GATE_THRESHOLD_MIN_PX = 10000, RASTER_GATE_THRESHOLD_MAX_PX = 16000000;
+const DEFAULT_RASTER_GATE_THRESHOLD_PX = 1000000;
+let rasterToolGateThresholdPx = (() => {
+    const saved = panelVisibility.debugOptions.rasterToolGateThresholdPx;
+    if (typeof saved === 'number' && saved >= RASTER_GATE_THRESHOLD_MIN_PX && saved <= RASTER_GATE_THRESHOLD_MAX_PX) return saved;
+    return DEFAULT_RASTER_GATE_THRESHOLD_PX;
+})();
+let forceEnableRasterTools = !!panelVisibility.debugOptions.forceEnableRasterTools; // debug-only: overrides the size gate, re-enabling raster tools regardless of canvas area
 
 // The app previously used a custom on-screen keyboard for touch devices
 // (no real keyboard/mouse). It now uses the device's native keyboard
@@ -4035,9 +4209,113 @@ function addLayer(layer) {
     const f2=frames[activeFrameIndex]; if(f2 && activeGroupId){ const g=findGroupNode(f2.layerTree,activeGroupId); if(g) applyGroupVisualState(g.node); }
 }
 
-// Re-orders the layer <canvas> elements in the DOM to match the layers array (bottom to top), keeping the cursor/overlay above all of them.
+// Re-orders the layer <canvas> elements in the DOM to match the layers
+// array (bottom to top), keeping the cursor/overlay above all of them.
+//
+// Session 7b-1 (roadmap item 12, group blend modes -- live rendering):
+// generalized to be group-aware. A layer whose immediate parent group has
+// an active (non-'source-over') blendMode gets placed inside that group's
+// own DOM wrapper <div> instead of directly under #container -- the
+// wrapper gets `isolation:isolate` + `mix-blend-mode:<group.blendMode>`
+// together (the standard CSS pattern for "blend this whole subtree as one
+// unit against its backdrop" -- the browser's own native, spec-correct
+// blend implementation, chosen over a hand-built canvas-recompositing
+// approach). See getOrCreateGroupBlendWrapper's comment for why both
+// properties are needed together: isolation makes the group's own member
+// layers composite against each other normally first; mix-blend-mode
+// then blends that combined result against the backdrop outside the
+// group. (An earlier version of this omitted isolation, based on a since-
+// corrected misreading of a live test result -- see that function's
+// comment for the full history.) Every layer NOT in an active-blend-mode
+// group -- i.e. top-level layers, and layers in a 'source-over'/Normal
+// group -- is completely unaffected: still a direct child of #container,
+// byte-identical behavior to before this change. This is the ONLY call
+// site updated in this session; the other ~12 places in the file that
+// directly `container.appendChild`/`insertBefore` a layer's `.el`
+// (layer creation, undo/redo restore, project load, tile-isolation-
+// overlay setup) are explicitly untouched here and queued for a
+// follow-up audit (Session 7b-2) to confirm each either already calls
+// reindexDom() afterward (so this logic reasserts correct placement) or
+// needs its own update.
+function groupBlendWrapperId(groupId) { return 'group-blend-wrap-' + groupId; }
+// Session 7b-1 (corrected): both isolation:isolate AND mix-blend-mode are
+// required on this wrapper, together -- this is the standard CSS pattern
+// for "blend this whole subtree as one unit against its backdrop".
+// isolation:isolate makes the wrapper form its own stacking context, so
+// its own children (the group's member-layer canvases) composite against
+// EACH OTHER normally (source-over) first; mix-blend-mode then makes
+// that already-composited, flattened result blend against whatever sits
+// behind the wrapper (the backdrop -- e.g. a layer below the group).
+// Without isolation, mix-blend-mode on a parent has no effect on how its
+// own children relate to each other -- confirmed via live testing: two
+// solid-colour layers in the same group, blend mode set, showed zero
+// blending against each other even with no external backdrop in play at
+// all. An earlier version of this function had isolation and removed it
+// based on a test result that (in hindsight) was actually explained by
+// this same missing-isolation gap, not by isolation itself being wrong.
+function getOrCreateGroupBlendWrapper(groupId, blendMode) {
+    const id = groupBlendWrapperId(groupId);
+    let wrap = document.getElementById(id);
+    if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = id;
+        wrap.className = 'group-blend-wrap';
+        wrap.style.cssText = 'position:absolute; inset:0; isolation:isolate;';
+        container.insertBefore(wrap, pixelCursor);
+    }
+    wrap.style.mixBlendMode = cssBlendMode(blendMode);
+    return wrap;
+}
+// Removes any group-blend wrapper divs that no longer correspond to a
+// group with an active blend mode (group deleted, or blend mode set back
+// to Normal) -- otherwise a stale empty wrapper would linger in the DOM
+// forever once created.
+function pruneStaleGroupBlendWrappers(activeGroupIds) {
+    container.querySelectorAll('.group-blend-wrap').forEach(el => {
+        const gid = el.id.slice('group-blend-wrap-'.length);
+        if (!activeGroupIds.has(gid)) el.remove();
+    });
+}
 function reindexDom() {
-    layers.forEach(l => container.insertBefore(l.el, pixelCursor));
+    const f = frames[activeFrameIndex];
+    const tree = f ? ensureFrameLayerTree(f) : null;
+    const activeGroupIds = new Set();
+    const placedWrapperIds = new Set();
+    layers.forEach(l => {
+        let targetParent = container;
+        let wrapperId = null;
+        if (tree) {
+            const found = findLayerNode(tree, l.id);
+            const parentGroup = found && found.parent;
+            if (parentGroup && parentGroup.blendMode && parentGroup.blendMode !== 'source-over') {
+                targetParent = getOrCreateGroupBlendWrapper(parentGroup.id, parentGroup.blendMode);
+                wrapperId = parentGroup.id;
+                activeGroupIds.add(parentGroup.id);
+            }
+        }
+        // A group's wrapper only ever had its position in #container set
+        // once, at creation time (inside getOrCreateGroupBlendWrapper's
+        // `if (!wrap)` branch) -- it was never repositioned on later
+        // calls, so a wrapper created early could get permanently stuck
+        // ahead of layers added to the stack afterward, even though this
+        // loop correctly re-parents the *member* layers inside it every
+        // time. Confirmed via live testing: a backdrop layer added below
+        // an existing group still left the wrapper as the DOM's first
+        // child, so the group had nothing to blend against but the
+        // canvas background. Fix: reposition the wrapper itself here too,
+        // in #container, at the point in stacking order where its first
+        // member layer (in this loop's iteration order) is encountered --
+        // exactly the same insertBefore call a plain, ungrouped layer
+        // gets, just applied to the wrapper on its group's first member
+        // instead of to the member layer directly.
+        if (wrapperId && !placedWrapperIds.has(wrapperId)) {
+            container.insertBefore(targetParent, pixelCursor);
+            placedWrapperIds.add(wrapperId);
+        }
+        if (targetParent === container) container.insertBefore(l.el, pixelCursor);
+        else targetParent.appendChild(l.el);
+    });
+    pruneStaleGroupBlendWrappers(activeGroupIds);
 }
 
 // Changes which layer tools act on. Also turns off reference-layer TRANSFORM mode and clears any selection, since both are scoped to whichever layer was previously active.
@@ -4558,7 +4836,16 @@ function renderLayersPanel() {
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
         row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); list.appendChild(row);
-        if(!layerSelectionMode && i===activeLayerIndex){const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
+        if(!layerSelectionMode && i===activeLayerIndex){const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=Math.round(layer.opacity*100);const label=document.createElement('span');label.innerText=slider.value+'%';slider.oninput=()=>{layer.opacity=slider.value/100;layer.applyVisualState();label.innerText=slider.value+'%';refreshHookedComposites();};opRow.append(slider,label);
+            // Session 7d: per-layer blend mode, only for layer types that
+            // are real visible artwork painted into the normal stack --
+            // mask/clip are control data (already display:none, see
+            // applyVisualState) and reference layers are guide-only,
+            // excluded from compositing/export elsewhere in this file
+            // (flattenLayersToCanvas, flattenGroupSubtreeToCanvas), so a
+            // blend mode on either wouldn't have a coherent meaning.
+            if(layer.type==='pixel'||layer.type==='image'||layer.type==='vector'){const lbm=document.createElement('select');lbm.className='num-input';BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((layer.blendMode||'source-over')===v)o.selected=true;lbm.appendChild(o);});lbm.onchange=()=>{layer.blendMode=lbm.value;layer.applyVisualState();refreshHookedComposites();};opRow.append(lbm);}
+            list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
     };
     const renderGroupRow=(node,depth)=>{
         const row=document.createElement('div'); row.className='layer-row group-row'+(activeGroupId===node.id?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.paddingLeft=(depth*18)+'px';
@@ -4574,7 +4861,7 @@ function renderLayersPanel() {
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteGroup(node,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=e=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(e.target===exp||e.target===sel||e.target===vis||e.target===name)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();}};
         row.append(colorTag,exp,sel,vis,icon,name,up,down,del); list.appendChild(row);
-        if(!layerSelectionMode && activeGroupId===node.id){ const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel); const op=document.createElement('div'); op.className='layer-opacity-row'; const sl=document.createElement('input'); sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(node.opacity*100); const lab=document.createElement('span');lab.innerText=sl.value+'%'; sl.oninput=()=>{node.opacity=sl.value/100;lab.innerText=sl.value+'%';applyGroupVisualState(node);}; op.append(sl,lab); const bm=document.createElement('select'); bm.className='num-input'; ['source-over','multiply','screen','overlay','darken','lighten'].forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
+        if(!layerSelectionMode && activeGroupId===node.id){ const opLabel=document.createElement('div');opLabel.style.cssText='font-size:9px;color:#888;padding:2px 6px 0;text-transform:lowercase;';opLabel.innerText='opacity slider';list.appendChild(opLabel); const op=document.createElement('div'); op.className='layer-opacity-row'; const sl=document.createElement('input'); sl.type='range';sl.min=0;sl.max=100;sl.value=Math.round(node.opacity*100); const lab=document.createElement('span');lab.innerText=sl.value+'%'; sl.oninput=()=>{node.opacity=sl.value/100;lab.innerText=sl.value+'%';applyGroupVisualState(node);}; op.append(sl,lab); const bm=document.createElement('select'); bm.className='num-input'; BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
         if(!node.collapsed)renderNodes(node.children,depth+1);
     };
     renderNodes(f.layerTree,0);
@@ -4590,10 +4877,12 @@ function applyGroupVisualState(group){
     refreshHookedComposites();
 }
 function applyGroupBlendMode(group){
-    // The current DOM compositor cannot yet isolate a group into a separate
-    // offscreen surface, so Normal remains the rendering fallback. The
-    // selected mode is stored now so future compositing can consume it.
+    // Session 7b-1: reindexDom() now creates/updates the group's CSS
+    // isolation+mix-blend-mode wrapper and re-parents its member layers
+    // into it live -- this is what makes a blend-mode change actually
+    // take visible effect, not just persist the chosen value.
     if(group) group.blendMode=group.blendMode||'source-over';
+    reindexDom();
     refreshHookedComposites();
 }
 function cycleGroupColor(groupId){
@@ -4964,7 +5253,7 @@ function redo(nodeOverride) {
 }
 
 // Deep-copies one spline (including its point list) for undo snapshots.
-function cloneSpline(sp) { return { closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }; }
+function cloneSpline(sp) { return { closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })), stops: sp.stops ? sp.stops.map(s => ({ position: s.position, color: s.color })) : null }; }
 
 // Removes one point from a spline (Delete Points mode). Because sp.points
 // is a flat ordered array and the renderer (catmullRomPath) connects
@@ -5703,11 +5992,26 @@ function startHold(callback) { if (isConfirmingClear) return; holdTimer = setTim
 function clearHold() { clearTimeout(holdTimer); }
 
 // Toggles palette edit mode (wiggling swatches with delete badges), like the iOS home-screen jiggle.
+// Shows a dedicated backdrop (like the gallery card context menu's) while
+// active, both to visually signal the exclusive mode and to catch any tap
+// outside the palette so it closes edit mode cleanly instead of leaking
+// through to canvas gestures underneath.
 function handleManageClick() {
     isEditing = !isEditing;
     document.getElementById('palette').classList.toggle('editing', isEditing);
     document.getElementById('manageBtn').innerText = isEditing ? "\u2705 DONE" : "\u{1F3A8} MANAGE COLOURS";
+    document.getElementById('swatchEditBackdrop').classList.toggle('open', isEditing);
 }
+
+// Exits swatch edit mode (used by the edit backdrop's own tap-outside handler).
+function exitSwatchEditMode() {
+    if (!isEditing) return;
+    isEditing = false;
+    document.getElementById('palette').classList.remove('editing');
+    document.getElementById('manageBtn').innerText = "\u{1F3A8} MANAGE COLOURS";
+    document.getElementById('swatchEditBackdrop').classList.remove('open');
+}
+document.getElementById('swatchEditBackdrop').addEventListener('click', exitSwatchEditMode);
 
 // Counts user-added colour swatches (excluding the transparency swatch and the "+" picker), used to enforce the Portrait profile's 15-colour cap.
 function countCustomSwatches() {
@@ -5879,6 +6183,7 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
+    applyCanvasSizeToolGating();
     if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
     const ca = document.getElementById('colorToAlphaControls'); if (ca) ca.style.display = (currentTool === 'colorToAlpha' && isPixelLike(activeLayer())) ? '' : 'none';
@@ -5890,6 +6195,204 @@ function updateUI() {
 }
 
 // Converts a CSS "rgb(r,g,b)" string (as read from an element's computed style) into "#RRGGBB".
+// Roadmap item 13: disables raster-category tool buttons (pencil, brush,
+// soft brush, hard eraser, soft eraser) when the active canvas's total
+// pixel area (gridW * gridH) exceeds rasterToolGateThresholdPx, unless
+// forceEnableRasterTools (Debug drawer) overrides it. If the currently
+// selected tool is one being disabled, falls back to 'bucket' (fill stays
+// enabled at any size per roadmap item 13) via handleToolBtn, the normal
+// tool-switch entry point -- this is the one place this function reaches
+// into tool selection, and it does so through the existing public entry
+// point rather than mutating currentTool directly.
+// This function is intentionally separate from updateToolVisibility():
+// it only ever sets `disabled`/a CSS class on the raster tool-btn
+// elements themselves, and never touches the show/hide logic for
+// #bucketControls/#wandControls/#pixelToolControls/etc. -- that logic
+// belongs to updateToolVisibility() and is out of scope here.
+function applyCanvasSizeToolGating() {
+    const area = (gridW || 0) * (gridH || 0);
+    const shouldGate = !forceEnableRasterTools && area > rasterToolGateThresholdPx;
+    let currentToolWasGated = false;
+    RASTER_TOOL_IDS.forEach(id => {
+        document.querySelectorAll('.tool-btn[data-tool="' + id + '"]').forEach(btn => {
+            btn.disabled = shouldGate;
+            btn.classList.toggle('size-gated', shouldGate);
+        });
+        if (shouldGate && typeof currentTool !== 'undefined' && currentTool === id) currentToolWasGated = true;
+    });
+    if (currentToolWasGated) handleToolBtn('bucket');
+}
+
+// Session 7a (roadmap item 12, group blend modes): recursively composites
+// a group node's entire subtree -- nested groups, mask/clip hooks, vector
+// layers, everything -- into one flat offscreen canvas, respecting each
+// node's own visible/opacity (and each ancestor group's, multiplicatively,
+// same rule applyGroupVisualState already uses for the live DOM case).
+// This is new, standalone infrastructure: nothing calls it yet, and it
+// does not modify or replace compositeMaskOrClip (which stays exactly as
+// it is, composting exactly one base+effect pair) or flattenLayersToCanvas
+// (which stays exactly as it is, walking the flat `layers` array for
+// export). This function exists specifically because neither of those
+// generalizes to "flatten an arbitrary tree node" -- compositeMaskOrClip
+// is pairwise, flattenLayersToCanvas has no concept of tree nesting at
+// all. The group's own blendMode is NOT applied inside this function --
+// that happens one level up, when the caller draws this function's
+// returned canvas onto whatever backdrop the group sits above (Session
+// 7b's job, not this one).
+// Note on the gW/gH parameters: this app has only one active canvas size
+// at a time (no per-group sizing concept exists anywhere), and
+// compositeMaskOrClip -- called internally below -- always uses the
+// global gridW/gridH regardless of what's passed here. Callers should
+// pass the current frame's actual gridW/gridH; passing anything else
+// would size this function's own output canvas differently from what
+// compositeMaskOrClip draws into it, a mismatch, not a real per-group
+// sizing capability.
+function flattenGroupSubtreeToCanvas(groupNode, gW, gH) {
+    const out = document.createElement('canvas');
+    out.width = gW; out.height = gH;
+    const octx = out.getContext('2d');
+    // Walks a node array (a group's children, or the top-level layerTree)
+    // left-to-right (bottom-to-top in stacking order, matching the
+    // existing flat-array convention every other render path already
+    // uses), carrying down accumulated visibility/opacity from ancestor
+    // groups the same way applyGroupVisualState does.
+    function walk(nodes, parentVisible, parentOpacity) {
+        if (!nodes) return;
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            if (!node) continue;
+            if (node.kind === 'group') {
+                const visible = parentVisible && node.visible;
+                const opacity = parentOpacity * node.opacity;
+                if (!visible || opacity <= 0) continue;
+                // Nested group: recurse into its own offscreen canvas first
+                // (so its own blend mode, if any, could in principle be
+                // applied at this point in a future pass -- Session 7b's
+                // concern, not reproduced here), then draw that flattened
+                // result onto the running composite at the accumulated
+                // opacity.
+                const nested = flattenGroupSubtreeToCanvas(node, gW, gH);
+                octx.globalAlpha = opacity;
+                octx.globalCompositeOperation = 'source-over';
+                octx.drawImage(nested, 0, 0);
+                continue;
+            }
+            if (node.kind !== 'layer' || !node.layer) continue;
+            const l = node.layer;
+            if (l.type === 'mask' || l.type === 'clip') continue; // composited in when we reach their hooked target below, same convention as flattenLayersToCanvas
+            const visible = parentVisible && l.visible;
+            const opacity = parentOpacity * l.opacity;
+            if (!visible || opacity <= 0) continue;
+            octx.globalAlpha = opacity;
+            octx.globalCompositeOperation = 'source-over';
+            if (l.type === 'vector') {
+                if (debugUnrestrictedVector) octx.drawImage(l.el, 0, 0, gW, gH);
+                else octx.drawImage(l.el, 0, 0);
+                continue;
+            }
+            if (l.type !== 'pixel' && l.type !== 'image') continue; // reference layers stay guide-only, excluded, matching flattenLayersToCanvas
+            const next = nodes[i + 1];
+            const aboveLayer = next && next.kind === 'layer' ? next.layer : null;
+            if (aboveLayer && aboveLayer.visible && (aboveLayer.type === 'mask' || aboveLayer.type === 'clip') && aboveLayer.hookedTo === l.id) {
+                octx.drawImage(compositeMaskOrClip(l, aboveLayer), 0, 0);
+            } else {
+                octx.drawImage(l.el, 0, 0);
+            }
+        }
+    }
+    walk(groupNode.children, true, 1);
+    octx.globalAlpha = 1;
+    octx.globalCompositeOperation = 'source-over';
+    return out;
+}
+
+// [TEMP -- Session 7a diagnostic only, not part of the real feature.]
+// Finds the first group node in the active frame's layer tree and runs
+// flattenGroupSubtreeToCanvas() on it, showing the result in the Debug
+// drawer so it can be spot-checked against live edits without needing
+// the browser console. Mirrors the same defensive checks used during
+// manual console testing (activeFrameIndex/frames.length, groupNode
+// presence) so a missing project/group reports clearly instead of
+// throwing. Intended to be removed once Session 7b wires
+// flattenGroupSubtreeToCanvas into the real live-rendering path, at
+// which point this manual preview is no longer needed for verification.
+function testFlattenFirstGroup() {
+    const wrap = document.getElementById('testFlattenGroupPreviewWrap');
+    const host = document.getElementById('testFlattenGroupPreviewHost');
+    if (!wrap || !host) return;
+    host.innerHTML = '';
+    const f = frames[activeFrameIndex];
+    if (!f) { wrap.style.display = 'block'; host.textContent = 'No active frame -- open a project first.'; return; }
+    const tree = ensureFrameLayerTree(f);
+    const groupNode = tree.find(n => n.kind === 'group');
+    if (!groupNode) { wrap.style.display = 'block'; host.textContent = 'No group found in this frame -- add a group with a few layers to test.'; return; }
+    const canvas = flattenGroupSubtreeToCanvas(groupNode, gridW, gridH);
+    canvas.style.cssText = 'display:block;max-width:200px;max-height:200px;image-rendering:pixelated;';
+    host.appendChild(canvas);
+    wrap.style.display = 'block';
+}
+
+// [TEMP -- Session 7b-1 diagnostic only, not part of the real feature.]
+// Reports the live state of the group-blend DOM wrapper mechanism to the
+// on-screen Debug Log (pushDebugLog), so it can be checked on iOS via
+// "Export Log to Clipboard" without needing a desktop browser console.
+// Checks: does the first group in the active frame have a wrapper div
+// when its blendMode isn't 'source-over'; does that wrapper actually
+// contain the group's member layer canvases; do the CSS isolation/
+// mix-blend-mode properties on it match group.blendMode. Reports each
+// check's pass/fail plainly rather than just dumping raw state, so a
+// failure is identifiable from the log text alone. Intended to be
+// removed once Session 7b-2 is complete and this mechanism is considered
+// stable, at which point manual diagnostic checks like this are no
+// longer needed for verification.
+function testGroupBlendWiring() {
+    const f = frames[activeFrameIndex];
+    if (!f) { pushDebugLog('error', ['[BlendTest] No active frame -- open a project first.'], 'js'); return; }
+    const tree = ensureFrameLayerTree(f);
+    const groupNode = tree.find(n => n.kind === 'group');
+    if (!groupNode) { pushDebugLog('error', ['[BlendTest] No group found in this frame.'], 'js'); return; }
+    const mode = groupNode.blendMode || 'source-over';
+    pushDebugLog('log', ['[BlendTest] Group "' + groupNode.name + '" blendMode=' + mode + ' children=' + groupNode.children.length], 'js');
+    const wrap = document.getElementById(groupBlendWrapperId(groupNode.id));
+    if (mode === 'source-over') {
+        pushDebugLog('log', ['[BlendTest] Mode is Normal/source-over -- no wrapper expected. Wrapper present: ' + (!!wrap) + ' (should be false, or true-but-harmless if a previous non-Normal test left it -- reindexDom() prunes it on next call).'], 'js');
+        return;
+    }
+    if (!wrap) { pushDebugLog('error', ['[BlendTest] FAIL -- no wrapper div found for a non-Normal group. Expected id: ' + groupBlendWrapperId(groupNode.id)], 'js'); return; }
+    pushDebugLog('log', ['[BlendTest] Wrapper found: #' + wrap.id], 'js');
+    // Session 7b-1 corrected fix: isolation MUST be "isolate" here, not
+    // absent -- see getOrCreateGroupBlendWrapper's comment. Without it,
+    // the group's own member layers don't composite against each other
+    // before the group-vs-backdrop blend happens (confirmed via live
+    // testing: two same-group layers showed zero blending against each
+    // other with isolation absent, even with no external backdrop).
+    pushDebugLog(wrap.style.isolation === 'isolate' ? 'log' : 'error', ['[BlendTest] wrapper.style.isolation="' + wrap.style.isolation + '" (expected "isolate")'], 'js');
+    pushDebugLog('log', ['[BlendTest] wrapper.style.mixBlendMode="' + wrap.style.mixBlendMode + '" (expected "' + mode + '")'], 'js');
+    const memberLayerIds = [];
+    (function collect(nodes){(nodes||[]).forEach(n=>{if(n.kind==='layer'&&n.layer)memberLayerIds.push(n.layer.id);else if(n.kind==='group')collect(n.children);});})(groupNode.children);
+    let allInside = true, missing = [];
+    memberLayerIds.forEach(id => {
+        const layerObj = layers.find(l => l.id === id);
+        if (!layerObj) return;
+        if (!wrap.contains(layerObj.el)) { allInside = false; missing.push(id); }
+    });
+    pushDebugLog(allInside ? 'log' : 'error', ['[BlendTest] All ' + memberLayerIds.length + ' member layer canvases inside wrapper: ' + allInside + (missing.length ? ' (missing: ' + missing.join(',') + ')' : '')], 'js');
+    // Checks the wrapper's own position in #container, not just its
+    // contents -- this is what catches the real bug found live: the
+    // wrapper's position was only ever set once, at creation time, and
+    // never repositioned on later reindexDom() calls, so it could end up
+    // stuck as #container's first child regardless of where the group
+    // logically sits in the stack -- meaning it had nothing to blend
+    // against but the canvas background, no matter how correct its own
+    // CSS/contents were. A group that isn't the bottom-most thing in the
+    // document should have SOME previous sibling in #container.
+    const prevSibling = wrap.previousElementSibling;
+    pushDebugLog('log', ['[BlendTest] wrapper previous sibling in #container: ' + (prevSibling ? prevSibling.tagName + '#' + (prevSibling.id || '(no id)') : 'NONE -- wrapper is #container\'s first child, so it can only blend against the canvas background, not any layer beneath it. If a backdrop layer should exist below this group, this indicates the wrapper is stuck in the wrong stacking position.')], 'js');
+    const isolationOk = wrap.style.isolation === 'isolate';
+    const blendOk = wrap.style.mixBlendMode === mode;
+    pushDebugLog(isolationOk && blendOk && allInside ? 'log' : 'error', ['[BlendTest] OVERALL: ' + (isolationOk && blendOk && allInside ? 'PASS -- wiring looks correct' : 'FAIL -- see lines above for which check failed') + '. This test only confirms DOM/CSS wiring -- it CANNOT confirm the blend actually renders correctly on screen, including between the group\'s own member layers, or against the correct backdrop (see the previous-sibling line above). Visual confirmation is still required.'], 'js');
+}
+
 function rgbToHex(rgb) {
     if (!rgb || rgb.startsWith('#')) return rgb;
     const vals = rgb.match(/\d+/g);
@@ -7116,9 +7619,9 @@ async function copyToClipboard() {
 
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
-    if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL() };
+    if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', dataURL: l.el.toDataURL() };
     if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
-    if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, splines: l.splines };
+    if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines };
     return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
 }
 
@@ -7225,8 +7728,9 @@ function loadProjectFile(file) {
             fd.layers.forEach((ld, li) => {
                 if (ld.type === 'vector') {
                     const l = new VectorLayer(ld.name);
-                    l.splines = (ld.splines || []).map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })) }));
+                    l.splines = (ld.splines || []).map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })), stops: sp.stops ? sp.stops.map(s => ({ position: s.position, color: s.color })) : null }));
                     l.color = ld.color || null;
+                    l.blendMode = ld.blendMode || 'source-over';
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
                     builtFrames[fi].layers[li] = l;
@@ -7242,6 +7746,7 @@ function loadProjectFile(file) {
                     else if (ld.type === 'clip') { l = new ClipLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
                     else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
                     l.color = ld.color || null;
+                    if (ld.type === 'pixel' || ld.type === 'image') l.blendMode = ld.blendMode || 'source-over';
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
                     builtFrames[fi].layers[li] = l;
@@ -8036,7 +8541,19 @@ swatchArrayFileInput.addEventListener('change', e => {
 });
 document.body.appendChild(swatchArrayFileInput);
 
-document.getElementById('colorPicker').onchange = (e) => { uiAction(() => createSwatch(e.target.value.toUpperCase())); };
+let colorPickerCommitTimer = null;
+document.getElementById('colorPicker').onchange = (e) => {
+    // iOS Safari fires `change` on the native colour picker once per
+    // intermediate value while a slider is being scrubbed, not just once
+    // on dismiss (unlike desktop browsers). Debounce so only the value
+    // from the last change in a rapid burst is actually committed as a
+    // swatch, instead of spawning one swatch per intermediate tick.
+    const value = e.target.value.toUpperCase();
+    clearTimeout(colorPickerCommitTimer);
+    colorPickerCommitTimer = setTimeout(() => {
+        uiAction(() => createSwatch(value));
+    }, 250);
+};
 // Let the Pixel Art Hub paint first. Editor controls, palettes and other
 // heavier initialization are deferred one frame so the app feels ready
 // before the rest of the script finishes initializing.
