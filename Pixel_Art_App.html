@@ -949,6 +949,8 @@
                         <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
                     </div>
                 </div>
+                <div class="panel-subtitle">Gradient (fills the whole canvas along the dragged direction; works directly on a pixel layer -- creates/reuses a dedicated vector layer to hold it)</div>
+                <div class="row" id="toolRow-gradient"></div>
             </div>
             <div id="vectorToolsSection">
                 <div class="panel-subtitle">Vector (freehand-drag draws + smooths; a quick tap-in-place places a single point)</div>
@@ -1806,7 +1808,8 @@ const TOOL_REGISTRY = [
     { id:'vpen',         label:'🖊️ PEN (open)',       category:'vector', section:'toolRow-vector' },
     { id:'vshape',       label:'🔷 SHAPE (closed)',   category:'vector', section:'toolRow-vector' },
     { id:'vedit',        label:'🖐️ EDIT PTS',         category:'vector', section:'toolRow-vector' },
-    { id:'vmove',        label:'✋↔️ MOVE LINE',       category:'vector', section:'toolRow-vector' }
+    { id:'vmove',        label:'✋↔️ MOVE LINE',       category:'vector', section:'toolRow-vector' },
+    { id:'vgradient',    label:'🌈 GRADIENT',        category:'gradient', section:'toolRow-gradient' }
 ];
 window.TOOL_REGISTRY = TOOL_REGISTRY;
 // Convenience lookup used by the size-gating feature (see
@@ -2019,7 +2022,7 @@ function cloneLayerForHistory(layer) {
     copy.visible = layer.visible;
     copy.opacity = layer.opacity;
     if (layer.hookedTo != null) copy.hookedTo = layer.hookedTo;
-    if (layer.lockedToTarget) copy.lockedToTarget = layer.lockedToTarget;
+    if (layer.gradientHostFor != null) copy.gradientHostFor = layer.gradientHostFor;
     if (layer._lastPasteRect) copy._lastPasteRect = {...layer._lastPasteRect};
     return copy;
 }
@@ -2080,64 +2083,106 @@ function getRootSelectedNodes(){
 // Entering from below places the layer at the group's visual bottom;
 // entering from above places the layer at the group's visual top.
 // Reorders a layer/group one slot up (direction=1) or down (direction=-1)
-// within its parent's children array. Mask/clip layers get special rules
-// here (see Fix List item 10): their only valid position is directly
-// above the pixel/image/vector layer they're hooked to, so arrow-key
-// reordering re-parents them (updates hookedTo) rather than just swapping
-// positions blindly -- Move Down is always disallowed for a mask/clip
-// (would place it below its own target, which is incoherent), and Move Up
-// is only allowed when the layer currently above it is itself
-// pixel/image/vector (a valid new target to re-parent onto); otherwise
-// it's blocked. Re-parenting to a *different* target is therefore always
-// an explicit "move up onto a new target" action, never an incidental
-// side effect of a swap that leaves hookedTo stale.
+// within its parent's children array. Array convention: higher index =
+// visually higher/"up" (renderLayersPanel walks the array backwards, so
+// the highest index renders first, at the top of the list) -- Move Up
+// (direction=1) moves toward higher index, Move Down toward lower.
+//
+// Mask/clip layers have special rules here, worked out with the person
+// across several rounds (see Fix List item 10):
+//
+// 1. Moving the MASK/CLIP ITSELF: its only valid position is directly
+//    above its target, so it can't just swap with its neighbor in either
+//    direction -- Move Up needs a valid pixel/image/vector layer directly
+//    above to re-attach onto; Move Down needs one two positions below (one
+//    slot down is the mask's own CURRENT target, which is what the mask
+//    is skipping past, not swapping with -- that target is left exposed/
+//    unmasked). Blocked entirely if there's nothing valid to land on.
+//
+// 2. Moving a PLAIN layer that has a mask/clip currently attached to it:
+//    the mask/clip is not independently repositioned by this -- it's
+//    rigidly attached to its target and travels WITH it as a single unit
+//    to the new position, maintaining "mask directly above its target"
+//    throughout. This is what makes "move layer 3 up past a mask" carry
+//    the mask along rather than leaving it behind pointing at a now-
+//    exposed layer or orphaned mid-stack.
+//
+// 3. A plain layer with no mask/clip attached moves normally (single-slot
+//    swap), unaffected by any of the above.
 function reorderLayerTreeNode(node, direction){
     const f=frames[activeFrameIndex]; if(!f)return;
     const found=findNode(f.layerTree,nodeId(node)); if(!found)return;
-    const isMaskOrClip = node.kind==='layer' && node.layer && (node.layer.type==='mask' || node.layer.type==='clip');
-    if (isMaskOrClip) {
-        if (direction < 0) return; // Move Down always disallowed for mask/clip
-        const arr0 = found.parent?found.parent.children:f.layerTree;
-        const aboveNode = arr0[found.index + 1]; // "up" in the panel is a higher array index (see layers array convention elsewhere in this file)
-        const aboveIsMaskable = aboveNode && aboveNode.kind==='layer' && aboveNode.layer && (aboveNode.layer.type==='pixel' || aboveNode.layer.type==='image' || aboveNode.layer.type==='vector');
-        if (!aboveIsMaskable) return; // nothing valid to re-parent onto
-    }
-    const before=captureTreeState();
     const arr=found.parent?found.parent.children:f.layerTree;
-    const from=found.index, to=from+direction;
-    if(to<0||to>=arr.length)return;
-    const adjacent=arr[to];
-    // If a mask/clip is locked to this node and currently sits directly
-    // above it, and this node itself is being moved (not the mask/clip),
-    // carry the mask/clip along so it stays adjacent to its target. Found
-    // before the splice below, since positions shift once the move happens.
-    let lockedMaskNode = null;
-    if (!isMaskOrClip && node.kind==='layer' && node.layer) {
-        const maybeLockedAbove = arr[from + 1];
-        if (maybeLockedAbove && maybeLockedAbove.kind==='layer' && maybeLockedAbove.layer &&
-            (maybeLockedAbove.layer.type==='mask' || maybeLockedAbove.layer.type==='clip') &&
-            maybeLockedAbove.layer.hookedTo === node.layer.id && maybeLockedAbove.layer.lockedToTarget) {
-            lockedMaskNode = maybeLockedAbove;
-        }
+    const from=found.index;
+    const isMaskOrClip = node.kind==='layer' && node.layer && (node.layer.type==='mask' || node.layer.type==='clip');
+    const isMaskable = n => n && n.kind==='layer' && n.layer && (n.layer.type==='pixel' || n.layer.type==='image' || n.layer.type==='vector');
+    const isMaskType = n => n && n.kind==='layer' && n.layer && (n.layer.type==='mask' || n.layer.type==='clip');
+
+    if (isMaskOrClip) {
+        // Case 1: moving the mask/clip itself.
+        const candidate = direction > 0 ? arr[from + 1] : arr[from - 2];
+        if (!isMaskable(candidate)) return; // nothing valid to land on in that direction
+        const to = direction > 0 ? from + 1 : from - 1; // see the from-2-vs-from-1 note in the Move Down comment below
+        if (to < 0 || to >= arr.length) return;
+        const before = captureTreeState();
+        const [item] = arr.splice(from, 1);
+        arr.splice(to, 0, item);
+        node.layer.hookedTo = candidate.layer.id;
+        syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites();
+        pushTreeOperation('Move layer', before);
+        renderLayersPanel();
+        return;
     }
-    if(node.kind==='layer' && adjacent && adjacent.kind==='group'){
+
+    // Case 2/3: moving a plain layer (or a group) -- check whether a
+    // mask/clip is currently attached directly above this node (its
+    // "carry partner"), found before anything moves since positions shift
+    // once the splice happens below.
+    let carryMaskNode = null;
+    if (node.kind==='layer' && node.layer) {
+        const above = arr[from + 1];
+        if (isMaskType(above) && above.layer.hookedTo === node.layer.id) carryMaskNode = above;
+    }
+    if (carryMaskNode) {
+        // The pair needs real room to move -- arr[from+2] (going up) or
+        // arr[from-1] (going down) must actually exist, or there's
+        // nothing to skip past and the move should be blocked entirely
+        // rather than silently relocating the pair to whichever end of
+        // the array insertAt's clamping would otherwise push it to.
+        const skipTarget = direction > 0 ? arr[from + 2] : arr[from - 1];
+        if (!skipTarget) return;
+    }
+    const to = from + direction;
+    if (to < 0 || to >= arr.length) return;
+    const adjacent = arr[to];
+    const before = captureTreeState();
+    if (carryMaskNode) {
+        // Move the [target, mask] pair together as a rigid two-slot unit,
+        // preserving their relative order (mask directly above target)
+        // throughout. Find the node that will become the pair's new
+        // immediate neighbor BEFORE removing anything (arr[from+2] going
+        // up -- skipping over both the mask and one more slot; arr[from-1]
+        // going down), then remove both pair members and reinsert them
+        // immediately adjacent to that neighbor once its own index has
+        // shifted in the now-shorter array. This is far less error-prone
+        // than computing a destination index up front and trying to
+        // adjust it for however many of the removed pair fell on either
+        // side of it.
+        const skipTarget = direction > 0 ? arr[from + 2] : arr[from - 1];
+        const maskIdx = arr.indexOf(carryMaskNode);
+        arr.splice(maskIdx, 1);
+        const targetIdx = arr.indexOf(node);
+        arr.splice(targetIdx, 1);
+        const skipIdx = skipTarget ? arr.indexOf(skipTarget) : (direction > 0 ? -1 : arr.length);
+        let insertAt = direction > 0 ? skipIdx + 1 : skipIdx;
+        insertAt = Math.max(0, Math.min(insertAt, arr.length));
+        arr.splice(insertAt, 0, node);
+        arr.splice(insertAt + 1, 0, carryMaskNode);
+    } else if(node.kind==='layer' && adjacent && adjacent.kind==='group'){
         arr.splice(from,1); adjacent.collapsed=false;
         if(direction>0) adjacent.children.push(node); else adjacent.children.unshift(node);
     } else {
         const [item]=arr.splice(from,1); arr.splice(to,0,item);
-    }
-    if (isMaskOrClip) node.layer.hookedTo = adjacent.layer.id; // re-parent onto the new target directly below
-    if (lockedMaskNode) {
-        // Re-find the mask's current position (it shifted after the splice
-        // above) and the target's new position, then move the mask to sit
-        // directly above the target again.
-        const maskIdx = arr.indexOf(lockedMaskNode);
-        const targetIdx = arr.indexOf(node);
-        if (maskIdx !== -1 && targetIdx !== -1 && maskIdx !== targetIdx + 1) {
-            arr.splice(maskIdx, 1);
-            const newTargetIdx = arr.indexOf(node);
-            arr.splice(newTargetIdx + 1, 0, lockedMaskNode);
-        }
     }
     syncActiveLayersFromTree(); reindexDom(); refreshHookedComposites();
     pushTreeOperation(node.kind === 'group' ? 'Move group' : 'Move layer', before);
@@ -3629,8 +3674,7 @@ class MaskLayer extends PixelLayer {
     constructor(name, w, h) {
         super(name, w, h);
         this.type = 'mask';
-        this.hookedTo = null; // id of the pixel layer this mask affects (must be directly below it)
-        this.lockedToTarget = false; // if true, reordering the target layer (via arrows or drag) carries this mask along so it stays directly above it -- see reorderLayerTreeNode()
+        this.hookedTo = null; // id of the pixel layer this mask affects -- automatically re-derived after every reorder to whatever's directly below it (see reattachMasksToLayerBelow()); not separately tracked/locked state
     }
 }
 
@@ -3641,8 +3685,7 @@ class ClipLayer extends PixelLayer {
     constructor(name, w, h) {
         super(name, w, h);
         this.type = 'clip';
-        this.hookedTo = null; // id of the pixel layer this clips to (must be directly below it)
-        this.lockedToTarget = false; // if true, reordering the target layer (via arrows or drag) carries this clip along so it stays directly above it -- see reorderLayerTreeNode()
+        this.hookedTo = null; // id of the pixel layer this clips to -- automatically re-derived after every reorder to whatever's directly below it (see reattachMasksToLayerBelow()); not separately tracked/locked state
     }
 }
 
@@ -3704,15 +3747,22 @@ class VectorLayer extends Layer {
     constructor(name) {
         super('vector', name);
         this.splines = []; // [{closed, filled, color, width, points:[{x,y},...], stops}, ...]
-        // stops (optional, defaults to null/absent): reserved for roadmap
-        // item 1 (gradient support). When present, an array of
-        // {position, color} entries describing a gradient along the
-        // spline's points, as an alternative to the single `color` field.
-        // No code currently reads or writes stops except to preserve it
-        // through clone/undo/save-load round-trips (cloneSpline, the
-        // VectorLayer clone path, and project deserialize) -- the gradient
-        // tool itself is not built yet.
+        // stops (optional, defaults to null/absent): a non-null array of
+        // {position, color} entries makes a spline render as a linear
+        // gradient fill (see render()/renderGradientFill()) instead of a
+        // plain coloured stroke -- Roadmap item 1b (Gradient tool),
+        // implemented V1_39.
         this.draftPreview = null; // in-progress spline being drafted, rendered dashed
+        // gradientHostFor (optional, defaults to null): if this vector
+        // layer was auto-created to hold gradients drawn while a specific
+        // pixel layer was active (see getOrCreateGradientHolderLayer),
+        // this is that pixel layer's id -- same plain layer-id-reference
+        // shape as MaskLayer/ClipLayer's hookedTo. Used only to find an
+        // existing holder to reuse for a subsequent gradient; nothing else
+        // reads it (a gradient-holder vector layer is otherwise a normal
+        // vector layer -- editable, maskable, deletable independently of
+        // the pixel layer it was created for).
+        this.gradientHostFor = null;
     }
     layoutCSS() {
         if (debugUnrestrictedVector) {
@@ -3774,17 +3824,43 @@ class VectorLayer extends Layer {
     }
     render() {
         this.ctx.clearRect(0, 0, gridW, gridH);
-        // Gradient splines (sp.stops non-null) are handled separately --
-        // their backbone/guide line must never be drawn into this maskable
-        // canvas (see renderGradientFill(), called below once the actual
-        // gradient-fill renderer exists) so that masking a vector layer
-        // only clips the gradient's rendered colour result, never its
-        // edit-time guide line (which lives in a separate, unmasked
-        // overlay -- see updateGradientBackboneOverlay()). A normal
-        // (non-gradient) spline's line IS its content, so it's unaffected
-        // and keeps rendering here exactly as before.
-        this.splines.forEach(sp => { if (!sp.stops) this.renderSpline(sp, false); });
+        // Gradient splines (sp.stops non-null) render only their actual
+        // fill result here -- never a backbone/guide line -- so that
+        // masking a vector layer only clips the gradient's rendered
+        // colour result, never its edit-time guide line (which lives in a
+        // separate, unmasked overlay -- see updateGradientBackboneOverlay()).
+        // A normal (non-gradient) spline's line IS its content, so it's
+        // unaffected and keeps rendering here exactly as before.
+        this.splines.forEach(sp => { if (sp.stops) this.renderGradientFill(sp); else this.renderSpline(sp, false); });
         if (this.draftPreview) this.renderSpline(this.draftPreview, true);
+    }
+    // Paints a linear gradient across the ENTIRE canvas -- the drag line
+    // only sets the gradient's direction/angle and where its two stop
+    // colours sit along that axis; the actual painted area always covers
+    // the full gridW x gridH canvas, perpendicular to the line, per the
+    // person's explicit correction (a first pass that stroked just the
+    // dragged line/band was wrong -- a gradient here means a full-canvas
+    // colour wash in a chosen direction, closer to Photoshop's linear
+    // gradient fill than to a coloured line). Canvas 2D's native
+    // createLinearGradient already does the right thing when used to fill
+    // a larger area than the two anchor points span: colour is constant
+    // along any line perpendicular to the gradient's axis, and clamped to
+    // the nearest stop colour beyond the two anchors -- exactly "fill
+    // everything, direction set by the drag" with no extra math needed.
+    // Only the first and last points are used as the gradient's start/end
+    // anchors -- a gradient spline is always treated as a straight line
+    // for now (radial support, if built later per the roadmap's "linear
+    // first" note, would be a different code path here, not an extension
+    // of this one).
+    renderGradientFill(sp) {
+        if (!sp.points || sp.points.length < 2 || !sp.stops || sp.stops.length < 2) return;
+        const start = sp.points[0], end = sp.points[sp.points.length - 1];
+        const grad = this.ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+        sp.stops.slice().sort((a, b) => a.position - b.position).forEach(s => grad.addColorStop(Math.max(0, Math.min(1, s.position)), s.color));
+        this.ctx.save();
+        this.ctx.fillStyle = grad;
+        this.ctx.fillRect(0, 0, gridW, gridH);
+        this.ctx.restore();
     }
     // Draws onto a scratch canvas via drawFn(scratchCtx), then thresholds
     // every pixel's alpha to fully solid or fully transparent before
@@ -3934,7 +4010,6 @@ function cloneLayer(l) {
         nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null;
         if (l.type === 'pixel') nl.blendMode = l.blendMode || 'source-over';
         if (l.hookedTo != null) nl.hookedTo = l.hookedTo;
-        if (l.lockedToTarget) nl.lockedToTarget = l.lockedToTarget;
         nl.redrawFromData();
         return nl;
     }
@@ -3942,6 +4017,7 @@ function cloneLayer(l) {
         const nl = new VectorLayer(l.name);
         nl.splines = l.splines.map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })), stops: sp.stops ? sp.stops.map(s => ({ position: s.position, color: s.color })) : null }));
         nl.visible = l.visible; nl.opacity = l.opacity; nl.color = l.color || null; nl.blendMode = l.blendMode || 'source-over';
+        if (l.gradientHostFor != null) nl.gradientHostFor = l.gradientHostFor;
         return nl;
     }
     const nl = new ReferenceLayer(l.name, l.image);
@@ -4482,14 +4558,17 @@ function updateVectorHandles() {
 // gradient-editing tool/mode is active (mirrors updateVectorHandles'
 // editActive gating for point-handles) -- gradients are otherwise fully
 // masked/clipped like any other vector content, with no visible line.
-// currentGradientToolActive is a placeholder condition until the actual
-// gradient tool exists; update this check when that tool is built.
 function updateGradientBackboneOverlay() {
     const el = document.getElementById('gradientBackboneOverlay');
     if (!el) return;
     const layer = activeLayer();
     const isVectorLayer = layer && layer.type === 'vector';
-    const gradientEditActive = isVectorLayer && typeof currentGradientToolActive !== 'undefined' && currentGradientToolActive;
+    // Shown while the Gradient tool itself is active (drawing/reselecting
+    // a gradient's backbone), or while Edit Points/Move Line is active on
+    // a vector layer that has at least one gradient spline -- editing a
+    // gradient's shape via those tools also needs the backbone visible to
+    // grab, same as any other spline's points/line would be.
+    const gradientEditActive = isVectorLayer && (currentTool === 'vgradient' || ((currentTool === 'vedit' || currentTool === 'vmove') && layer.splines.some(sp => sp.stops)));
     if (!gradientEditActive) { el.style.display = 'none'; return; }
     el.style.display = 'block';
     el.style.width = (gridW * scale) + 'px';
@@ -4837,6 +4916,29 @@ function addVectorLayer() {
         alert('Could not add vector layer -- check the Debug tab for details.');
     }
 }
+// Creates a new dedicated vector layer to hold one gradient drawn while a
+// pixel layer is active (Gradient tool, V1_39). One new layer per
+// gradient -- NOT reused across multiple gradients on the same pixel
+// layer -- because a gradient fills the entire canvas (see
+// renderGradientFill), so a second gradient sharing a layer with a first
+// would completely overwrite it; the person explicitly chose one-layer-
+// per-gradient over sharing once this consequence was surfaced. Retains
+// gradientHostFor (which pixel layer this gradient was drawn "onto",
+// informationally -- not a reuse key) since it's still useful context
+// even without lookup/reuse. Inserted directly above the pixel layer,
+// matching how addHookedLayer inserts a mask/clip above its target.
+function createGradientHolderLayer(pixelLayer) {
+    const before = captureTreeState();
+    const l = new VectorLayer('Gradient for ' + pixelLayer.name);
+    l.gradientHostFor = pixelLayer.id;
+    const prevActiveIdx = layers.indexOf(pixelLayer);
+    setActiveLayer(prevActiveIdx); // addLayer inserts relative to whichever layer is active -- make sure that's the pixel layer being drawn on, not whatever else was selected
+    addLayer(l);
+    reindexDom();
+    pushTreeOperation('Add gradient layer', before);
+    renderLayersPanel();
+    return l;
+}
 
 // Inserts a mask or clip layer directly above the active layer and hooks
 // it there -- requires a pixel, image, or vector layer selected first
@@ -5141,6 +5243,7 @@ function registerBuiltInCommands(){
     registerCommand('tool.vectorShape','Vector Shape',['vector shapes'],()=>handleToolBtn('vshape'),'Tools');
     registerCommand('tool.vectorEdit','Vector Edit',['edit vectors','nodes'],()=>handleToolBtn('vedit'),'Tools');
     registerCommand('tool.vectorMove','Move Line',['move vector','move spline','drag line'],()=>handleToolBtn('vmove'),'Tools');
+    registerCommand('tool.vectorGradient','Gradient',['gradient tool','color gradient','linear gradient'],()=>handleToolBtn('vgradient'),'Tools');
     registerCommand('view.resetRotation','Reset Canvas Rotation',['straighten','reset rotation'],resetCanvasRotation,'View');
     registerCommand('layers.new','New Pixel Layer',['new layer','pixel layer','paint layer'],addPixelLayer,'Layers');
     registerCommand('layers.duplicate','Duplicate Selected',['duplicate layer','copy layer'],duplicateSelectedItems,'Layers');
@@ -5214,36 +5317,26 @@ function renderLayersPanel() {
         const arr=parent?parent.children:f.layerTree;
         const pos=arr.indexOf(node);
         const isMaskOrClip = layer.type==='mask' || layer.type==='clip';
+        const isMaskable = n => n && n.kind==='layer' && n.layer && (n.layer.type==='pixel' || n.layer.type==='image' || n.layer.type==='vector');
         const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();if(!(isMaskOrClip && up.classList.contains('soft-disabled')))reorderLayerTreeNode(node,1);});
         const upTarget=pos<arr.length-1?arr[pos+1]:null;
-        const upTargetIsMaskable = upTarget && upTarget.kind==='layer' && upTarget.layer && (upTarget.layer.type==='pixel' || upTarget.layer.type==='image' || upTarget.layer.type==='vector');
+        const upTargetIsMaskable = isMaskable(upTarget);
         if (isMaskOrClip) { up.classList.toggle('soft-disabled', !upTargetIsMaskable); const upTip = upTargetIsMaskable ? ('Move up onto ' + upTarget.layer.name) : 'A mask/clip layer can only move up onto a pixel, image, or vector layer'; attachLongPressTooltip(up, upTip); }
         else up.disabled=pos>=arr.length-1;
-        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();if(!(isMaskOrClip))reorderLayerTreeNode(node,-1);});
-        const downTarget=pos>0?arr[pos-1]:null;
-        if (isMaskOrClip) { down.classList.add('soft-disabled'); attachLongPressTooltip(down, 'A mask/clip layer can\'t move below the layer it\'s attached to'); }
+        const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();if(!(isMaskOrClip && down.classList.contains('soft-disabled')))reorderLayerTreeNode(node,-1);});
+        // Mask/clip Move Down needs a valid pixel/image/vector layer two
+        // positions below it -- one slot down is its own CURRENT target,
+        // which is what it's skipping past (see reorderLayerTreeNode's
+        // Case 1 comment), not the thing being checked here.
+        const downSkipTarget = pos>=2 ? arr[pos-2] : null;
+        const downTargetIsMaskable = isMaskable(downSkipTarget);
+        if (isMaskOrClip) { down.classList.toggle('soft-disabled', !downTargetIsMaskable); const downTip = downTargetIsMaskable ? ('Move down onto ' + downSkipTarget.layer.name) : 'Nothing valid below to move onto'; attachLongPressTooltip(down, downTip); }
         else down.disabled=pos<=0;
         const clr=mkLayerIconBtn('\u{1F9F9}',e=>{e.stopPropagation();clearLayerAt(i);}); clr.style.display=layer.type!=='reference'?'flex':'none';
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
         row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); if(!layerSelectionMode && i===activeLayerIndex)row.classList.add('has-controls-strip'); list.appendChild(row);
         if(!layerSelectionMode && i===activeLayerIndex){const opRow=document.createElement('div');opRow.className='layer-opacity-row';const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';opRow.append(opCaption);const sliderCtl=mkIosSlider(Math.round(layer.opacity*100),v=>{layer.opacity=v/100;layer.applyVisualState();refreshHookedComposites();});opRow.append(sliderCtl.el);
-            // Lock-to-target toggle, mask/clip layers only (see Fix List
-            // item 10). Shares opRow with the opacity slider like the
-            // blend-mode select below does for pixel/image/vector -- the
-            // two conditions never overlap on the same layer type, so
-            // there's no crowding between them.
-            if (layer.type==='mask' || layer.type==='clip') {
-                const lockBtn=document.createElement('button'); lockBtn.className='num-input'; lockBtn.style.flex='none';
-                lockBtn.innerText = layer.lockedToTarget ? '\u{1F512}' : '\u{1F513}';
-                lockBtn.onclick=()=>{layer.lockedToTarget=!layer.lockedToTarget;renderLayersPanel();};
-                const targetLayer = layer.hookedTo ? layers.find(l=>l.id===layer.hookedTo) : null;
-                const tipText = layer.lockedToTarget
-                    ? ('Locked to ' + (targetLayer ? targetLayer.name : 'its target') + ' -- moving it will carry this ' + layer.type + ' along')
-                    : ('Not locked -- tap to lock this ' + layer.type + ' to ' + (targetLayer ? targetLayer.name : 'its target') + ' so moving it carries this ' + layer.type + ' along');
-                attachLongPressTooltip(lockBtn, tipText);
-                opRow.append(lockBtn);
-            }
             // Session 7d: per-layer blend mode, only for layer types that
             // are real visible artwork painted into the normal stack --
             // mask/clip are control data (already display:none, see
@@ -5693,6 +5786,7 @@ function applyHistoryEntry(entry, forward) {
     else if(entry.type==='removeSpline') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){if(forward){const i=layer.splines.indexOf(entry.spline);if(i!==-1)layer.splines.splice(i,1);}else{layer.splines.splice(Math.min(entry.index,layer.splines.length),0,entry.spline);}layer.layoutCSS();updateVectorHandles();} }
     else if(entry.type==='editSplinePoints') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer&&entry.spline){entry.spline.points=(forward?entry.after:entry.before).map(p=>({x:p.x,y:p.y}));layer.layoutCSS();} }
     else if(entry.type==='clearVectorLayer') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){layer.splines=forward?[]:entry.before.map(cloneSpline);layer.layoutCSS();} }
+    else if(entry.type==='replaceSplines') { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer){layer.splines=(forward?entry.after:entry.before).map(cloneSpline);layer.layoutCSS();} }
     if(openPanelName==='layers') renderLayersPanel(); updateVectorHandles(); refreshHookedComposites();
 }
 function undo() {
@@ -6389,6 +6483,50 @@ function commitFreehandSpline(layer, points, isShape) {
     updateVectorHandles();
     if (openPanelName === 'layers') renderLayersPanel();
 }
+// Commits a new gradient spline (sp.stops non-null -- see the roadmap's
+// data-shape note) from a straight 2-point drag. Default stop colours are
+// the two most recently used swatches (recentSwatchColors), most-recent
+// first at position 0 -- if only one distinct colour has ever been picked
+// this session, both stops default to it (a same-colour gradient, which
+// is a legitimate starting point the person can then edit). Mirrors
+// commitFreehandSpline's shape/undo pattern; deliberately a separate
+// function rather than folding a stops parameter into that one, since a
+// gradient's creation path (straight 2-point drag, no simplification, no
+// isShape) is different enough from a freehand stroke's to keep them
+// visually distinct in the code, matching how vmove/vedit are also kept
+// as separate functions rather than parameterizing one shared one.
+// Commits a new gradient spline (sp.stops non-null -- see the roadmap's
+// data-shape note) from a straight 2-point drag. Default stop colours are
+// the two most recently used swatches (recentSwatchColors), most-recent
+// first at position 0 -- if only one distinct colour has ever been picked
+// this session, both stops default to it (a same-colour gradient, which
+// is a legitimate starting point the person can then edit).
+//
+// Replaces, rather than adds to, any existing gradient spline already on
+// this layer -- a gradient fills the ENTIRE canvas (see
+// renderGradientFill), so a layer can only ever meaningfully show one
+// gradient's result at a time; a second gradient spline coexisting with
+// the first would just have the later one in splines[] silently paint
+// over the earlier one every render, with the first spline's data still
+// sitting there uselessly. Since a gradient-holder layer (see
+// createGradientHolderLayer) is otherwise a normal, general-purpose
+// vector layer, this only strips OTHER gradient splines, never normal
+// (non-gradient) strokes/shapes the person may have separately added to
+// the same layer.
+function commitGradientSpline(layer, points) {
+    const c0 = recentSwatchColors[0] || selectedColor || '#000000';
+    const c1 = recentSwatchColors[1] || c0;
+    const before = layer.splines.map(cloneSpline);
+    const spline = { closed: false, filled: false, color: c0, width: currentPenWidth, points, stops: [{ position: 0, color: c0 }, { position: 1, color: c1 }] };
+    layer.splines = layer.splines.filter(sp => !sp.stops).concat([spline]);
+    const after = layer.splines.map(cloneSpline);
+    pushUndo({ type: 'replaceSplines', frameIndex: activeFrameIndex, layerId: layer.id, before, after });
+    traceLog('Gradient spline committed: stops=' + c0 + '->' + c1);
+    layer.layoutCSS();
+    refreshHookedComposites(); // otherwise a mask/clip already hooked above this layer never picks up the freshly-drawn gradient
+    updateVectorHandles();
+    if (openPanelName === 'layers') renderLayersPanel();
+}
 
 // Finds the nearest existing spline point on a vector layer, for the
 // Edit Points tool. Returns null if nothing is within the touch radius.
@@ -6678,10 +6816,21 @@ let lastVectorTool = 'vpen';
 // APPLY_LAST_COLOUR_TOOLS below) can restore it instead of leaving the
 // transparent swatch active.
 let lastNonTransparentColor = '#000000';
+// Tracks the last two distinct real (non-transparent) colours picked via
+// the swatch panel, most-recent first -- used as the default two stop
+// colours when a new gradient line is drawn (see startVectorGradientDrag).
+// Deliberately separate from lastNonTransparentColor (a single-slot
+// fallback used for a different purpose -- restoring a sensible colour
+// when switching off the transparent/eraser selection) since a gradient
+// specifically wants *two* recent colours, not just the latest one.
+let recentSwatchColors = ['#000000', '#ffffff'];
 // Selects a colour (or transparency) as the current drawing colour.
 function handleSwatchClick(c, isT = false) {
     selectedColor = isT ? null : c;
-    if (!isT && c) lastNonTransparentColor = c;
+    if (!isT && c) {
+        lastNonTransparentColor = c;
+        if (recentSwatchColors[0] !== c) recentSwatchColors = [c, ...recentSwatchColors.filter(x => x !== c)].slice(0, 2);
+    }
     // Selecting transparency only makes sense for erasing -- auto-switch to
     // the hard eraser so the transparent swatch is never "selected" while a
     // drawing tool that can't do anything useful with it stays active.
@@ -6973,7 +7122,7 @@ function setupDrawingEvents() {
     const updateCursor = (e) => {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
-        const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool);
+        const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha','vgradient'].includes(currentTool);
         if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
         const [x, y] = getEventPos(e);
         if(currentTool==='brush'||currentTool==='hardEraser'||currentTool==='softEraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
@@ -7179,7 +7328,7 @@ function setupDrawingEvents() {
         if (!g.vecDragTarget) return;
         g.vecDragTarget.point.x = x; g.vecDragTarget.point.y = y;
         const layer = activeLayer();
-        if (layer) layer.layoutCSS();
+        if (layer) { layer.layoutCSS(); if (activeLayerHasLiveHook()) refreshHookedComposites(); }
         updateVectorHandles();
     };
     const endVectorEditDrag = () => { g.vecDragTarget = null; };
@@ -7205,7 +7354,7 @@ function setupDrawingEvents() {
         // can't accumulate across a long drag with many touchmove events.
         t.spline.points.forEach((p, i) => { p.x = t.before[i].x + dx; p.y = t.before[i].y + dy; });
         const layer = activeLayer();
-        if (layer) layer.layoutCSS();
+        if (layer) { layer.layoutCSS(); if (activeLayerHasLiveHook()) refreshHookedComposites(); }
         updateVectorHandles();
     };
     const endVectorMoveDrag = () => {
@@ -7218,6 +7367,69 @@ function setupDrawingEvents() {
             const layer = activeLayer();
             if (layer) pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: t.spline, before: t.before, after });
         }
+    };
+
+    // -- Gradient tool (vgradient): drag a straight 2-point line, whose
+    //    direction/angle becomes the gradient's axis; on release, commits
+    //    a full-canvas gradient fill (sp.stops non-null, see
+    //    renderGradientFill). Works directly on a pixel/image layer, not
+    //    just an existing vector layer -- a fresh dedicated vector layer
+    //    is auto-created to hold the gradient (see
+    //    createGradientHolderLayer; one new layer per gradient, not
+    //    shared/reused, since a full-canvas gradient would otherwise
+    //    silently overwrite any earlier gradient sharing its layer). The
+    //    active layer switches to that new holder layer once the drag
+    //    completes, so Move Line/Edit Points immediately work on it,
+    //    per the person's explicit decision.
+    const startVectorGradientDrag = (x, y) => {
+        const layer = activeLayer();
+        if (!layer) { g.vecGradientDrag = null; return; }
+        if (layer.type !== 'vector' && layer.type !== 'pixel' && layer.type !== 'image') { g.vecGradientDrag = null; return; }
+        let drawLayer = layer;
+        if (layer.type !== 'vector') drawLayer = createGradientHolderLayer(layer);
+        g.vecGradientDrag = { originX: x, originY: y, drawLayer };
+    };
+    const updateVectorGradientDrag = (x, y) => {
+        if (!g.vecGradientDrag) return;
+        const t = g.vecGradientDrag;
+        [x, y] = clampPointToPortraitTile(x, y, t.originX, t.originY);
+        const layer = t.drawLayer;
+        if (!layer || layer.type !== 'vector') return;
+        // Live preview only -- draftPreview is the same mechanism vpen/
+        // vshape already use for their own in-progress drag preview, and
+        // is never itself masked/exported (see VectorLayer.render(), which
+        // renders draftPreview through the normal path same as any other
+        // spline -- this is fine for a preview since it's cleared on
+        // release, well before any masking/export could ever see it).
+        layer.draftPreview = { closed: false, filled: false, color: recentSwatchColors[0] || selectedColor || '#000000', width: currentPenWidth, points: [{ x: t.originX, y: t.originY }, { x, y }] };
+        layer.layoutCSS();
+        t.endX = x; t.endY = y;
+    };
+    const endVectorGradientDrag = () => {
+        const t = g.vecGradientDrag;
+        g.vecGradientDrag = null;
+        if (!t) return;
+        const layer = t.drawLayer;
+        if (!layer || layer.type !== 'vector') return;
+        layer.draftPreview = null;
+        const endX = t.endX != null ? t.endX : t.originX;
+        const endY = t.endY != null ? t.endY : t.originY;
+        // A tap with no real movement doesn't commit a gradient -- a
+        // single-point line has no meaningful direction for a gradient to
+        // run along, unlike a plain spline (which can still render as a
+        // dot). Mirrors vpen/vshape's own "no movement -> different
+        // handling" branch in endVectorFreehand, just choosing not to
+        // commit anything here rather than a degenerate 1-point case.
+        if (Math.hypot(endX - t.originX, endY - t.originY) <= 0.15) { layer.layoutCSS(); return; }
+        commitGradientSpline(layer, [{ x: t.originX, y: t.originY }, { x: endX, y: endY }]);
+        // Switch active layer to the gradient holder once the drag
+        // completes -- per the person's decision, so Move Line/Edit Points
+        // work immediately on the just-drawn gradient without a manual
+        // layer switch first. Only actually changes anything when a
+        // fresh holder was auto-created above (drawing directly onto an
+        // already-active vector layer means it's already active).
+        const idx = layers.indexOf(layer);
+        if (idx !== -1 && idx !== activeLayerIndex) setActiveLayer(idx);
     };
 
     // -- Pen/Shape tools: freehand-drag records a path and auto-fits a
@@ -7328,6 +7540,7 @@ function setupDrawingEvents() {
         if (currentTool === 'lasso') { g.lasso=[{x:x+.5,y:y+.5}]; g.suppressStroke=true; return; }
         if (currentTool === 'vedit') { startVectorEditDrag(x, y); return; }
         if (currentTool === 'vmove') { startVectorMoveDrag(x, y); return; }
+        if (currentTool === 'vgradient') { startVectorGradientDrag(x, y); return; }
         if (currentTool === 'vpen' || currentTool === 'vshape') { startVectorFreehand(x, y); return; }
         if (currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') {
             g.shapeStart = { x, y };
@@ -7550,6 +7763,7 @@ function setupDrawingEvents() {
             else if (currentTool === 'lasso' && g.lasso) { const p={x:x+.5,y:y+.5},last=g.lasso[g.lasso.length-1]; if(Math.hypot(p.x-last.x,p.y-last.y)>=.5) g.lasso.push(p); }
             else if (currentTool === 'vedit') updateVectorEditDrag(x, y);
             else if (currentTool === 'vmove') updateVectorMoveDrag(x, y);
+            else if (currentTool === 'vgradient') updateVectorGradientDrag(x, y);
             else if (currentTool === 'vpen' || currentTool === 'vshape') updateVectorFreehand(x, y);
             else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && g.shapeStart) {
                 showShapePreview(currentTool, g.shapeStart, { x, y });
@@ -7622,6 +7836,8 @@ function setupDrawingEvents() {
                 endVectorEditDrag();
             } else if (currentTool === 'vmove') {
                 endVectorMoveDrag();
+            } else if (currentTool === 'vgradient') {
+                endVectorGradientDrag();
             } else if (currentTool === 'vpen' || currentTool === 'vshape') {
                 endVectorFreehand();
             } else if ((currentTool === 'line' || currentTool === 'rect' || currentTool === 'ellipse') && g.shapeStart) {
@@ -7683,9 +7899,29 @@ function setupDrawingEvents() {
 // painted cell-by-cell; vector layers have no pixelData -- their content
 // is already rasterized into their own display canvas (`layer.el`) by
 // render(), so that's drawn through directly instead.
+// Produces a raw (unmasked, unclipped) canvas snapshot of a layer's own
+// content, for use as the "base" a mask/clip layer composites against.
+// Pixel/image layers store their content as a pixelData grid and get
+// painted cell-by-cell; vector layers have no pixelData -- their content
+// is already rasterized into their own display canvas (`layer.el`) by
+// render(), so that's drawn through directly instead.
+//
+// Sizing bug fixed (V1_39): this used to size the output canvas from
+// `layer.gridW`/`layer.gridH` -- correct for PixelLayer/MaskLayer/
+// ClipLayer (which do store per-instance gridW/gridH, set via their
+// constructor's w/h params), but VectorLayer (extending the base Layer
+// class directly) never sets those at all, so layer.gridW was undefined
+// for a vector layer -- silently coerced to a 0-width/0-height canvas,
+// which then threw InvalidStateError the moment drawImage() tried to use
+// it as a source, and left addHookedLayer()/refreshHookedComposites() in
+// a broken state that kept erroring on every subsequent touch. Fixed by
+// using the global gridW/gridH -- the single canonical canvas size this
+// whole app already uses everywhere else (including inside VectorLayer's
+// own render()/renderGradientFill()) -- instead of a per-layer property
+// that not every layer type actually has.
 function renderRawPixelLayer(layer) {
     const c = document.createElement('canvas');
-    c.width = layer.gridW; c.height = layer.gridH;
+    c.width = gridW; c.height = gridH;
     const ctx = c.getContext('2d');
     if (layer.type === 'vector') { ctx.drawImage(layer.el, 0, 0); return c; }
     for (let x = 0; x < layer.gridW; x++)
@@ -7764,7 +8000,18 @@ function refreshHookedComposites() {
         const above = layers[i + 1];
         if (above && (above.type === 'mask' || above.type === 'clip') && above.hookedTo === l.id && above.visible) {
             const composited = compositeMaskOrClip(l, above);
-            l.ctx.clearRect(0, 0, l.gridW, l.gridH);
+            // Sizing bug fixed (V1_39): l.gridW/l.gridH is undefined for a
+            // VectorLayer (only PixelLayer/MaskLayer/ClipLayer actually set
+            // it) -- clearRect(0,0,undefined,undefined) doesn't throw, but
+            // clears nothing, so the masked composite got drawn ON TOP OF
+            // the layer's still-visible unmasked content instead of
+            // replacing it; wherever the mask should have been hiding
+            // something, the untouched original content underneath showed
+            // straight through, making masking silently appear to do
+            // nothing. Same fix as renderRawPixelLayer's V1_39 fix: use the
+            // global gridW/gridH, which VectorLayer's own methods already
+            // use exclusively everywhere else in the class.
+            l.ctx.clearRect(0, 0, gridW, gridH);
             l.ctx.drawImage(composited, 0, 0);
         } else if (l.type === 'vector') {
             l.render();
@@ -8126,8 +8373,8 @@ async function copyToClipboard() {
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
 function serializeLayer(l) {
     if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', dataURL: l.el.toDataURL() };
-    if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo, lockedToTarget: !!l.lockedToTarget };
-    if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines };
+    if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
+    if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines, gradientHostFor: l.gradientHostFor || null };
     return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
 }
 
@@ -8154,6 +8401,11 @@ function saveProject() {
                     sl.hookedToIndex = idx !== -1 ? idx : null;
                 }
                 delete sl.hookedTo;
+                if (sl.gradientHostFor != null) {
+                    const idx = f.layers.findIndex(l => l.id === sl.gradientHostFor);
+                    sl.gradientHostForIndex = idx !== -1 ? idx : null;
+                }
+                delete sl.gradientHostFor;
             });
             ensureFrameLayerTree(f); return { name: f.name, layers: serialized, layerTree: serializeLayerTree(f.layerTree, f.layers) };
         })
@@ -8205,14 +8457,18 @@ function loadProjectFile(file) {
                     f.layers = flattenLayerTree(f.layerTree);
                 } else { f.layerTree = f.layers.map(makeLayerNode); }
             });
-            // Resolve each mask/clip layer's saved hookedToIndex (a
-            // frame-relative position) back into the actual id of the
-            // newly built layer at that position, now that every layer
-            // in every frame exists.
+            // Resolve each mask/clip layer's saved hookedToIndex, and each
+            // gradient-holder vector layer's saved gradientHostForIndex
+            // (both frame-relative positions) back into the actual id of
+            // the newly built layer at that position, now that every
+            // layer in every frame exists.
             frames.forEach((f, fi) => {
                 frameDefs[fi].layers.forEach((ld, li) => {
                     if ((ld.type === 'mask' || ld.type === 'clip') && ld.hookedToIndex != null && f.layers[ld.hookedToIndex]) {
                         f.layers[li].hookedTo = f.layers[ld.hookedToIndex].id;
+                    }
+                    if (ld.type === 'vector' && ld.gradientHostForIndex != null && f.layers[ld.gradientHostForIndex]) {
+                        f.layers[li].gradientHostFor = f.layers[ld.gradientHostForIndex].id;
                     }
                 });
             });
@@ -8253,7 +8509,6 @@ function loadProjectFile(file) {
                     else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
                     l.color = ld.color || null;
                     if (ld.type === 'pixel' || ld.type === 'image') l.blendMode = ld.blendMode || 'source-over';
-                    if (ld.type === 'mask' || ld.type === 'clip') l.lockedToTarget = !!ld.lockedToTarget;
                     l.visible = ld.visible; l.opacity = ld.opacity;
                     l.applyVisualState();
                     builtFrames[fi].layers[li] = l;
@@ -8820,6 +9075,11 @@ document.getElementById('ctx-save-file').addEventListener('click', () => {
                         const idx = f.layers.findIndex(l => l.id === sl.hookedTo);
                         sl.hookedToIndex = idx !== -1 ? idx : null;
                         delete sl.hookedTo;
+                    }
+                    if (sl.gradientHostFor != null) {
+                        const idx = f.layers.findIndex(l => l.id === sl.gradientHostFor);
+                        sl.gradientHostForIndex = idx !== -1 ? idx : null;
+                        delete sl.gradientHostFor;
                     }
                 });
                 ensureFrameLayerTree(f); return { name: f.name, layers: serialized, layerTree: serializeLayerTree(f.layerTree, f.layers) };
