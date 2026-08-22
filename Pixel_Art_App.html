@@ -880,6 +880,8 @@
                     <canvas id="selectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:177;display:none;"></canvas>
                     <div id="selectionBox"></div>
                     <canvas id="wandSelectionOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:178;display:none;"></canvas>
+                    <canvas id="selectionHandlesOverlay" class="layer-canvas reference-canvas" style="z-index:179; display:none;"></canvas>
+                    <button id="rotateConfirmBtn" style="position:absolute;z-index:180;display:none;pointer-events:auto;width:36px;height:36px;border-radius:50%;background:#4caf50;border:2px solid #fff;color:#fff;font-size:18px;line-height:1;box-shadow:0 2px 6px rgba(0,0,0,0.4);" onclick="uiAction(confirmRotateSelection)">✓</button>
                     <div id="canvas-safety-overlay" onclick="cancelClear()"></div>
                 </div>
             </div>
@@ -948,6 +950,19 @@
                         <button class="btn" id="deleteSelBtn" onclick="uiAction(deleteSelection)">🗑️ DELETE PIXELS</button>
                         <button class="btn" onclick="uiAction(deselect)">❌ DESELECT</button>
                     </div>
+                    <div class="row" id="selectionTransformRow">
+                        <button class="btn" id="selResizeLockBtn" onclick="uiAction(() => toggleSelectionTransformMode('lockRatio'))">⬜ RESIZE (LOCK RATIO)</button>
+                        <button class="btn" id="selResizeFreeBtn" onclick="uiAction(() => toggleSelectionTransformMode('free'))">🟦 RESIZE (FREE)</button>
+                        <button class="btn" id="selRotateBtn" onclick="uiAction(() => toggleSelectionTransformMode('rotate'))">🟩 ROTATE</button>
+                    </div>
+                    <div class="row" id="selectionResampleRow">
+                        <label style="font-size:11px;color:#aaa;align-self:center;">Resample:</label>
+                        <select id="selectionResampleMethod" onchange="setSelectionResampleMethod(this.value)">
+                            <option value="nearest">Nearest Neighbor (pixel-art)</option>
+                            <option value="bilinear" disabled>Bilinear (coming soon)</option>
+                            <option value="bicubic" disabled>Bicubic (coming soon)</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="panel-subtitle">Gradient (fills the whole canvas along the dragged direction; works directly on a pixel layer -- creates/reuses a dedicated vector layer to hold it)</div>
                 <div class="row" id="toolRow-gradient"></div>
@@ -958,6 +973,11 @@
                 <div class="row" id="vectorEditSubModeRow">
                     <button class="btn" id="vertexDeleteModeBtn" onclick="uiAction(toggleVertexDeleteMode)">🗑️ DELETE PTS</button>
                     <button class="btn" id="lineExtendModeBtn" onclick="uiAction(toggleLineExtendMode)">➕ EXT LINE</button>
+                    <button class="btn" id="gradientAddStopModeBtn" onclick="uiAction(toggleGradientAddStopMode)">🎨 ADD STOP</button>
+                </div>
+                <div id="gradientStopsBarRow" style="display:none;">
+                    <div style="font-size:10px;color:#777;text-align:center;padding:4px 0;">Tap the bar or the line on canvas to add a colour stop.</div>
+                    <div id="gradientStopsBar" style="position:relative;height:28px;margin:4px 8px;border:1px solid #555;border-radius:3px;cursor:pointer;"></div>
                 </div>
                 <div class="row" style="align-items:center; gap:8px;">
                     <span style="font-size:10px; color:#888; flex:none;">Width</span>
@@ -1097,6 +1117,7 @@
             </div>
             <div id="customisationMenu2" class="row">
                 <button class="btn" onclick="uiAction(() => openCustomisationSection('checker'))">🏁 CHECKERBOARD PATTERNS</button>
+                <button class="btn" onclick="uiAction(() => openCustomisationSection('gradient'))">🌈 GRADIENT STOPS</button>
             </div>
             <div id="customisationSection-tools" style="display:none;">
                 <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
@@ -1107,6 +1128,15 @@
                 <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
                 <div class="panel-subtitle">Checkerboard Profiles</div>
                 <div id="checkerProfilePicker"></div>
+            </div>
+            <div id="customisationSection-gradient" style="display:none;">
+                <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
+                <div class="panel-subtitle">New Gradient Stop Colour</div>
+                <div style="font-size:10px;color:#777;text-align:center;padding:6px 0;">What colour a newly-added stop starts with, whether added from the colour bar or by tapping the line on canvas.</div>
+                <div class="row">
+                    <button class="btn" id="gradientStopColorSelectedBtn" onclick="uiAction(() => setGradientNewStopColorSource('selected'))">🎨 SELECTED COLOUR</button>
+                    <button class="btn" id="gradientStopColorInterpolateBtn" onclick="uiAction(() => setGradientNewStopColorSource('interpolate'))">🔀 BLEND NEIGHBOURS</button>
+                </div>
             </div>
         </div>
 
@@ -1212,7 +1242,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_39';
+const BUILD_VERSION = 'V1_42';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1754,6 +1784,11 @@ let currentTool = 'pencil', isDrawing = false, isEditing = false;
 // toggleVertexDeleteMode/toggleLineExtendMode and the vedit pointer
 // handlers.
 let vertexDeleteMode = false, lineExtendMode = false;
+// Edit Points sub-mode: while on, tapping a gradient spline's backbone
+// line inserts a colour stop at the tapped position instead of grabbing
+// the nearest point for a drag. Only meaningful when the active layer's
+// spline is a gradient (sp.stops != null) -- see toggleGradientAddStopMode.
+let gradientAddStopMode = false;
 window.pixelToolState={current:'pencil',brushSize:8,brushSoftness:100,softEraserSize:8,softEraserSoftness:35};
 // Session 7d: full native CSS mix-blend-mode set, shared by both the
 // group blend-mode dropdown and the new per-layer blend-mode dropdown --
@@ -1805,8 +1840,8 @@ const TOOL_REGISTRY = [
     { id:'line',         label:'📏 LINE',             category:'vector', section:'toolRow-shapes' },
     { id:'rect',         label:'⬛ RECT',             category:'vector', section:'toolRow-shapes' },
     { id:'ellipse',      label:'⭕ ELLIPSE',          category:'vector', section:'toolRow-shapes' },
-    { id:'vpen',         label:'🖊️ PEN (open)',       category:'vector', section:'toolRow-vector' },
-    { id:'vshape',       label:'🔷 SHAPE (closed)',   category:'vector', section:'toolRow-vector' },
+    { id:'vpen',         label:'🖊️ PEN (open)',       category:'vector', elId:'vpenToolBtn', section:'toolRow-vector' },
+    { id:'vshape',       label:'🔷 SHAPE (closed)',   category:'vector', elId:'vshapeToolBtn', section:'toolRow-vector' },
     { id:'vedit',        label:'🖐️ EDIT PTS',         category:'vector', section:'toolRow-vector' },
     { id:'vmove',        label:'✋↔️ MOVE LINE',       category:'vector', section:'toolRow-vector' },
     { id:'vgradient',    label:'🌈 GRADIENT',        category:'gradient', section:'toolRow-gradient' }
@@ -2297,6 +2332,15 @@ let playing = false, fps = 6, playTimer = null;
 
 let selection = null;           // {x0,y0,x1,y1} inclusive grid cells
 let movingSelection = false;
+// Selection Transform (Roadmap item 12's "Selection Transform" case, raster
+// first): null when inactive, else 'lockRatio' / 'free' / 'rotate'. Mutually
+// exclusive with itself and with movingSelection -- see
+// toggleSelectionTransformMode, which also commits any in-progress transform
+// before switching so a half-finished drag is never silently discarded.
+let selectionTransformMode = null;
+// Only 'nearest' is actually wired up this pass -- the dropdown is
+// scaffolded for future resample methods (see resampleFloatingBuffer).
+let selectionResampleMethod = 'nearest';
 let wandSelection = null;       // Uint8Array pixel mask: 1 = selected, 0 = unselected
 let wandSelectionCount = 0;
 let wandFuzzy = false;
@@ -2380,6 +2424,22 @@ function estimateHistoryEntryBytes(entry) {
             bytes += String(entry.changes[i+2] ?? '').length * 2;
             bytes += String(entry.changes[i+3] ?? '').length * 2;
         }
+        return bytes;
+    }
+    if (entry.type === 'selectionTransform' && Array.isArray(entry.changes)) {
+        // Same per-change accounting as 'pixels' (this entry carries the
+        // identical changes array shape), plus the two selection masks --
+        // reused instead of falling through to the generic JSON.stringify
+        // fallback below, since a resize's mask arrays can be non-trivial
+        // and this is now a common path (every Selection Transform commit
+        // goes through it), not a rare one worth leaving unestimated.
+        let bytes = 64;
+        for (let i=0;i<entry.changes.length;i+=4) {
+            bytes += 32;
+            bytes += String(entry.changes[i+2] ?? '').length * 2;
+            bytes += String(entry.changes[i+3] ?? '').length * 2;
+        }
+        bytes += (entry.beforeMask?.length || 0) + (entry.afterMask?.length || 0);
         return bytes;
     }
     if (entry.type === 'canvasResize' && entry.before && entry.after) {
@@ -3093,13 +3153,29 @@ function openCustomisationSection(section) {
     document.getElementById('customisationMenu2').style.display = 'none';
     document.getElementById('customisationSection-tools').style.display = section === 'tools' ? '' : 'none';
     document.getElementById('customisationSection-checker').style.display = section === 'checker' ? '' : 'none';
+    document.getElementById('customisationSection-gradient').style.display = section === 'gradient' ? '' : 'none';
     if (section === 'checker') renderCheckerProfilePicker();
+    if (section === 'gradient') renderGradientStopColorSourcePicker();
 }
 function closeCustomisationSection() {
     document.getElementById('customisationMenu').style.display = '';
     document.getElementById('customisationMenu2').style.display = '';
     document.getElementById('customisationSection-tools').style.display = 'none';
     document.getElementById('customisationSection-checker').style.display = 'none';
+    document.getElementById('customisationSection-gradient').style.display = 'none';
+}
+// Sets which colour a newly-added gradient stop starts with (see
+// insertGradientStop) and syncs the two picker buttons' active states.
+function setGradientNewStopColorSource(v) {
+    gradientNewStopColorSource = v;
+    saveGradientNewStopColorSource();
+    renderGradientStopColorSourcePicker();
+}
+function renderGradientStopColorSourcePicker() {
+    const selBtn = document.getElementById('gradientStopColorSelectedBtn');
+    const interpBtn = document.getElementById('gradientStopColorInterpolateBtn');
+    if (selBtn) selBtn.classList.toggle('active', gradientNewStopColorSource === 'selected');
+    if (interpBtn) interpBtn.classList.toggle('active', gradientNewStopColorSource === 'interpolate');
 }
 // Renders the Customisation panel's checkerboard picker: one row per
 // independently-tracked screen (canvas, PMD preview, opacity slider),
@@ -3207,7 +3283,7 @@ function applyPanelVisibility() {
 }
 function historyEntryLabel(entry, index) {
     if (entry.label) return entry.label;
-    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', tree:'Layer / group change', canvasResize:'Resize Canvas', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', removeSpline:'Delete vector point', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
+    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', selectionTransform:'Resize selection', tree:'Layer / group change', canvasResize:'Resize Canvas', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', removeSpline:'Delete vector point', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
     let label = names[entry.type] || 'Edit';
     if (entry.layer && entry.layer.name) label += ': ' + entry.layer.name;
     if (entry.layerId) { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer) label += ': ' + layer.name; }
@@ -4505,6 +4581,7 @@ function resetCanvasRotation() { canvasRotation = 0; layoutAll(); }
 // two grabbable ends are unambiguous.
 function updateVectorHandles() {
     updateGradientBackboneOverlay();
+    renderGradientStopsBar();
     const el = document.getElementById('vectorHandlesOverlay');
     const subRow = document.getElementById('vectorEditSubModeRow');
     const layer = activeLayer();
@@ -4512,17 +4589,31 @@ function updateVectorHandles() {
     const editActive = currentTool === 'vedit' && isVectorLayer;
     const extendActive = lineExtendMode && currentTool === 'vpen' && isVectorLayer;
     if (subRow) subRow.style.display = editActive ? '' : 'none';
-    if (!editActive) vertexDeleteMode = false;
+    if (!editActive) { vertexDeleteMode = false; gradientAddStopMode = false; }
     if (!editActive && currentTool !== 'vpen') lineExtendMode = false;
     const delBtn = document.getElementById('vertexDeleteModeBtn'); if (delBtn) delBtn.classList.toggle('active', vertexDeleteMode);
     const extBtn = document.getElementById('lineExtendModeBtn'); if (extBtn) extBtn.classList.toggle('active', lineExtendMode);
+    // Add Stop only makes sense on a gradient spline -- hidden entirely
+    // (not just inactive) when the active vector layer has no gradient,
+    // since Delete Pts/Ext Line remain meaningful for any spline type but
+    // this button has nothing to do otherwise.
+    const stopBtn = document.getElementById('gradientAddStopModeBtn');
+    if (stopBtn) {
+        const hasGradient = isVectorLayer && layer.splines.some(sp => sp.stops);
+        stopBtn.style.display = hasGradient ? '' : 'none';
+        stopBtn.classList.toggle('active', gradientAddStopMode);
+    }
     if (!el) return;
     if (!editActive && !extendActive) { el.style.display = 'none'; return; }
     el.style.display = 'block';
     el.style.width = (gridW * scale) + 'px';
     el.style.height = (gridH * scale) + 'px';
-    el.width = Math.max(1, gridW * scale);
-    el.height = Math.max(1, gridH * scale);
+    // See updateGradientBackboneOverlay's matching fix/comment -- same
+    // unconditional canvas.width/height flicker risk, called on every
+    // pointermove during a regular vector point drag.
+    const vhTargetW = Math.max(1, gridW * scale), vhTargetH = Math.max(1, gridH * scale);
+    if (el.width !== vhTargetW) el.width = vhTargetW;
+    if (el.height !== vhTargetH) el.height = vhTargetH;
     const ctx = el.getContext('2d');
     ctx.clearRect(0, 0, el.width, el.height);
     const drawHandle = (p) => {
@@ -4548,16 +4639,168 @@ function updateVectorHandles() {
     }
     layer.splines.forEach(sp => { sp.points.forEach(drawHandle); });
 }
-// Draws the backbone/guide line for every gradient spline (sp.stops
-// non-null) on the active vector layer into a dedicated overlay canvas,
-// entirely separate from the layer's own maskable render() output (see
-// VectorLayer.render()'s stops check). This mirrors industry precedent
-// (Illustrator/Inkscape): a masking or masked shape's own boundary/guide
-// geometry is never part of the rendered, exportable, maskable content --
-// it's a visible-only-while-editing affordance. Shown only while a
-// gradient-editing tool/mode is active (mirrors updateVectorHandles'
-// editActive gating for point-handles) -- gradients are otherwise fully
-// masked/clipped like any other vector content, with no visible line.
+// Returns the handle points (grid coords) for the current rectangular
+// selection, keyed by handle id. Corners are shown for every mode; edge
+// midpoints only for 'free' (Resize Free's 8-handle set) -- Lock Ratio and
+// Rotate only ever show the 4 corners. Shared by updateSelectionHandles
+// (drawing) and selectionHandleHitTest (hit-testing) so the two can never
+// drift out of sync with each other.
+function selectionHandlePoints(sel, mode) {
+    if (!sel) return {};
+    const midX = (sel.x0 + sel.x1 + 1) / 2, midY = (sel.y0 + sel.y1 + 1) / 2;
+    const pts = {
+        nw: { x: sel.x0, y: sel.y0 }, ne: { x: sel.x1 + 1, y: sel.y0 },
+        sw: { x: sel.x0, y: sel.y1 + 1 }, se: { x: sel.x1 + 1, y: sel.y1 + 1 }
+    };
+    if (mode === 'free') {
+        pts.n = { x: midX, y: sel.y0 }; pts.s = { x: midX, y: sel.y1 + 1 };
+        pts.w = { x: sel.x0, y: midY }; pts.e = { x: sel.x1 + 1, y: midY };
+    }
+    return pts;
+}
+// Shows the Resize/Rotate handle overlay -- 4 white corners (Lock Ratio), 8
+// blue corners+edges (Free), or 4 green corners (Rotate) -- per the
+// person's explicit colour/handle-count spec for each mode. Recycles the
+// same dot-drawing approach as updateVectorHandles's drawHandle, just
+// parameterized by colour and driven by selectionHandlePoints instead of
+// spline points.
+// Draws the Resize/Rotate handle dots. During an active drag, pass the
+// live in-progress rect (td.liveRect, continuous edge coordinates) so the
+// handles visually track the drag without needing `selection` itself to
+// be mutated every frame -- see updateSelTransformDrag's comment for why
+// that mutation was the actual cause of the handles drifting/breaking for
+// every corner except se.
+function updateSelectionHandles() {
+    const el = document.getElementById('selectionHandlesOverlay');
+    if (!el) return;
+    if (!selection || !selectionTransformMode || currentTool !== 'select') { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.style.width = (gridW * scale) + 'px';
+    el.style.height = (gridH * scale) + 'px';
+    // See updateGradientBackboneOverlay's matching fix/comment -- same
+    // unconditional canvas.width/height flicker risk, called on every
+    // pointermove during a Resize/Rotate drag.
+    const shTargetW = Math.max(1, gridW * scale), shTargetH = Math.max(1, gridH * scale);
+    if (el.width !== shTargetW) el.width = shTargetW;
+    if (el.height !== shTargetH) el.height = shTargetH;
+    const ctx = el.getContext('2d');
+    ctx.clearRect(0, 0, el.width, el.height);
+    const color = selectionTransformMode === 'free' ? '#2196f3' : (selectionTransformMode === 'rotate' ? '#4caf50' : '#ffffff');
+    const drawHandle = (p) => {
+        const px = p.x * scale, py = p.y * scale;
+        ctx.beginPath();
+        ctx.arc(px, py, 5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#000000';
+        ctx.stroke();
+    };
+    // window.__rotatePending mirrors g.rotatePending (see
+    // startSelTransformDrag/endSelTransformDrag's rotate branch), same
+    // closure-bridging approach window.__selTransformDrag already uses --
+    // needed so the rotated handle preview keeps showing after the drag
+    // itself ends and the gesture enters the pending-confirmation state.
+    const td = window.__selTransformDrag || window.__rotatePending;
+    let pts;
+    if (td && td.mode === 'rotate' && typeof td.angle === 'number') {
+        // Rotate's handle dots need to visually track the rotating
+        // preview during the drag, unlike resize's liveRect (which stays
+        // axis-aligned) -- selectionHandlePoints only ever returns
+        // axis-aligned corners, so rotate each corner around the
+        // selection's own center by the live angle before drawing.
+        const sel = td.origSel;
+        const cos = Math.cos(td.angle), sin = Math.sin(td.angle);
+        const rotatePoint = (p) => ({
+            x: td.centerX + (p.x - td.centerX) * cos - (p.y - td.centerY) * sin,
+            y: td.centerY + (p.x - td.centerX) * sin + (p.y - td.centerY) * cos
+        });
+        const corners = selectionHandlePoints(sel, 'rotate');
+        pts = {};
+        Object.keys(corners).forEach(id => { pts[id] = rotatePoint(corners[id]); });
+    } else {
+        // window.__selTransformDrag is the same object as the closure-local
+        // g.transformDrag (see startSelTransformDrag) -- reading it here lets
+        // this top-level function see the live rect without needing g itself
+        // exposed outside setupDrawingEvents's closure.
+        let handleSel = selection;
+        if (td && td.liveRect) {
+            const r = td.liveRect;
+            // r.gx0/r.gy0 are already the final left/top edge (see the
+            // matching fix + comment in updateSelTransformDrag) -- do not
+            // re-derive via Math.min(gx0, gx0+newW) here, that double-applies
+            // the drag offset.
+            const left = r.gx0, top = r.gy0;
+            const w = Math.abs(r.newW), h = Math.abs(r.newH);
+            // selectionHandlePoints expects integer-inclusive-index x1/y1 (it
+            // does its own +1 internally), so convert the continuous edge back
+            // by one unit -- this is display-only and never written back to
+            // the real `selection`.
+            handleSel = { x0: left, y0: top, x1: left + w - 1, y1: top + h - 1 };
+        }
+        pts = selectionHandlePoints(handleSel, selectionTransformMode);
+    }
+    Object.values(pts).forEach(drawHandle);
+}
+// Hit-tests a grid point against the active mode's handle set, using the
+// same ~14-screen-pixel touch radius findNearestVectorPoint uses elsewhere
+// in the app (converted to grid units via scale, so touch-target size stays
+// constant on screen regardless of zoom level). Returns the handle id
+// ('nw'/'n'/'ne'/'e'/'se'/'s'/'sw'/'w') or null.
+function selectionHandleHitTest(x, y) {
+    if (!selection || !selectionTransformMode) return null;
+    // While a rotation sits pending confirmation, the visible handles
+    // (see updateSelectionHandles) are drawn rotated around the
+    // selection's center, not at the plain axis-aligned corners --
+    // without this same rotation applied here, the invisible tap zones
+    // stayed at the original unrotated positions while the dots
+    // themselves visibly moved, so a tap that looked correct on the
+    // rotated handle would miss.
+    const pending = window.__rotatePending;
+    let pts;
+    if (pending && pending.mode === 'rotate' && typeof pending.angle === 'number') {
+        const cos = Math.cos(pending.angle), sin = Math.sin(pending.angle);
+        const rotatePoint = (p) => ({
+            x: pending.centerX + (p.x - pending.centerX) * cos - (p.y - pending.centerY) * sin,
+            y: pending.centerY + (p.x - pending.centerX) * sin + (p.y - pending.centerY) * cos
+        });
+        const corners = selectionHandlePoints(pending.origSel, 'rotate');
+        pts = {};
+        Object.keys(corners).forEach(id => { pts[id] = rotatePoint(corners[id]); });
+    } else {
+        pts = selectionHandlePoints(selection, selectionTransformMode);
+    }
+    // iOS Human Interface Guidelines specify a minimum 44x44pt tap target
+    // even when the visible control is smaller -- the standard pattern is
+    // an invisible, larger hit-testing region centered on the smaller
+    // visual element (the 5px-radius dot drawn in updateSelectionHandles
+    // is untouched; only this hit-test radius changes). 44pt diameter ->
+    // 22px radius from the handle's center. This intentionally diverges
+    // from findNearestVectorPoint's 14px radius (a smaller, denser set of
+    // vector edit points where a larger radius would cause more
+    // mis-hits between adjacent points) -- Resize handles are always
+    // exactly 4 or 8 points spaced across a whole selection, so a larger
+    // grab zone doesn't carry the same collision risk.
+    const radiusGrid = Math.max(1, 22 / scale);
+    let best = null, bestDist = radiusGrid;
+    Object.keys(pts).forEach(id => {
+        const p = pts[id];
+        const d = Math.hypot(p.x - x, p.y - y);
+        if (d <= bestDist) { bestDist = d; best = id; }
+    });
+    return best;
+}
+// Draws the backbone/guide line AND a small coloured marker at each stop's
+// position along it, for every gradient spline (sp.stops non-null) on the
+// active vector layer, into a dedicated overlay canvas, entirely separate
+// from the layer's own maskable render() output (see VectorLayer.render()'s
+// stops check). This mirrors industry precedent (Illustrator/Inkscape): a
+// masking or masked shape's own boundary/guide geometry is never part of
+// the rendered, exportable, maskable content -- it's a visible-only-while-
+// editing affordance. Shown only while a gradient-editing tool/mode is
+// active (mirrors updateVectorHandles' editActive gating for point-handles)
+// -- gradients are otherwise fully masked/clipped like any other vector
+// content, with no visible line or markers.
 function updateGradientBackboneOverlay() {
     const el = document.getElementById('gradientBackboneOverlay');
     if (!el) return;
@@ -4573,8 +4816,16 @@ function updateGradientBackboneOverlay() {
     el.style.display = 'block';
     el.style.width = (gridW * scale) + 'px';
     el.style.height = (gridH * scale) + 'px';
-    el.width = Math.max(1, gridW * scale);
-    el.height = Math.max(1, gridH * scale);
+    // Only touch the backing bitmap size (el.width/el.height) when it
+    // actually needs to change -- setting these properties clears the
+    // entire canvas and resets its 2D context state even when assigned
+    // the exact same numeric value it already had. This function gets
+    // called on every pointermove during a stop drag (via
+    // updateVectorHandles), so doing this unconditionally produced a
+    // visible flash/reset of the whole overlay on every drag frame.
+    const targetW = Math.max(1, gridW * scale), targetH = Math.max(1, gridH * scale);
+    if (el.width !== targetW) el.width = targetW;
+    if (el.height !== targetH) el.height = targetH;
     const ctx = el.getContext('2d');
     ctx.clearRect(0, 0, el.width, el.height);
     ctx.lineWidth = 1.5;
@@ -4591,6 +4842,29 @@ function updateGradientBackboneOverlay() {
         ctx.stroke();
     });
     ctx.setLineDash([]);
+    // Draw a small marker at each stop's position along the backbone line
+    // -- was previously only drawn on the colour bar (#gradientStopsBar),
+    // not here, so the in-between stops (anything beyond the original 2
+    // endpoint stops) had no visual indicator on the canvas itself, only
+    // in the Tools drawer. Interpolates between the spline's own start/end
+    // points using each stop's 0-1 position, matching how renderGradientFill
+    // itself only ever uses the first/last points as the gradient's anchors.
+    layer.splines.forEach(sp => {
+        if (!sp.stops || sp.points.length < 2) return;
+        const start = sp.points[0], end = sp.points[sp.points.length - 1];
+        sp.stops.forEach(s => {
+            const t = Math.max(0, Math.min(1, s.position));
+            const mx = (start.x + (end.x - start.x) * t) * scale;
+            const my = (start.y + (end.y - start.y) * t) * scale;
+            ctx.beginPath();
+            ctx.arc(mx, my, 4, 0, Math.PI * 2);
+            ctx.fillStyle = s.color;
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        });
+    });
 }
 // Turns "Delete Points" mode on/off. While on, tapping an existing point
 // with the Edit Points tool deletes it instead of grabbing it for a drag
@@ -4598,7 +4872,20 @@ function updateGradientBackboneOverlay() {
 // Extend Line, so the canvas is immediately tappable.
 function toggleVertexDeleteMode() {
     vertexDeleteMode = !vertexDeleteMode;
-    if (vertexDeleteMode) { lineExtendMode = false; closeDrawer(); }
+    if (vertexDeleteMode) { lineExtendMode = false; gradientAddStopMode = false; closeDrawer(); }
+    updateVectorHandles();
+}
+// Turns "Add Stop" mode on/off -- a third Edit Points sub-mode alongside
+// Delete Points and Extend Line, mutually exclusive with both. While on,
+// tapping a gradient spline's backbone line (see hitTestGradientLinePosition)
+// inserts a colour stop at the tapped position instead of the tool's
+// normal "grab nearest point to drag" behaviour. Only meaningful on a
+// gradient spline -- a tap on a non-gradient vector shape's line while
+// this is on simply misses (hitTestGradientLinePosition only matches
+// sp.stops-bearing splines, see startVectorEditDrag's check).
+function toggleGradientAddStopMode() {
+    gradientAddStopMode = !gradientAddStopMode;
+    if (gradientAddStopMode) { vertexDeleteMode = false; lineExtendMode = false; closeDrawer(); }
     updateVectorHandles();
 }
 // Turns "Extend Line" mode on/off. Unlike Delete Points, this isn't a
@@ -4608,9 +4895,18 @@ function toggleVertexDeleteMode() {
 // two endpoints of each open spline are shown as handles while this is on
 // (see updateVectorHandles) since those are the only valid touch targets.
 function toggleLineExtendMode() {
+    // A gradient's backbone is always exactly 2 points (start/end -- see
+    // renderGradientFill's own comment on this); extending it further
+    // would break that assumption, and switching to vpen here would just
+    // get immediately redirected back to vedit by updateToolVisibility's
+    // gradient-layer check anyway. No-op on a gradient layer instead of
+    // letting the two silently fight each other.
+    const layer = activeLayer();
+    if (layer && layer.type === 'vector' && layer.splines.some(sp => sp.stops)) return;
     lineExtendMode = !lineExtendMode;
     if (lineExtendMode) {
         vertexDeleteMode = false;
+        gradientAddStopMode = false;
         closeDrawer();
         handleToolBtn('vpen');
     }
@@ -4805,6 +5101,14 @@ function setActiveLayer(idx) {
 function updateSelectionToolsVisibility() {
     const el = document.getElementById('selectionToolsSection');
     if (el) el.style.display = (selection || hasWandSelection()) ? '' : 'none';
+    // Resize/Rotate only operate on a rectangular selection (see plan notes --
+    // Wand/Lasso mask transform is out of scope this pass), so these two rows
+    // stay hidden even when the section itself is visible for a Wand-only selection.
+    const transformRow = document.getElementById('selectionTransformRow');
+    const resampleRow = document.getElementById('selectionResampleRow');
+    const showTransform = !!selection;
+    if (transformRow) transformRow.style.display = showTransform ? '' : 'none';
+    if (resampleRow) resampleRow.style.display = showTransform ? '' : 'none';
 }
 
 function updateToolVisibility() {
@@ -4814,6 +5118,14 @@ function updateToolVisibility() {
 
     show('pixelToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip');
     show('vectorToolsSection', type === 'vector');
+    // A gradient's dedicated holder layer only ever has one purpose --
+    // holding that one gradient spline -- so drawing new, arbitrary vector
+    // shapes on it with Pen/Shape doesn't make sense there. Edit Points
+    // and Move Line stay visible (needed for Add Stop mode and
+    // repositioning the gradient's backbone line), only Pen/Shape hide.
+    const isGradientLayer = type === 'vector' && layer.splines.some(sp => sp.stops);
+    show('vpenToolBtn', !isGradientLayer);
+    show('vshapeToolBtn', !isGradientLayer);
     show('flipToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip' || type === 'reference');
     const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
@@ -4828,6 +5140,11 @@ function updateToolVisibility() {
     if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn(lastVectorTool);
     else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn(lastPixelTool);
     else if (type === 'reference' && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
+    // A gradient layer hides Pen/Shape's buttons (see isGradientLayer
+    // above) -- if one of them was already the active tool when landing
+    // here, redirect to Edit Points rather than leaving an invisible
+    // button's tool still selected with no visible way to tell.
+    else if (isGradientLayer && (currentTool === 'vpen' || currentTool === 'vshape')) handleToolBtn('vedit');
 
     // Portrait's 40x40 tiles are too small for size-adjustable/soft
     // brushwork. Safety net for entry paths that set selectedProfile
@@ -5746,6 +6063,40 @@ function commitEdit(pending) {
     }
     refreshHookedComposites();
 }
+// Selection Transform's commit path: identical pixel-diffing to commitEdit,
+// but bundles the result together with the selection bounds change (before
+// vs. after snapshot) into a single 'selectionTransform' undo entry instead
+// of pushing two separate ones. This is what makes a resize genuinely one
+// atomic undo step -- pressing undo once now reverts both the pixels and
+// the selection rect together, matching how they actually happened
+// together as one user action. Only meaningful for PixelLayer (Selection
+// Transform is scoped to raster this pass, same as the rest of this
+// feature); no-ops otherwise. before/afterSelSnap are selectionSnapshot()
+// results (see that function -- {mask, count, rect}).
+function commitEditAndSelection(pending, beforeSelSnap, afterSelSnap) {
+    if (!pending) { recordSelectionUndo(beforeSelSnap, afterSelSnap); return; }
+    const layer = findLayerById(pending.frameIndex, pending.layerId) || activeLayer();
+    if (!layer || layer.id !== pending.layerId || !(layer instanceof PixelLayer)) {
+        if (layer) layer._historyCapture = null;
+        recordSelectionUndo(beforeSelSnap, afterSelSnap);
+        return;
+    }
+    layer._historyCapture = null;
+    const changes = [];
+    for (const [key, before] of pending.before) {
+        const sep = key.indexOf(','), x = Number(key.slice(0, sep)), y = Number(key.slice(sep + 1));
+        const after = layer.pixelData[x]?.[y];
+        if (before !== after) changes.push(x, y, before, after);
+    }
+    const selChanged = beforeSelSnap && afterSelSnap && !sameSelectionSnapshot(beforeSelSnap, afterSelSnap);
+    if (!changes.length && !selChanged) return; // genuinely a no-op drag (grabbed a handle, released without moving it)
+    pushUndo({
+        type: 'selectionTransform', frameIndex: pending.frameIndex, layerId: pending.layerId, changes,
+        beforeMask: beforeSelSnap ? beforeSelSnap.mask : null, beforeCount: beforeSelSnap ? beforeSelSnap.count : 0, beforeRect: beforeSelSnap ? beforeSelSnap.rect : null,
+        afterMask: afterSelSnap ? afterSelSnap.mask : null, afterCount: afterSelSnap ? afterSelSnap.count : 0, afterRect: afterSelSnap ? afterSelSnap.rect : null
+    });
+    refreshHookedComposites();
+}
 function findLayerById(frameIndex,layerId) { const f=frames[frameIndex]; return f ? f.layers.find(l=>l.id===layerId)||null : null; }
 function applyPixelDelta(entry, forward) {
     const layer=findLayerById(entry.frameIndex,entry.layerId); if(!layer) return;
@@ -5772,6 +6123,21 @@ function applyHistoryEntry(entry, forward) {
             layer.redrawFromData();
         }
     } else if(entry.type==='pixels') applyPixelDelta(entry,forward);
+    else if(entry.type==='selectionTransform') {
+        // Selection Transform's resize/stamp needs to be one atomic undo
+        // step, not two separately-pushed entries (a 'pixels' entry from
+        // commitEdit plus a 'selection' entry from recordSelectionUndo) --
+        // pressing undo once was only reverting whichever of the two
+        // happened to be on top of the stack, leaving the pixels and the
+        // selection bounds out of sync with each other and with true
+        // document history. This applies both halves together in one call.
+        applyPixelDelta(entry,forward);
+        setSelectionRaw(
+            forward ? (entry.afterMask ? entry.afterMask.slice() : null) : (entry.beforeMask ? entry.beforeMask.slice() : null),
+            forward ? (entry.afterCount || 0) : (entry.beforeCount || 0),
+            forward ? (entry.afterRect ? {...entry.afterRect} : null) : (entry.beforeRect ? {...entry.beforeRect} : null)
+        );
+    }
     else if(entry.type==='canvasResize') restoreCanvasResizeState(forward?entry.after:entry.before);
     else if(entry.type==='selection') setSelectionRaw(forward?(entry.afterMask?entry.afterMask.slice():null):(entry.beforeMask?entry.beforeMask.slice():null),forward?(entry.afterCount||0):(entry.beforeCount||0),forward?(entry.afterRect?{...entry.afterRect}:null):(entry.beforeRect?{...entry.beforeRect}:null));
     else if(entry.type==='tree') restoreTreeState(forward?entry.after:entry.before);
@@ -5790,6 +6156,17 @@ function applyHistoryEntry(entry, forward) {
     if(openPanelName==='layers') renderLayersPanel(); updateVectorHandles(); refreshHookedComposites();
 }
 function undo() {
+    // A pending rotation (drag ended, confirm button showing, nothing
+    // pushed to the undo stack yet) is invisible to the undo system by
+    // design -- it isn't an entry undo() can see or account for. Without
+    // discarding it first, undo would change the document underneath the
+    // pending preview while the floating confirm button and CSS-rotated
+    // buffer stayed stuck showing stale state, and confirming afterward
+    // would stamp a rotation computed against pixels that no longer match
+    // what's actually on screen. Cancelling mirrors the same rule applied
+    // everywhere else a pending rotation could otherwise be silently left
+    // stranded (tool switch, new drag, hard reset).
+    if (window.__rotatePending && window.cancelRotateSelection) window.cancelRotateSelection();
     const entry=undoStack.pop(); if(!entry) return;
     applyHistoryEntry(entry,false);
     const node=entry.__historyNode;
@@ -5798,6 +6175,9 @@ function undo() {
     updateUndoRedoFabs(); if(openPanelName==='history') renderUndoHistory();
 }
 function redo(nodeOverride) {
+    // Same reasoning as undo() above -- a pending rotation must be
+    // discarded before redo changes the document underneath it.
+    if (window.__rotatePending && window.cancelRotateSelection) window.cancelRotateSelection();
     let entry=nodeOverride?nodeOverride.entry:redoStack.pop(); if(!entry) return;
     applyHistoryEntry(entry,true);
     const node=entry.__historyNode; if(node) historyCurrent=node;
@@ -6024,12 +6404,34 @@ function recordSelectionUndo(before, after) {
         beforeMask:before.mask, beforeCount:before.count, beforeRect:before.rect,
         afterMask:after.mask, afterCount:after.count, afterRect:after.rect});
 }
+// The single central point every selection-restoring path funnels through
+// -- undo/redo (via the entry.type==='selection' branch), commitRectSelection,
+// a fresh Wand selection, deselect, etc. As of V1_40, also refreshes the
+// selection box outline and the Resize/Rotate handle overlay here, since
+// both previously only got refreshed by whichever specific caller happened
+// to call them directly -- undo/redo went through setSelectionRaw without
+// either, which is why the box/handles were staying stuck at their
+// pre-undo position and size instead of tracking the restored selection.
 function setSelectionRaw(mask, count, rect) {
     wandSelection = mask;
     wandSelectionCount = count || 0;
     selection = rect || null;
+    // A transform mode (Resize Lock/Free/Rotate) with nothing selected to
+    // transform is a meaningless, stale combination -- this is what was
+    // letting selectionTransformMode stay stuck as 'rotate' after an undo
+    // wiped the selection out from under it (cancelling a pending rotation
+    // deliberately doesn't reset the mode itself, so nothing else was
+    // clearing it either), which then blocked every subsequent tap via
+    // rotate's own "don't discard an in-progress selection" no-op-on-miss
+    // logic -- except there was no longer a selection to protect.
+    if (!selection && !wandSelectionCount && selectionTransformMode) {
+        selectionTransformMode = null;
+        updateSelectionTransformButtons();
+    }
     updateSelectionOverlay();
     updateSelectionToolsVisibility();
+    updateSelectionBox();
+    updateSelectionHandles();
 }
 function selectionBoundsFromMask(mask) {
     if (!mask) return null;
@@ -6129,10 +6531,29 @@ function resetSelectionState(){
     wandSelectionCount = 0;
     selection = null;
     movingSelection = false;
+    selectionTransformMode = null;
+    window.__selTransformDrag = null;
+    window.__rotatePending = null;
+    hideFloatingBuffer();
+    // This hard-reset path bypasses endSelTransformDrag's/cancelRotate's
+    // own cleanup entirely (no undo commit, by design -- see this
+    // function's existing convention), so if a rotate drag was abandoned
+    // mid-flight (dragging or pending confirmation), its CSS rotation
+    // needs clearing here explicitly or it would persist on these shared
+    // elements into whatever uses them next, and the confirm button needs
+    // hiding directly since finishRotatePending is never called.
+    const fb = document.getElementById('floatBuffer');
+    if (fb) fb.style.transform = '';
+    const box = document.getElementById('selectionBox');
+    if (box) box.style.transform = '';
+    const rotateBtn = document.getElementById('rotateConfirmBtn');
+    if (rotateBtn) rotateBtn.style.display = 'none';
     const btn = document.getElementById('moveSelBtn');
     if (btn) btn.classList.remove('active');
     updateSelectionOverlay();
     updateSelectionToolsVisibility();
+    updateSelectionTransformButtons();
+    updateSelectionHandles();
 }
 function setWandTolerance(v){ wandTolerance=Math.max(0,Math.min(100,parseInt(v,10)||0)); const l=document.getElementById('wandToleranceLabel'); if(l)l.textContent=wandTolerance; }
 function toggleWandMatch(){ wandFuzzy=!wandFuzzy; const b=document.getElementById('wandMatchBtn'); if(b)b.textContent=wandFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('wandTolerance'); if(r)r.disabled=!wandFuzzy; }
@@ -6237,16 +6658,69 @@ function updateSelectionBox() {
 // Switches the Select tool between "draw a new rectangle" and "drag to move the existing selection" modes.
 function toggleMoveSelection() {
     if (!selection) return;
+    commitInProgressTransform();
+    selectionTransformMode = null;
+    updateSelectionTransformButtons();
     movingSelection = !movingSelection;
     document.getElementById('moveSelBtn').classList.toggle('active', movingSelection);
 }
 // Clears the current selection and turns off move-selection mode.
 function deselect() {
-    selection = null; movingSelection = false; clearWandSelection();
+    commitInProgressTransform();
+    selection = null; movingSelection = false; selectionTransformMode = null; clearWandSelection();
     const btn = document.getElementById('moveSelBtn');
     if (btn) btn.classList.remove('active');
+    updateSelectionTransformButtons();
+    updateSelectionHandles();
     updateSelectionBox();
 }
+// If a Resize/Rotate drag buffer is still live (person switched mode or tool
+// mid-drag rather than releasing normally), commit it at its current size/
+// position first -- mirrors the "commit edit when switching" requirement so
+// a half-finished transform is never silently discarded. No-op if nothing's
+// in progress.
+function commitInProgressTransform() {
+    if (window.__selTransformDrag) endSelTransformDrag();
+    // A pending rotate (drag ended, confirm button showing, nothing
+    // stamped yet) is discarded rather than auto-committed if the person
+    // switches tool/mode away from it -- silently stamping on an
+    // unrelated switch would defeat the entire point of requiring an
+    // explicit confirm tap. window.cancelRotateSelection is the same
+    // window-exposed bridge the floating button's own onclick uses.
+    if (window.__rotatePending && window.cancelRotateSelection) window.cancelRotateSelection();
+}
+// Turns one of the three transform modes on (forcing the other two and
+// Move Sel off) or off if the same mode is tapped again. Each mode gets its
+// own handle set/color -- see updateSelectionHandles -- rather than one
+// generic "Transform" affordance, per the person's explicit design.
+function toggleSelectionTransformMode(mode) {
+    if (!selection) return;
+    commitInProgressTransform();
+    movingSelection = false;
+    const moveBtn = document.getElementById('moveSelBtn');
+    if (moveBtn) moveBtn.classList.remove('active');
+    selectionTransformMode = (selectionTransformMode === mode) ? null : mode;
+    // updateSelectionHandles() only ever renders while currentTool ===
+    // 'select' -- without this, turning a mode on while e.g. Pencil was
+    // active would light up the button but never actually show a handle
+    // to grab, since the overlay stays gated off for every other tool.
+    if (selectionTransformMode && currentTool !== 'select') handleToolBtn('select');
+    updateSelectionTransformButtons();
+    updateSelectionHandles();
+}
+function updateSelectionTransformButtons() {
+    const map = { lockRatio: 'selResizeLockBtn', free: 'selResizeFreeBtn', rotate: 'selRotateBtn' };
+    Object.keys(map).forEach(m => {
+        const btn = document.getElementById(map[m]);
+        if (btn) btn.classList.toggle('active', selectionTransformMode === m);
+    });
+}
+// Only 'nearest' actually does anything this pass -- see
+// resampleFloatingBuffer. The dropdown's other options are disabled in the
+// HTML itself, so this setter never receives them, but stays a real
+// function (rather than inlined) so a future resample method just needs
+// resampleFloatingBuffer's branch filled in, not new wiring here.
+function setSelectionResampleMethod(v) { selectionResampleMethod = v; }
 // Flips the active layer left-right. Pixel layers flip their actual data
 // (undoable); reference layers flip visually via CSS transform.
 function flipActiveLayerH() {
@@ -6363,6 +6837,95 @@ function stampFloatingBuffer(layer, buf, sel) {
 function hideFloatingBuffer() {
     const fb = document.getElementById('floatBuffer');
     if (fb) fb.style.display = 'none';
+}
+// Resamples a cut selection buffer (buf[x][y], original w x h) to a new
+// pixel size (newW x newH), returning a fresh buffer of that new size.
+// Only 'nearest' is implemented this pass -- selectionResampleMethod's
+// other options are disabled in the dropdown itself, so this never
+// receives them, but stays a switch (not a bare nearest-neighbour
+// function) so a future method is a new case here, not new call-site work.
+// Negative newW/newH are allowed (Resize Lock Ratio's explicit flip
+// behaviour, per the person's decision) -- handled by mirroring the source
+// read rather than clamping to a minimum size.
+// The Rotate transform's resample step, sibling to resampleFloatingBuffer.
+// Rotates buf (original, unrotated cut selection) by angle radians and
+// returns a new buffer sized to the rotated content's full bounding box --
+// per the person's explicit decision, the selection grows to fit the
+// rotated result rather than clipping anything that no longer fits the
+// original rect. Uses inverse-rotation + nearest-neighbour sampling (same
+// blocky, no-smoothing philosophy as resampleFloatingBuffer): for each
+// destination cell, rotate its coordinate backward by -angle into the
+// original buffer's local space and sample the nearest source cell, or
+// leave it empty if that lands outside the original content entirely
+// (the corners of the bounding box, for any non-multiple-of-90 angle).
+function resampleRotatedBuffer(buf, angle) {
+    const srcW = buf.length, srcH = buf[0] ? buf[0].length : 0;
+    if (!srcW || !srcH) return { out: [[]], offsetX: 0, offsetY: 0 };
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const cx = srcW / 2, cy = srcH / 2;
+    // Rotate all 4 corners around the center to find the new bounding box.
+    const corners = [[0, 0], [srcW, 0], [0, srcH], [srcW, srcH]].map(([x, y]) => ({
+        x: cx + (x - cx) * cos - (y - cy) * sin,
+        y: cy + (x - cx) * sin + (y - cy) * cos
+    }));
+    const minX = Math.min(...corners.map(p => p.x)), maxX = Math.max(...corners.map(p => p.x));
+    const minY = Math.min(...corners.map(p => p.y)), maxY = Math.max(...corners.map(p => p.y));
+    const outW = Math.max(1, Math.round(maxX - minX));
+    const outH = Math.max(1, Math.round(maxY - minY));
+    const out = [];
+    // Inverse rotation to map destination -> source.
+    const icos = Math.cos(-angle), isin = Math.sin(-angle);
+    for (let x = 0; x < outW; x++) {
+        out.push([]);
+        for (let y = 0; y < outH; y++) {
+            // Destination cell's position relative to the (rotated)
+            // bounding box's own center, which coincides with the
+            // original buffer's center (rotation is around the center by
+            // construction).
+            const dx = (x + minX + 0.5) - cx, dy = (y + minY + 0.5) - cy;
+            const sx = Math.floor(cx + dx * icos - dy * isin);
+            const sy = Math.floor(cy + dx * isin + dy * icos);
+            out[x].push((sx >= 0 && sx < srcW && sy >= 0 && sy < srcH) ? buf[sx][sy] : null);
+        }
+    }
+    // offsetX/offsetY: how far the new bounding box's top-left sits from
+    // the original selection's top-left, in the original buffer's local
+    // coordinate space -- the caller adds this to the original selection's
+    // grid position to get the final destSel.
+    return { out, offsetX: minX, offsetY: minY };
+}
+function resampleFloatingBuffer(buf, newW, newH, method) {
+    const srcW = buf.length, srcH = buf[0] ? buf[0].length : 0;
+    const outW = Math.max(1, Math.abs(Math.round(newW)));
+    const outH = Math.max(1, Math.abs(Math.round(newH)));
+    const flipX = newW < 0, flipY = newH < 0;
+    const out = [];
+    for (let x = 0; x < outW; x++) {
+        out.push([]);
+        for (let y = 0; y < outH; y++) {
+            // nearest-neighbour: map each destination cell back to the
+            // closest source cell -- deliberately blocky, matching the
+            // app's pixel-art-first rendering philosophy (see handoff doc
+            // section 3) rather than smoothing/blending source pixels.
+            let sx = Math.min(srcW - 1, Math.floor((x / outW) * srcW));
+            let sy = Math.min(srcH - 1, Math.floor((y / outH) * srcH));
+            if (flipX) sx = srcW - 1 - sx;
+            if (flipY) sy = srcH - 1 - sy;
+            out[x].push((srcW && srcH) ? buf[sx][sy] : null);
+        }
+    }
+    return out;
+}
+// Writes a resized selection buffer permanently into the layer. Unlike
+// stampFloatingBuffer (a straight move where the buffer's own size always
+// equals the destination sel's size), this is the resize-drop path: buf is
+// already resampled to sel's new dimensions by the time this is called
+// (see endSelTransformDrag), so the 1:1 x/y-offset mapping still holds --
+// this function doesn't do any resizing math itself, only the write.
+function stampResizedBuffer(layer, buf, sel) {
+    if (!isPixelLike(layer)) return;
+    const w = buf.length, h = buf[0] ? buf[0].length : 0;
+    for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) { const c = buf[x][y]; if (c) layer.plot(sel.x0 + x, sel.y0 + y, c); }
 }
 
 /* ============================================================
@@ -6527,6 +7090,224 @@ function commitGradientSpline(layer, points) {
     updateVectorHandles();
     if (openPanelName === 'layers') renderLayersPanel();
 }
+// Linearly blends two #rrggbb hex colours at t (0=a, 1=b). Gradient stop
+// colours are always stored as #rrggbb (see commitGradientSpline's
+// sourcing from recentSwatchColors/selectedColor), so this only needs to
+// handle that one format, not the fuller rgb()/rgba() parsing rgbToHex
+// handles elsewhere.
+function interpolateHexColor(a, b, t) {
+    const pa = a.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    const pb = b.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (!pa || !pb) return a;
+    const mix = (i) => Math.round(parseInt(pa[i], 16) + (parseInt(pb[i], 16) - parseInt(pa[i], 16)) * t);
+    const hex = (v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0');
+    return '#' + hex(mix(1)) + hex(mix(2)) + hex(mix(3));
+}
+// Returns the active gradient spline (the one with sp.stops != null) on a
+// vector layer, or null. Only one gradient spline exists per layer at a
+// time -- commitGradientSpline already filters out any prior gradient
+// spline when a new one is drawn, so "the" gradient is unambiguous.
+function activeGradientSpline(layer) {
+    if (!layer || layer.type !== 'vector') return null;
+    return layer.splines.find(sp => sp.stops) || null;
+}
+// Adds a new stop to the active gradient spline at the given position
+// (0-1 along the backbone line), shared by both the colour-bar tap and the
+// backbone-line tap -- see toolRow-gradientStopsBar and the backbone
+// overlay's tap handler. Colour source is gradientNewStopColorSource:
+// 'selected' (default, per explicit direction) uses selectedColor;
+// 'interpolate' blends the two stops position falls between. Pushes one
+// 'replaceSplines' undo entry, the same type commitGradientSpline already
+// uses for the whole-spline-replace case -- adding a stop is exactly that
+// kind of change (before/after full spline snapshots), not a new undo
+// shape.
+function insertGradientStop(position) {
+    const layer = activeLayer();
+    const sp = activeGradientSpline(layer);
+    if (!sp) return;
+    position = Math.max(0, Math.min(1, position));
+    const sorted = sp.stops.slice().sort((a, b) => a.position - b.position);
+    let color;
+    if (gradientNewStopColorSource === 'interpolate') {
+        // Find the two stops position falls between (sorted already
+        // guarantees left <= position <= right for an in-range position).
+        let left = sorted[0], right = sorted[sorted.length - 1];
+        for (let i = 0; i < sorted.length - 1; i++) {
+            if (sorted[i].position <= position && sorted[i + 1].position >= position) { left = sorted[i]; right = sorted[i + 1]; break; }
+        }
+        const span = right.position - left.position;
+        const t = span > 0 ? (position - left.position) / span : 0;
+        color = interpolateHexColor(left.color, right.color, t);
+    } else {
+        color = selectedColor || '#000000';
+    }
+    const before = layer.splines.map(cloneSpline);
+    sp.stops = sp.stops.concat([{ position, color }]);
+    const after = layer.splines.map(cloneSpline);
+    pushUndo({ type: 'replaceSplines', frameIndex: activeFrameIndex, layerId: layer.id, before, after });
+    layer.layoutCSS();
+    refreshHookedComposites();
+    renderGradientStopsBar();
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+// Deletes a gradient stop by its index into sp.stops (not sorted-by-
+// position order -- callers pass the same index hitTestGradientStop/
+// hitTestGradientStopsBarMarker already return). Blocked below 2 stops --
+// renderGradientFill itself requires at least 2 to render anything (see
+// its own `sp.stops.length < 2` check), and unlike deleteVectorPoint's
+// regular-point case (which removes the whole spline once no points are
+// left), a gradient spline still needs its 2 backbone points regardless of
+// stop count, so there's no equivalent "delete the whole thing" fallback
+// here -- 2 stops is simply the floor.
+function deleteGradientStop(sp, stopIndex) {
+    const layer = activeLayer();
+    if (!layer || !sp || !sp.stops || stopIndex < 0 || stopIndex >= sp.stops.length) return;
+    if (sp.stops.length <= 2) return;
+    const before = layer.splines.map(cloneSpline);
+    sp.stops = sp.stops.filter((_, i) => i !== stopIndex);
+    const after = layer.splines.map(cloneSpline);
+    pushUndo({ type: 'replaceSplines', frameIndex: activeFrameIndex, layerId: layer.id, before, after });
+    layer.layoutCSS();
+    refreshHookedComposites();
+    renderGradientStopsBar();
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+// Shows/hides and redraws the gradient stops colour bar (#gradientStopsBar,
+// inside vectorToolsSection's vectorEditSubModeRow area in the Tools
+// drawer -- NOT the Gradient tool's own drawing section, since that
+// section is hidden once the active layer becomes the gradient's vector
+// holder layer, which is exactly when stop-editing actually happens) -- a
+// CSS linear-gradient background matching the spline's actual stops, plus
+// small marker divs at each stop's position so existing stops are visible
+// (not yet draggable or deletable this pass -- see the roadmap's "add
+// only for now" scoping). Same gating condition updateGradientBackboneOverlay
+// already uses for when gradient editing is actually active, so the bar
+// and the on-canvas line show/hide together.
+function renderGradientStopsBar() {
+    const row = document.getElementById('gradientStopsBarRow');
+    const bar = document.getElementById('gradientStopsBar');
+    if (!row || !bar) return;
+    const layer = activeLayer();
+    const isVectorLayer = layer && layer.type === 'vector';
+    const gradientEditActive = isVectorLayer && (currentTool === 'vgradient' || ((currentTool === 'vedit' || currentTool === 'vmove') && layer.splines.some(sp => sp.stops)));
+    const sp = gradientEditActive ? activeGradientSpline(layer) : null;
+    if (!sp) { row.style.display = 'none'; return; }
+    row.style.display = '';
+    const sorted = sp.stops.slice().sort((a, b) => a.position - b.position);
+    const cssStops = sorted.map(s => s.color + ' ' + (Math.max(0, Math.min(1, s.position)) * 100) + '%').join(', ');
+    bar.style.background = 'linear-gradient(to right, ' + cssStops + ')';
+    bar.innerHTML = '';
+    sorted.forEach(s => {
+        const marker = document.createElement('div');
+        marker.style.cssText = 'position:absolute;top:-4px;bottom:-4px;width:2px;background:#fff;box-shadow:0 0 0 1px #000;pointer-events:none;';
+        marker.style.left = 'calc(' + (Math.max(0, Math.min(1, s.position)) * 100) + '% - 1px)';
+        bar.appendChild(marker);
+    });
+}
+// Converts a client-x position over the colour bar into a 0-1 gradient
+// position, clamped to the bar's own width. Shared by both the insert
+// path (handleGradientStopsBarPointerDown, when nothing existing is
+// grabbed) and the drag path (handleGradientStopsBarPointerMove).
+function gradientStopsBarPositionFromClientX(clientX) {
+    const bar = document.getElementById('gradientStopsBar');
+    if (!bar) return 0;
+    const rect = bar.getBoundingClientRect();
+    return rect.width > 0 ? Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) : 0;
+}
+// Finds the index (into sp.stops) of the existing stop marker nearest a
+// client-x position over the colour bar, within a touch radius -- the
+// bar's own equivalent of hitTestGradientStop (which works in canvas grid
+// coordinates; this works in the bar's own screen-pixel width instead,
+// since the bar isn't grid-scaled).
+function hitTestGradientStopsBarMarker(sp, clientX) {
+    const bar = document.getElementById('gradientStopsBar');
+    if (!bar || !sp || !sp.stops) return -1;
+    const rect = bar.getBoundingClientRect();
+    if (rect.width <= 0) return -1;
+    const threshold = 12; // screen px -- generous grab zone for a small marker, matches the ~22px-radius convention used elsewhere for small handles
+    let best = -1, bestDist = threshold;
+    sp.stops.forEach((s, i) => {
+        const markerX = rect.left + Math.max(0, Math.min(1, s.position)) * rect.width;
+        const d = Math.abs(clientX - markerX);
+        if (d <= bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+}
+// Bar drag state, module-level since it's driven by addEventListener
+// callbacks outside setupDrawingEvents' closure (the bar isn't part of the
+// canvas's own pointer-event pipeline) -- separate from every canvas-side
+// drag state (g.transformDrag, g.vecStopDragTarget, etc.), which all live
+// on the shared per-touch-session g object instead.
+let gradientStopsBarDrag = null;
+function handleGradientStopsBarPointerDown(e) {
+    const layer = activeLayer();
+    const sp = activeGradientSpline(layer);
+    if (!sp) return;
+    const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+    const stopIndex = hitTestGradientStopsBarMarker(sp, clientX);
+    if (stopIndex !== -1) {
+        // Delete Points mode deletes the tapped stop instead of grabbing
+        // it for a drag -- reuses the same vertexDeleteMode toggle the
+        // on-canvas line already checks (see startVectorEditDrag), so both
+        // surfaces agree on what mode is currently active rather than the
+        // bar needing its own separate delete affordance.
+        if (vertexDeleteMode) { deleteGradientStop(sp, stopIndex); return; }
+        // Grabbed an existing stop -- start a drag-to-reposition rather
+        // than inserting a new one. Mirrors the on-canvas line's own
+        // hit-test-existing-first logic (see startVectorEditDrag's
+        // gradientAddStopMode branch) so both surfaces behave identically:
+        // a press-drag-release gesture that starts on an existing stop
+        // moves it, rather than always inserting a duplicate at the
+        // release point (the reported bug).
+        gradientStopsBarDrag = { sp, stopIndex, layer, beforeSplines: layer.splines.map(cloneSpline) };
+        if (e.cancelable) e.preventDefault();
+        return;
+    }
+    // Nothing grabbed -- treat this as a plain tap-to-insert, same as
+    // before the delete-mode wiring was added. The bar itself is only
+    // ever visible while a gradient is actively being edited (see
+    // renderGradientStopsBar's own gating) -- unlike the canvas line,
+    // which shares the Edit Points tool with Delete Pts/Ext Line and so
+    // needs the explicit Add Stop toggle to disambiguate a tap, the bar
+    // has no other competing interpretation for "tap empty space" once
+    // it's showing at all. Gating this behind gradientAddStopMode too was
+    // a regression -- it broke inserting on the bar entirely unless the
+    // toggle had also been separately pressed, which was never required
+    // before. Not tracked as a drag (gradientStopsBarDrag stays null), so
+    // pointerup below just no-ops for this gesture.
+    insertGradientStop(gradientStopsBarPositionFromClientX(clientX));
+}
+function handleGradientStopsBarPointerMove(e) {
+    if (!gradientStopsBarDrag) return;
+    const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+    const { sp, stopIndex } = gradientStopsBarDrag;
+    sp.stops[stopIndex].position = gradientStopsBarPositionFromClientX(clientX);
+    const layer = activeLayer();
+    if (layer) { layer.layoutCSS(); if (activeLayerHasLiveHook()) refreshHookedComposites(); }
+    renderGradientStopsBar();
+    updateGradientBackboneOverlay();
+    if (e.cancelable) e.preventDefault();
+}
+function handleGradientStopsBarPointerUp(e) {
+    if (!gradientStopsBarDrag) return;
+    const { sp, layer, beforeSplines } = gradientStopsBarDrag;
+    if (layer) {
+        const afterSplines = layer.splines.map(cloneSpline);
+        // One undo entry per completed drag, matching the on-canvas
+        // version and the person's explicit direction -- not per
+        // intermediate movement.
+        if (JSON.stringify(beforeSplines) !== JSON.stringify(afterSplines)) {
+            pushUndo({ type: 'replaceSplines', frameIndex: activeFrameIndex, layerId: layer.id, before: beforeSplines, after: afterSplines });
+        }
+    }
+    gradientStopsBarDrag = null;
+    renderGradientStopsBar();
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+document.getElementById('gradientStopsBar')?.addEventListener('pointerdown', (e) => uiAction(() => handleGradientStopsBarPointerDown(e)));
+document.getElementById('gradientStopsBar')?.addEventListener('pointermove', (e) => uiAction(() => handleGradientStopsBarPointerMove(e)));
+document.getElementById('gradientStopsBar')?.addEventListener('pointerup', (e) => uiAction(() => handleGradientStopsBarPointerUp(e)));
+document.getElementById('gradientStopsBar')?.addEventListener('pointercancel', (e) => uiAction(() => handleGradientStopsBarPointerUp(e)));
 
 // Finds the nearest existing spline point on a vector layer, for the
 // Edit Points tool. Returns null if nothing is within the touch radius.
@@ -6592,6 +7373,49 @@ function findNearestSpline(layer, x, y) {
     });
     const threshold = Math.max(1, 14 / scale); // same ~14 screen px touch target as point hit-testing
     return (best && bestDist <= threshold) ? best : null;
+}
+// Projects a tap onto a gradient spline's backbone line and returns the
+// 0-1 position along it (start=0, end=1), or null if the tap missed the
+// line by more than the usual touch threshold. Gradient splines always
+// have exactly 2 points (start/end anchors -- see renderGradientFill's own
+// comment on this), so this is a single-segment projection, simpler than
+// findNearestSpline's general multi-segment case. Used by the Add Stop
+// sub-mode (see toggleGradientAddStopMode) to convert an on-canvas tap on
+// the backbone line into the same 0-1 position insertGradientStop expects.
+function hitTestGradientLinePosition(sp, x, y) {
+    if (!sp || !sp.points || sp.points.length < 2) return null;
+    const a = sp.points[0], b = sp.points[sp.points.length - 1];
+    const abx = b.x - a.x, aby = b.y - a.y;
+    const lenSq = abx * abx + aby * aby;
+    if (lenSq === 0) return null;
+    let t = ((x - a.x) * abx + (y - a.y) * aby) / lenSq;
+    const clampedT = Math.max(0, Math.min(1, t));
+    const cx = a.x + clampedT * abx, cy = a.y + clampedT * aby;
+    const dist = Math.hypot(x - cx, y - cy);
+    const threshold = Math.max(1, 14 / scale); // same touch target as findNearestSpline
+    return dist <= threshold ? clampedT : null;
+}
+// Finds the index (into sp.stops, NOT the sorted order) of the existing
+// stop marker nearest a tapped/pressed point on the backbone line, within
+// a touch radius -- used to distinguish "grab this stop to drag it" from
+// "insert a new stop here" in the same gesture. Same 22px/44pt-style
+// generous radius the Resize/Rotate handles use (see selectionHandleHitTest's
+// iOS HIG comment) rather than the tighter 14px vector-point radius, since
+// stop markers are drawn small (4px) and need an equally forgiving grab
+// zone. Returns the array index directly (not the stop object) so the
+// caller can safely mutate sp.stops[index].position during a drag.
+function hitTestGradientStop(sp, x, y) {
+    if (!sp || !sp.points || sp.points.length < 2 || !sp.stops) return -1;
+    const a = sp.points[0], b = sp.points[sp.points.length - 1];
+    const threshold = Math.max(1, 22 / scale);
+    let best = -1, bestDist = threshold;
+    sp.stops.forEach((s, i) => {
+        const t = Math.max(0, Math.min(1, s.position));
+        const mx = a.x + (b.x - a.x) * t, my = a.y + (b.y - a.y) * t;
+        const d = Math.hypot(x - mx, y - my);
+        if (d <= bestDist) { bestDist = d; best = i; }
+    });
+    return best;
 }
 
 /* ============================================================
@@ -6824,6 +7648,17 @@ let lastNonTransparentColor = '#000000';
 // when switching off the transparent/eraser selection) since a gradient
 // specifically wants *two* recent colours, not just the latest one.
 let recentSwatchColors = ['#000000', '#ffffff'];
+// Controls what colour a newly-added gradient stop starts with (see
+// insertGradientStop): 'selected' uses the currently selected swatch
+// colour (the default, per explicit direction), 'interpolate' blends the
+// two neighbouring stops' colours at the new stop's position instead.
+// Toggle lives in the Customisation panel (see customisationSection-gradient).
+let gradientNewStopColorSource = 'selected';
+// Persists this in its own small key, same pattern as
+// pixelAppSettingsCheckBoard -- a real display/behaviour preference worth
+// keeping across sessions, not tied to any one project's saved data.
+try { const savedGs = localStorage.getItem('pixelAppGradientNewStopColorSource'); if (savedGs === 'selected' || savedGs === 'interpolate') gradientNewStopColorSource = savedGs; } catch(e) {}
+function saveGradientNewStopColorSource() { try { localStorage.setItem('pixelAppGradientNewStopColorSource', gradientNewStopColorSource); } catch(e) {} }
 // Selects a colour (or transparency) as the current drawing colour.
 function handleSwatchClick(c, isT = false) {
     selectedColor = isT ? null : c;
@@ -6868,11 +7703,28 @@ function handleToolBtn(t) {
     // was remembered before it.
     if (PIXEL_ONLY_TOOL_IDS.includes(t)) lastPixelTool = t;
     else if (VECTOR_ONLY_TOOL_IDS.includes(t)) lastVectorTool = t;
-    if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); return; }
+    // Leaving the Select tool mid-transform-drag should finish the drag at
+    // its current state rather than strand a half-resized floating buffer
+    // -- same "commit when switching" rule as switching between transform
+    // modes (toggleSelectionTransformMode) or into Move Sel.
+    // Leaving the Select tool should turn off Selection Transform mode
+    // entirely, not just commit an in-progress drag -- these are two
+    // different things: commitInProgressTransform() only has anything to
+    // do while a handle is actively being dragged (window.__selTransformDrag
+    // set); selectionTransformMode can be toggled on (handles visible,
+    // nothing being dragged yet) and needs its own reset here, or the
+    // handle overlay and button .active state both stay stuck on after
+    // switching to an unrelated tool.
+    if (currentTool === 'select' && t !== 'select') {
+        commitInProgressTransform();
+        selectionTransformMode = null;
+        updateSelectionTransformButtons();
+    }
+    if (window.pixelToolDefs && window.pixelToolDefs[t]) { window.selectPixelTool(t); updateSelectionHandles(); return; }
     currentTool = t;
     if (selectedColor === null && APPLY_LAST_COLOUR_TOOLS.includes(t)) selectedColor = lastNonTransparentColor;
     if(t === 'colorToAlpha'){ colorToAlphaTarget=null; updateColorToAlphaTargetLabel(); }
-        updateUI(); updateToolVisibility(); updateVectorHandles();
+        updateUI(); updateToolVisibility(); updateVectorHandles(); updateSelectionHandles();
 }
 
 // Refreshes which swatch/tool button shows as "selected" to match current state.
@@ -7310,14 +8162,475 @@ function setupDrawingEvents() {
         g.selDragOrigin = null;
     };
 
+    // -- Resize (Lock Ratio) / Resize (Free) / Rotate: drag a handle to
+    //    transform the current rectangular selection's pixels, Paint.NET
+    //    style. Mirrors startSelectionDrag's move-buffer approach -- cut
+    //    into the floating preview canvas on grab, live-update the preview
+    //    only (cheap CSS stretch, no per-pixel work) during the drag, then
+    //    resample and stamp once on release. Rotate is not implemented
+    //    this pass (see plan notes -- corner handles render, but a rotate
+    //    drag currently no-ops rather than pretending to work).
+    // window.__selTransformDrag mirrors g.transformDrag so
+    // commitInProgressTransform() (a top-level function, outside this
+    // closure) can detect and finish an in-progress drag when the person
+    // switches tool/mode mid-drag, without needing g itself exposed.
+    const startSelTransformDrag = (x, y) => {
+        if (!selection || !selectionTransformMode) return;
+        const handle = selectionHandleHitTest(x, y);
+        if (!handle) { g.transformDrag = null; window.__selTransformDrag = null; return; }
+        // A pending rotate (drag ended, confirm button showing, original
+        // pixels still sitting cut/cleared in layer.pixelData -- only
+        // visible via the CSS-rotated floating buffer) must be resolved
+        // before starting any new drag here. Without this, cutSelectionBuffer
+        // below would cut from already-cleared pixel data, silently
+        // destroying the pending rotation's content. Only actually
+        // grabbing a handle (confirmed above) triggers this -- a missed
+        // tap must NOT cancel the pending rotation, since that would be
+        // exactly the same "stray touch silently discards work" problem
+        // this whole pending-confirmation model exists to prevent. Only
+        // an actual new-handle grab, the explicit cancel/confirm buttons,
+        // or switching tools/modes (each an unambiguous "I'm done with
+        // this" signal) may discard a pending rotate.
+        // Capture the pending rotation's angle BEFORE cancelling it --
+        // cancelRotateSelection() resets the CSS transform to zero as
+        // part of its cleanup, and the drag below was about to start
+        // fresh from angle:0 with startAngle computed against the
+        // pointer's current position (which visually still lines up with
+        // the *previous* rotated position). Without carrying the old
+        // angle forward as a base, the result was a visible snap back to
+        // the unrotated position the instant a second drag began, before
+        // any new motion had actually happened -- the reported bug.
+        const pendingAngle = (window.__rotatePending && window.__rotatePending.mode === 'rotate') ? window.__rotatePending.angle : 0;
+        if (window.__rotatePending && window.cancelRotateSelection) window.cancelRotateSelection();
+        const layer = activeLayer();
+        if (!isPixelLike(layer)) { g.transformDrag = null; window.__selTransformDrag = null; return; }
+        // Rotate shares this same cut/beginEdit/showFloatingBuffer setup
+        // with Resize -- only the live-drag math (angle instead of
+        // width/height) and the commit step (rotate-and-resample instead
+        // of resize-and-resample) differ, both handled further down in
+        // updateSelTransformDrag/endSelTransformDrag via td.mode.
+        // g.selectionBefore is the "before" half of the single atomic
+        // selectionTransform undo entry -- endSelTransformDrag reads it
+        // directly and passes it to commitEditAndSelection alongside the
+        // post-drag snapshot (see that function). It also clears it
+        // itself when done, so the pointerup handler's separate
+        // recordSelectionUndo check correctly no-ops for this gesture
+        // instead of pushing a second, redundant entry.
+        g.selectionBefore = selectionSnapshot();
+        const sel = { ...selection };
+        // beginEdit() MUST run before cutSelectionBuffer, not after --
+        // cutSelectionBuffer clears the original selection's pixels via
+        // layer.plot(x, y, null), and those writes only get captured for
+        // undo if layer._historyCapture is already set up when they
+        // happen. This was the actual "stamping not covered by undo/redo"
+        // bug: beginEdit() used to run after the cut, so the "erase the
+        // old pixels" half of a resize was invisible to the undo system
+        // entirely -- only the final stamp (in endSelTransformDrag) got
+        // tracked, so undo could restore old colors at the *new* stamped
+        // position but never restored what used to sit at the *old*
+        // position outside the new selection's bounds. Matches
+        // startSelectionDrag's own (correct) ordering for the Move Sel
+        // path, which this should have mirrored from the start.
+        const snap = beginEdit();
+        const buf = cutSelectionBuffer(layer, sel);
+        // For rotate: capture the pointer's starting angle relative to the
+        // selection's center, so the live drag can compute how far the
+        // pointer has swept since grab (angleDelta), not an absolute
+        // angle -- same "measure from a captured start" pattern the
+        // existing Reference-layer pinch/rotate gesture already uses
+        // (g.xform's type:'pinch' case, startRotation).
+        const cx = (sel.x0 + sel.x1 + 1) / 2, cy = (sel.y0 + sel.y1 + 1) / 2;
+        const startAngle = Math.atan2(y - cy, x - cx);
+        g.transformDrag = { handle, origSel: sel, buf, snap, mode: selectionTransformMode, centerX: cx, centerY: cy, startAngle, angle: pendingAngle, baseAngle: pendingAngle };
+        window.__selTransformDrag = g.transformDrag;
+        showFloatingBuffer(buf, sel.x0, sel.y0);
+        // If this drag is continuing a previously-pending rotation
+        // (pendingAngle !== 0), apply that rotation to the freshly-shown
+        // buffer immediately -- otherwise there's a one-frame flash of the
+        // unrotated buffer between grab and the first pointermove, since
+        // showFloatingBuffer itself only positions the buffer and never
+        // sets a CSS rotation.
+        if (pendingAngle) {
+            const fb0 = document.getElementById('floatBuffer');
+            if (fb0) { fb0.style.transformOrigin = '50% 50%'; fb0.style.transform = 'rotate(' + (pendingAngle * 180 / Math.PI) + 'deg)'; }
+        }
+    };
+    // Computes the live preview rect for the drag so far: which corner is
+    // anchored (opposite the grabbed handle) and how far the grabbed handle
+    // has moved. Lock Ratio scales both axes together (using whichever axis
+    // moved further, so the drag feels natural regardless of direction);
+    // Free scales whatever the grabbed handle actually controls (edge
+    // handles only affect their own axis).
+    const computeTransformPreviewRect = (x, y) => {
+        const td = g.transformDrag; const sel = td.origSel;
+        const origW = sel.x1 - sel.x0 + 1, origH = sel.y1 - sel.y0 + 1;
+        // Anchor = the point that stays fixed while dragging this handle.
+        const anchor = {
+            nw: { x: sel.x1 + 1, y: sel.y1 + 1 }, ne: { x: sel.x0, y: sel.y1 + 1 },
+            sw: { x: sel.x1 + 1, y: sel.y0 }, se: { x: sel.x0, y: sel.y0 },
+            n: { x: null, y: sel.y1 + 1 }, s: { x: null, y: sel.y0 },
+            w: { x: sel.x1 + 1, y: null }, e: { x: sel.x0, y: null }
+        }[td.handle];
+        let newW = origW, newH = origH;
+        if (td.mode === 'lockRatio') {
+            // Corners only exist in Lock Ratio's handle set (see
+            // selectionHandlePoints), so td.handle is always a corner here.
+            const rawW = x - anchor.x, rawH = y - anchor.y;
+            // Whichever axis moved proportionally further sets the
+            // *magnitude* of the uniform scale (so the drag feels natural
+            // regardless of direction) -- but each axis's own newW/newH
+            // must keep its own sign from rawW/rawH, not borrow the other
+            // axis's sign. nw/se's anchors sit on the same diagonal as the
+            // handle being dragged, so rawW and rawH are always the same
+            // sign as each other there and this distinction was invisible.
+            // ne/sw's anchors sit on the *opposite* diagonal, so a normal
+            // outward drag is legitimately rawW and rawH having opposite
+            // signs (e.g. dragging ne outward means x grows away from its
+            // left-side anchor while y shrinks away from its bottom-side
+            // anchor) -- forcing both axes to share one signed scale value
+            // was making one axis move in a direction that didn't match
+            // the pointer at all, which is the "split like a triangle"
+            // symptom: one axis tracks the drag, the other is fighting it.
+            const scaleW = rawW / origW, scaleH = rawH / origH;
+            const mag = Math.max(Math.abs(scaleW), Math.abs(scaleH));
+            newW = origW * mag * Math.sign(rawW || 1);
+            newH = origH * mag * Math.sign(rawH || 1);
+        } else {
+            if (anchor.x !== null) newW = x - anchor.x;
+            if (anchor.y !== null) newH = y - anchor.y;
+        }
+        const gx0 = anchor.x !== null ? Math.min(anchor.x, anchor.x + newW) : sel.x0;
+        const gy0 = anchor.y !== null ? Math.min(anchor.y, anchor.y + newH) : sel.y0;
+        return { gx0, gy0, newW, newH };
+    };
+    const updateSelTransformDrag = (x, y) => {
+        const td = g.transformDrag;
+        if (!td) return;
+        if (td.mode === 'rotate') {
+            // Freeform rotation this pass -- a snap-angle slider is
+            // planned for later but not built yet, so angle tracks the
+            // pointer continuously with no rounding. baseAngle carries
+            // forward any already-pending rotation from a previous drag on
+            // this same selection (see startSelTransformDrag) -- without
+            // adding it back in here, re-grabbing a handle mid-rotation
+            // would discard the previous angle and restart from zero,
+            // causing a visible snap back to the unrotated position the
+            // instant the new drag began.
+            const currentAngle = Math.atan2(y - td.centerY, x - td.centerX);
+            td.angle = (td.baseAngle || 0) + (currentAngle - td.startAngle);
+            const deg = td.angle * 180 / Math.PI;
+            const sel = td.origSel;
+            const w = sel.x1 - sel.x0 + 1, h = sel.y1 - sel.y0 + 1;
+            // Live preview: CSS transform:rotate() on the already-cut
+            // floatBuffer, pivoting around its own center -- cheap, no
+            // per-pixel redraw during the drag, matching the same
+            // "cheap during drag, resample once on release" pattern
+            // Resize already uses. Position/size stay fixed at the
+            // original (pre-rotation) selection bounds throughout the
+            // drag; only the CSS rotation angle changes. The final,
+            // grown bounding box is computed once, on release, in
+            // endSelTransformDrag -- not recalculated every frame here,
+            // since the actual pixel resample only needs to happen once.
+            const fb = document.getElementById('floatBuffer');
+            if (fb) {
+                fb.style.left = (sel.x0 * scale) + 'px'; fb.style.top = (sel.y0 * scale) + 'px';
+                fb.style.width = (w * scale) + 'px'; fb.style.height = (h * scale) + 'px';
+                fb.style.transformOrigin = '50% 50%';
+                fb.style.transform = 'rotate(' + deg + 'deg)';
+            }
+            const box = document.getElementById('selectionBox');
+            if (box) {
+                box.style.display = 'block';
+                box.style.background = 'rgba(0,120,212,0.28)';
+                box.style.left = (sel.x0 * scale) + 'px'; box.style.top = (sel.y0 * scale) + 'px';
+                box.style.width = (w * scale) + 'px'; box.style.height = (h * scale) + 'px';
+                box.style.transformOrigin = '50% 50%';
+                box.style.transform = 'rotate(' + deg + 'deg)';
+            }
+            // Deliberately not touching `selection` mid-drag, same reasoning
+            // as the resize path below -- handles stay anchored to
+            // td.origSel via updateSelectionHandles' liveRect override
+            // rather than a live-mutated `selection`.
+            updateSelectionHandles();
+            return;
+        }
+        const r = computeTransformPreviewRect(x, y);
+        // r.gx0/gy0/newW/newH are continuous edge coordinates (e.g. the
+        // left edge of pixel column x0 sits at x0, the right edge of the
+        // selection's last column sits at x1+1) -- NOT the integer
+        // inclusive-index convention `selection` normally uses. Both the
+        // floating buffer and the selection box are positioned directly
+        // from these same continuous values so they can never disagree
+        // pixel-for-pixel with each other during the drag.
+        // r.gx0/r.gy0 ARE ALREADY the final left/top edge --
+        // computeTransformPreviewRect did its own Math.min(anchor,
+        // anchor+newW) internally to produce them. Re-deriving left/top via
+        // Math.min(gx0, gx0+newW) here was the actual root cause of the
+        // reported bug: it double-applied the drag offset for every handle
+        // whose anchor sits away from the selection's own top-left corner
+        // (i.e. every handle except se, where the anchor already equals
+        // sel.x0/y0 so the second min was a no-op) -- the fixed corner
+        // visibly snapped toward the pointer instead of staying put.
+        const left = r.gx0, top = r.gy0;
+        const w = Math.abs(r.newW), h = Math.abs(r.newH);
+        const fb = document.getElementById('floatBuffer');
+        if (fb) {
+            fb.style.left = (left * scale) + 'px'; fb.style.top = (top * scale) + 'px';
+            fb.style.width = (w * scale) + 'px'; fb.style.height = (h * scale) + 'px';
+        }
+        const box = document.getElementById('selectionBox');
+        if (box) {
+            box.style.display = 'block';
+            box.style.background = 'rgba(0,120,212,0.28)';
+            box.style.left = (left * scale) + 'px'; box.style.top = (top * scale) + 'px';
+            box.style.width = (w * scale) + 'px'; box.style.height = (h * scale) + 'px';
+        }
+        // Deliberately NOT touching `selection` here. computeTransformPreviewRect
+        // always anchors off td.origSel (frozen at drag start) -- if this
+        // function also overwrote the live `selection` every frame, then
+        // updateSelectionHandles()'s handle-dot positions (which read
+        // `selection`) would start drifting away from what
+        // computeTransformPreviewRect is actually anchoring against,
+        // creating feedback between "where the anchor math thinks the
+        // fixed corner is" and "where the handle dots visually are". This
+        // was the actual cause of every handle except se drifting/breaking
+        // after the box-alignment fix -- se's anchor (sel.x0, sel.y0)
+        // happens to be the one pair of values that doesn't move during a
+        // bottom-right drag, so it looked unaffected while the others
+        // visibly weren't. The handle overlay is instead redrawn directly
+        // against td.origSel + the live rect via updateSelectionHandles's
+        // optional liveRect param (see below) rather than through
+        // `selection`.
+        td.liveRect = r;
+        updateSelectionHandles();
+    };
+    // Positions and reveals the floating green confirm button once a
+    // rotate drag ends and enters the pending state -- placed just
+    // outside the rotated content's top-right corner so it doesn't
+    // obscure the preview itself. Reads td.origSel + td.angle (the same
+    // values driving the CSS-rotated preview) rather than the grown
+    // destSel, since that's only computed at actual commit time.
+    const showRotateConfirmButton = () => {
+        const td = g.rotatePending;
+        const btn = document.getElementById('rotateConfirmBtn');
+        if (!td || !btn) return;
+        const sel = td.origSel;
+        const cos = Math.cos(td.angle), sin = Math.sin(td.angle);
+        // Rotate the top-right corner around the selection's own center,
+        // same rotatePoint math updateSelectionHandles uses for the
+        // handle dots, so the button visually sits with the rotated shape
+        // rather than the original unrotated corner.
+        const corner = { x: sel.x1 + 1, y: sel.y0 };
+        const rx = td.centerX + (corner.x - td.centerX) * cos - (corner.y - td.centerY) * sin;
+        const ry = td.centerY + (corner.x - td.centerX) * sin + (corner.y - td.centerY) * cos;
+        btn.style.left = (rx * scale + 8) + 'px';
+        btn.style.top = (ry * scale - 44) + 'px';
+        btn.style.display = 'block';
+    };
+    const hideRotateConfirmButton = () => {
+        const btn = document.getElementById('rotateConfirmBtn');
+        if (btn) btn.style.display = 'none';
+    };
+    const endSelTransformDrag = () => {
+        const td = g.transformDrag;
+        if (!td) { window.__selTransformDrag = null; return; }
+        if (td.mode === 'rotate') {
+            // Rotate no longer auto-commits on pointer release, per the
+            // person's explicit direction: releasing the finger just ends
+            // the drag gesture -- the rotated preview (floatBuffer +
+            // selectionBox, both still CSS-rotated) stays visible exactly
+            // as-is, nothing is stamped or committed yet, and the
+            // selection itself does not grow. A floating green confirm
+            // button appears; only tapping it (confirmRotate()) actually
+            // resamples and stamps the pixels. This is a deliberate
+            // second commit gesture, unlike every other transform mode
+            // here, which commits immediately on release.
+            g.rotatePending = td;
+            window.__rotatePending = td;
+            window.__selTransformDrag = null; // dragging itself has ended
+            g.transformDrag = null;
+            showRotateConfirmButton();
+            updateSelectionHandles();
+            return;
+        }
+        const layer = activeLayer();
+        let afterSnap = null;
+        {
+            const r = td.liveRect;
+            if (r && layer) {
+                const resized = resampleFloatingBuffer(td.buf, r.newW, r.newH, selectionResampleMethod);
+                // destSel must describe exactly the pixel rect `resized` was
+                // built to fill -- derive its width/height from resized's own
+                // actual dimensions (same Math.round(Math.abs(...)) the
+                // resample step used) rather than re-deriving from the raw
+                // continuous r.gx0/newW independently, since normalizeSel's
+                // truncating min/max wouldn't reliably agree with that
+                // rounding at the edges. This is what was letting
+                // stampResizedBuffer's 1:1 offset mapping silently land one
+                // pixel off from the visible box.
+                const outW = resized.length, outH = resized[0] ? resized[0].length : 0;
+                // r.gx0/r.gy0 are already the final left/top edge (see the
+                // matching fix in updateSelTransformDrag) -- Math.min(gx0,
+                // gx0+newW) here double-applied the drag offset the same way,
+                // meaning the actual stamped pixels (not just the live
+                // preview) were landing at the wrong position for every handle
+                // except se.
+                const left = Math.round(r.gx0);
+                const top = Math.round(r.gy0);
+                const destSel = normalizeSel(left, top, left + outW - 1, top + outH - 1);
+                stampResizedBuffer(layer, resized, destSel);
+                selection = destSel;
+                commitRectSelection(destSel);
+                afterSnap = selectionSnapshot();
+            }
+        }
+        hideFloatingBuffer();
+        // Bundle the pixel diff (td.snap) and the selection-bounds change
+        // (g.selectionBefore -> afterSnap, captured at drag start/end) into
+        // ONE atomic undo entry via commitEditAndSelection, rather than
+        // committing the pixels here and letting the pointerup handler
+        // separately push a 'selection' entry -- two independently-pushed
+        // entries for one resize gesture meant a single undo only reverted
+        // whichever was on top of the stack, leaving pixels and selection
+        // bounds out of sync with each other. g.selectionBefore is cleared
+        // here specifically so the pointerup handler's own
+        // recordSelectionUndo call (correct for ordinary rect-draw/move,
+        // which don't go through this function) doesn't also fire for this
+        // same gesture and push a second, now-redundant entry.
+        commitEditAndSelection(td.snap, g.selectionBefore, afterSnap);
+        g.selectionBefore = null;
+        g.transformDrag = null;
+        window.__selTransformDrag = null;
+        updateSelectionHandles();
+    };
+    // The actual commit step for a pending rotate, called only when the
+    // person taps the floating green confirm button (never automatically).
+    // Mirrors endSelTransformDrag's old rotate branch (resample, stamp,
+    // one atomic undo entry) but reads from g.rotatePending instead of
+    // g.transformDrag, since the drag itself already ended.
+    const confirmRotate = () => {
+        const td = g.rotatePending;
+        if (!td) return;
+        // Resolve from td.snap's own recorded frame/layer id, not
+        // activeLayer() -- the person may have switched frames or layers
+        // while the rotation sat pending, and the stamp must land on the
+        // layer the rotation actually came from, not whatever's active now.
+        const layer = td.snap ? findLayerById(td.snap.frameIndex, td.snap.layerId) : null;
+        let afterSnap = null;
+        if (layer) {
+            const { out, offsetX, offsetY } = resampleRotatedBuffer(td.buf, td.angle);
+            const outW = out.length, outH = out[0] ? out[0].length : 0;
+            const left = Math.round(td.origSel.x0 + offsetX);
+            const top = Math.round(td.origSel.y0 + offsetY);
+            const destSel = normalizeSel(left, top, left + outW - 1, top + outH - 1);
+            stampResizedBuffer(layer, out, destSel);
+            selection = destSel;
+            commitRectSelection(destSel);
+            afterSnap = selectionSnapshot();
+        }
+        finishRotatePending(afterSnap, td);
+    };
+    // Discards a pending rotate without stamping anything -- the cut
+    // pixels are still sitting untouched in td.buf (never written back to
+    // the layer, since cutSelectionBuffer already cleared them and nothing
+    // has stamped since), so "discard" here just means: don't stamp, but
+    // DO restore the original pixels that cutSelectionBuffer cleared, via
+    // the same before-map beginEdit() already captured -- committing that
+    // capture with zero further changes correctly puts the original
+    // pixels back and pushes a no-op-looking but accurate undo entry only
+    // if something genuinely changed (commitEditAndSelection's existing
+    // no-op guard handles this).
+    const cancelRotate = () => {
+        const td = g.rotatePending;
+        if (!td) return;
+        // Same reasoning as confirmRotate: resolve from td.snap's own
+        // recorded layer, not activeLayer(), in case the person switched
+        // layers/frames while the rotation sat pending.
+        const layer = td.snap ? findLayerById(td.snap.frameIndex, td.snap.layerId) : null;
+        if (layer && td.buf) stampResizedBuffer(layer, td.buf, td.origSel);
+        finishRotatePending(null, td, true);
+    };
+    // confirmRotate/cancelRotate are closure-local (need g, the shared
+    // per-touch-session state object) but the floating confirm button's
+    // inline onclick lives outside setupDrawingEvents entirely -- expose
+    // them on window, same bridging approach window.__selTransformDrag
+    // already uses to cross this same closure boundary.
+    window.confirmRotateSelection = confirmRotate;
+    window.cancelRotateSelection = cancelRotate;
+    // Shared cleanup for both confirmRotate and cancelRotate: commits (or
+    // no-ops, per commitEditAndSelection's existing guard) the undo entry,
+    // resets the CSS rotation on the shared floatBuffer/selectionBox
+    // elements (or every future drag would inherit a leftover transform),
+    // hides the floating buffer, and clears the pending state + button.
+    const finishRotatePending = (afterSnap, td, isCancel) => {
+        const fb = document.getElementById('floatBuffer');
+        if (fb) fb.style.transform = '';
+        const box = document.getElementById('selectionBox');
+        if (box) box.style.transform = '';
+        hideFloatingBuffer();
+        if (isCancel) {
+            // Restoring the original pixels via stampResizedBuffer above
+            // means the layer is back to its pre-drag state -- but
+            // beginEdit()'s _historyCapture is still comparing against
+            // that same original "before" map, so committing now
+            // correctly sees no net change and commitEditAndSelection's
+            // own no-op guard skips pushing anything.
+            commitEditAndSelection(td.snap, g.selectionBefore, g.selectionBefore);
+        } else {
+            commitEditAndSelection(td.snap, g.selectionBefore, afterSnap);
+        }
+        g.selectionBefore = null;
+        g.rotatePending = null;
+        window.__rotatePending = null;
+        hideRotateConfirmButton();
+        updateSelectionHandles();
+    };
+
     // -- Edit Points tool: drag the nearest existing vector point, or (in
     //    the two sub-modes below) delete a point or extend a line end.
     const startVectorEditDrag = (x, y) => {
         const layer = activeLayer();
         if (!layer || layer.type !== 'vector') { g.vecDragTarget = null; return; }
         if (vertexDeleteMode) {
+            // A gradient spline's stops are deleted separately from its
+            // backbone points -- the 2 points (start/end) aren't
+            // independently removable the way a normal spline's points
+            // are (renderGradientFill always needs exactly a start and
+            // end), only the stops placed along it. Checked first so a tap
+            // near an endpoint-position stop (position 0 or 1, which sits
+            // exactly on a backbone point) deletes the stop, not the point.
+            const gradSp = activeGradientSpline(layer);
+            if (gradSp) {
+                const stopIndex = hitTestGradientStop(gradSp, x, y);
+                if (stopIndex !== -1) deleteGradientStop(gradSp, stopIndex);
+                g.vecDragTarget = null;
+                return;
+            }
             const hit = findNearestVectorPoint(layer, x, y);
             if (hit) deleteVectorPoint(layer, hit);
+            g.vecDragTarget = null;
+            return;
+        }
+        if (gradientAddStopMode) {
+            const sp = activeGradientSpline(layer);
+            if (sp) {
+                // Hit-test an existing stop marker first -- grabbing one
+                // starts a drag-to-reposition instead of inserting a new
+                // stop. Only falls through to insert if nothing was
+                // grabbed, so a tap-drag-release gesture that starts on an
+                // existing stop moves it rather than adding a duplicate at
+                // the release point (the reported bug: every such gesture
+                // was reaching insertGradientStop with no way to grab an
+                // existing stop first).
+                const stopIndex = hitTestGradientStop(sp, x, y);
+                if (stopIndex !== -1) {
+                    g.vecStopDragTarget = { sp, stopIndex, beforeSplines: layer.splines.map(cloneSpline) };
+                    g.vecDragTarget = null;
+                    return;
+                }
+                const t = hitTestGradientLinePosition(sp, x, y);
+                if (t !== null) insertGradientStop(t);
+            }
             g.vecDragTarget = null;
             return;
         }
@@ -7325,13 +8638,52 @@ function setupDrawingEvents() {
         traceLog('vedit start: ' + (g.vecDragTarget ? 'grabbed a point' : 'no point within reach'));
     };
     const updateVectorEditDrag = (x, y) => {
+        if (g.vecStopDragTarget) {
+            const { sp, stopIndex } = g.vecStopDragTarget;
+            const a = sp.points[0], b = sp.points[sp.points.length - 1];
+            const abx = b.x - a.x, aby = b.y - a.y;
+            const lenSq = abx * abx + aby * aby;
+            // Same projection math as hitTestGradientLinePosition -- the
+            // stop's new position is wherever the drag projects onto the
+            // backbone line, clamped to 0-1, not the raw touch coordinate
+            // itself (a stop's position is always relative to the line,
+            // not a free 2D point).
+            const t = lenSq > 0 ? ((x - a.x) * abx + (y - a.y) * aby) / lenSq : sp.stops[stopIndex].position;
+            sp.stops[stopIndex].position = Math.max(0, Math.min(1, t));
+            const layer = activeLayer();
+            if (layer) { layer.layoutCSS(); if (activeLayerHasLiveHook()) refreshHookedComposites(); }
+            updateVectorHandles();
+            return;
+        }
         if (!g.vecDragTarget) return;
         g.vecDragTarget.point.x = x; g.vecDragTarget.point.y = y;
         const layer = activeLayer();
         if (layer) { layer.layoutCSS(); if (activeLayerHasLiveHook()) refreshHookedComposites(); }
         updateVectorHandles();
     };
-    const endVectorEditDrag = () => { g.vecDragTarget = null; };
+    const endVectorEditDrag = () => {
+        if (g.vecStopDragTarget) {
+            const { beforeSplines } = g.vecStopDragTarget;
+            const layer = activeLayer();
+            if (layer) {
+                const afterSplines = layer.splines.map(cloneSpline);
+                // One undo entry per completed drag, per explicit
+                // direction -- not per intermediate movement. No-ops if
+                // the drag didn't actually change anything (grabbed a
+                // stop, released without moving it), same "compare before
+                // to after, skip if identical" guard shape
+                // insertGradientStop/commitGradientSpline already use.
+                if (JSON.stringify(beforeSplines) !== JSON.stringify(afterSplines)) {
+                    pushUndo({ type: 'replaceSplines', frameIndex: activeFrameIndex, layerId: layer.id, before: beforeSplines, after: afterSplines });
+                }
+            }
+            g.vecStopDragTarget = null;
+            renderGradientStopsBar();
+            if (openPanelName === 'layers') renderLayersPanel();
+            return;
+        }
+        g.vecDragTarget = null;
+    };
 
     // -- Move Line tool (vmove): grab an entire spline and translate every
     //    point together, rather than one point at a time (Edit Points).
@@ -7536,7 +8888,34 @@ function setupDrawingEvents() {
         isDrawing = true;
         portraitStrokeColor = selectedColor;
         g.suppressStroke = false;
-        if (currentTool === 'select') { startSelectionDrag(x, y); return; }
+        if (currentTool === 'select') {
+            // Resize/Rotate handles take priority over normal select
+            // behaviour when a transform mode is active and the touch
+            // actually landed on a handle -- otherwise fall through to
+            // draw-new/move-existing (e.g. tapping outside the handles
+            // while Resize is active still lets the person draw a fresh
+            // selection). Rotate is the one exception: a missed handle
+            // tap is deliberately a no-op rather than falling through,
+            // since rotate already treats the in-progress selection as
+            // something a stray touch shouldn't be able to discard or
+            // replace (same reasoning behind requiring the explicit
+            // confirm button rather than auto-committing on release).
+            if (selectionTransformMode) {
+                startSelTransformDrag(x, y);
+                if (g.transformDrag) return;
+                // Rotate's no-op-on-miss only makes sense while there's an
+                // actual selection to protect from being accidentally
+                // discarded -- if selection is null (e.g. an undo wiped it
+                // out while selectionTransformMode was still 'rotate' from
+                // before, since cancelling a pending rotation deliberately
+                // doesn't reset the mode itself), blocking every tap here
+                // left no way to draw a new selection at all. Falling
+                // through to startSelectionDrag below in that case matches
+                // every other mode's behavior when there's nothing to lose.
+                if (selectionTransformMode === 'rotate' && selection) return;
+            }
+            startSelectionDrag(x, y); return;
+        }
         if (currentTool === 'lasso') { g.lasso=[{x:x+.5,y:y+.5}]; g.suppressStroke=true; return; }
         if (currentTool === 'vedit') { startVectorEditDrag(x, y); return; }
         if (currentTool === 'vmove') { startVectorMoveDrag(x, y); return; }
@@ -7603,7 +8982,7 @@ function setupDrawingEvents() {
             g.cameraGesture = { dist: touchDistance(t0, t1), startScale: cameraScale, startRotation: cameraRotation, startAngle: touchAngle(t0, t1), localOffX, localOffY };
         }
     };
-    const updateTransformDrag = (cx, cy) => {
+    const updateRefLayerTransformDrag = (cx, cy) => {
         const layer = activeLayer();
         layer.gx = g.xform.gx + (cx - g.xform.x) / scale;
         layer.gy = g.xform.gy + (cy - g.xform.y) / scale;
@@ -7727,7 +9106,7 @@ function setupDrawingEvents() {
             if (g.xform.type === 'drag') {
                 const cx = touches ? touches[0].clientX : e.clientX;
                 const cy = touches ? touches[0].clientY : e.clientY;
-                updateTransformDrag(cx, cy);
+                updateRefLayerTransformDrag(cx, cy);
             } else if (g.xform.type === 'pinch' && touches && touches.length === 2) {
                 updateTransformPinch(touches);
             }
@@ -7759,7 +9138,7 @@ function setupDrawingEvents() {
                 pts.forEach(([lx,ly])=>applyPixelToolAt(lx,ly));
                 g.lastBrushPos={x,y}; if(activeLayerHasLiveHook())scheduleHookedCompositeRefresh();
             }
-            else if (currentTool === 'select') updateSelectionDrag(x, y);
+            else if (currentTool === 'select') { if (g.transformDrag) updateSelTransformDrag(x, y); else updateSelectionDrag(x, y); }
             else if (currentTool === 'lasso' && g.lasso) { const p={x:x+.5,y:y+.5},last=g.lasso[g.lasso.length-1]; if(Math.hypot(p.x-last.x,p.y-last.y)>=.5) g.lasso.push(p); }
             else if (currentTool === 'vedit') updateVectorEditDrag(x, y);
             else if (currentTool === 'vmove') updateVectorMoveDrag(x, y);
@@ -7827,6 +9206,17 @@ function setupDrawingEvents() {
             const ct = e.changedTouches && e.changedTouches[0];
             const [ex, ey] = ct ? getPosFromClient(ct.clientX, ct.clientY) : getPosFromClient(e.clientX || 0, e.clientY || 0);
             if (currentTool === 'select') {
+                if (g.transformDrag) {
+                    // Resize/Rotate path: endSelTransformDrag pushes ONE
+                    // atomic 'selectionTransform' undo entry covering both
+                    // the resized pixels and the selection-bounds change
+                    // together (see commitEditAndSelection) -- it also
+                    // clears g.selectionBefore itself, so the
+                    // recordSelectionUndo check below correctly no-ops for
+                    // this gesture instead of pushing a second, redundant
+                    // 'selection' entry.
+                    endSelTransformDrag();
+                }
                 endSelectionDrag();
                 if (g.selectionBefore) { recordSelectionUndo(g.selectionBefore, selectionSnapshot()); g.selectionBefore=null; }
                 if (openPanelName === 'layers') renderLayersPanel();
