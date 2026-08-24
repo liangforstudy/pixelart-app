@@ -1026,6 +1026,10 @@
                     <div class="picker-wrapper">+<input type="color" id="colorPicker" onmousedown="uiAction(()=>{})"></div>
                 </div>
             </div>
+            <div id="swatchValueStrip" style="font-size:10px;color:#ccc;text-align:center;padding:4px 2px;line-height:1.5;">
+                <span id="swatchValueHex">--</span> &nbsp;|&nbsp; <span id="swatchValueRgba">--</span> &nbsp;|&nbsp; <span id="swatchValueHsv">--</span>
+                <button id="copySwatchHexBtn" class="btn btn-small" style="margin-left:6px;" onclick="uiAction(copySwatchHexToClipboard)">COPY</button>
+            </div>
             <div class="row">
                 <button id="manageBtn" class="btn"
                     onmousedown="startHold(() => handleManageClick())"
@@ -4068,6 +4072,71 @@ function catmullRomPath(points, closed) {
 // Converts 0-255 r,g,b values into a "#RRGGBB" string.
 function rgbToHexBytes(r, g, b) {
     return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+// Converts 0-255 r,g,b values into {h:0-360, s:0-100, v:0-100}. Roadmap item 16.
+function converterRgbToHSV(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    if (d !== 0) {
+        if (max === r) h = ((g - b) / d) % 6;
+        else if (max === g) h = (b - r) / d + 2;
+        else h = (r - g) / d + 4;
+        h *= 60;
+        if (h < 0) h += 360;
+    }
+    const s = max === 0 ? 0 : d / max;
+    return { h: Math.round(h), s: Math.round(s * 100), v: Math.round(max * 100) };
+}
+// Parses a "#RRGGBB" string into [r,g,b] 0-255 bytes. Returns null for
+// anything not in that exact form (selectedColor is never stored with an
+// alpha channel -- transparency is tracked separately via selectedColor===null).
+function parseHexToRgbBytes(hex) {
+    const m = String(hex || '').match(/^#([0-9a-f]{6})$/i);
+    if (!m) return null;
+    return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+}
+// Refreshes the swatch-value strip (hex/RGBA/HSV+A + copy button) from the
+// current selectedColor. Called from updateUI() so it stays in sync with
+// every swatch tap, tool switch, undo/redo, etc. without needing its own
+// call sites scattered elsewhere. Roadmap item 16.
+function updateSwatchValueDisplay() {
+    const hexEl = document.getElementById('swatchValueHex');
+    const rgbaEl = document.getElementById('swatchValueRgba');
+    const hsvEl = document.getElementById('swatchValueHsv');
+    const copyBtn = document.getElementById('copySwatchHexBtn');
+    if (!hexEl || !rgbaEl || !hsvEl) return;
+    const rgb = selectedColor ? parseHexToRgbBytes(selectedColor) : null;
+    if (!rgb) {
+        hexEl.textContent = 'Transparent';
+        rgbaEl.textContent = '--';
+        hsvEl.textContent = '--';
+        if (copyBtn) copyBtn.disabled = true;
+        return;
+    }
+    const [r, g, b] = rgb;
+    const hsv = converterRgbToHSV(r, g, b);
+    hexEl.textContent = selectedColor.toUpperCase();
+    rgbaEl.textContent = 'RGBA(' + r + ',' + g + ',' + b + ',255)';
+    hsvEl.textContent = 'HSV(' + hsv.h + ',' + hsv.s + '%,' + hsv.v + '%) A:255';
+    if (copyBtn) copyBtn.disabled = false;
+}
+// Copies the current swatch's hex value to the clipboard. Mirrors
+// exportLogToClipboard()'s try/catch + temporary button-label feedback
+// pattern, already proven working on iOS Safari.
+async function copySwatchHexToClipboard() {
+    if (!selectedColor) return;
+    const btn = document.getElementById('copySwatchHexBtn');
+    if (!btn) return;
+    const original = btn.innerText;
+    try {
+        await navigator.clipboard.writeText(selectedColor.toUpperCase());
+        btn.innerText = '\u2705';
+    } catch (err) {
+        console.error('Swatch hex clipboard copy failed:', err && err.message);
+        btn.innerText = '\u274C';
+    }
+    setTimeout(() => btn.innerText = original, 1200);
 }
 // Deep-copies a layer (pixel data or reference geometry) into a brand new Layer object. Used when duplicating a sprite frame.
 function cloneLayer(l) {
@@ -7734,6 +7803,7 @@ function updateUI() {
                       (selectedColor === rgbToHex(el.style.backgroundColor));
         el.classList.toggle('selected', isSel);
     });
+    updateSwatchValueDisplay();
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
     applyCanvasSizeToolGating();
     if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
