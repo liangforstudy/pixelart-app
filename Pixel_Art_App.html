@@ -180,7 +180,13 @@
         }
         #sprite-anim-body {
             flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
-            display: flex; flex-direction: column; gap: 10px; padding: 10px 12px calc(24px + env(safe-area-inset-bottom));
+            display: flex; flex-direction: column; gap: 10px;
+            /* Bottom padding cleared to sit above both fixed elements now
+               permanently occupying that space: the scrubber (~56px) and
+               the tab bar beneath it (~56px), plus the usual safe-area
+               inset -- otherwise the last item in the flat scroll
+               (Shadow/Offsets toggles) would render underneath them. */
+            padding: 10px 12px calc(132px + env(safe-area-inset-bottom));
         }
         #spriteAnimListsRow { display: flex; gap: 8px; height: 140px; flex: none; }
         .spriteAnimListPane { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; }
@@ -195,9 +201,7 @@
         }
         #spriteAnimCanvas { image-rendering: pixelated; image-rendering: crisp-edges; }
         #spriteAnimEmptyHint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #666; font-size: 13px; padding: 20px; text-align: center; }
-        #spriteAnimScrubRow { flex: none; display: flex; align-items: center; gap: 8px; }
         .spriteAnimSubLabel { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-        #spriteAnimDirectionSection { flex: none; }
         #spriteAnimDirectionGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; max-width: 220px; margin: 0 auto; }
         #spriteAnimDirectionGrid button { aspect-ratio: 1/1; background: #232334; border: 1px solid #3a3a4a; color: #cdd6f4; border-radius: 8px; font-size: 16px; -webkit-tap-highlight-color: transparent; }
         #spriteAnimDirectionGrid button.active { background: #74c7ec; color: #11111b; font-weight: bold; }
@@ -209,6 +213,41 @@
         #spriteAnimLayerToggles { flex: none; display: flex; gap: 8px; }
         #spriteAnimLayerToggles .btn.active { background: #0078d4; }
         #spriteAnimEditSection { flex: none; }
+
+        /* Item 5: sprite editor drawer/floating-control layout.
+           Mirrors the pixel canvas screen's #floatingBar / #undoFab /
+           #redoFab z-index tiers and offset math exactly, so the two
+           screens stay visually consistent even though this bar has
+           only 3 buttons vs #floatingBar's larger set. */
+        #spriteAnimTabBar {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+            display: flex; gap: 6px; padding: 6px;
+            padding-bottom: max(6px, env(safe-area-inset-bottom));
+            background: rgba(28,28,28,0.92); border-top: 1px solid #333;
+            box-sizing: border-box;
+        }
+        #spriteAnimTabBar .fbtn { flex: 1 1 0; }
+        #spriteAnimTabBar .fbtn.active { background: #0078d4; border-color: #fff; }
+        #spriteAnimScrubRow {
+            position: fixed; left: 8px; right: 8px;
+            bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 850;
+            display: flex; align-items: center; gap: 8px;
+            background: #1c1c1c; border: 1px solid #333; border-radius: 10px;
+            padding: 6px 10px; box-sizing: border-box; margin: 0;
+        }
+        /* Wraps #spriteAnimDirectionGrid without touching its own render
+           logic (updateSpriteAnimDirectionGrid) -- toggling this wrapper's
+           visibility, resizing it, or repositioning it later never needs
+           to touch the grid-building JS. Stacked above the scrubber
+           (same left offset math, one row's height + gap higher). */
+        #spriteAnimDPadController {
+            position: fixed; left: 8px;
+            bottom: calc(64px + 44px + 8px + env(safe-area-inset-bottom)); z-index: 860;
+            background: #1c1c1c; border: 1px solid #333; border-radius: 10px;
+            padding: 8px; box-sizing: border-box; width: 150px;
+        }
+        #spriteAnimDPadController.hidden { display: none; }
+        #spriteAnimDPadController #spriteAnimDirectionGrid { max-width: none; margin: 0; }
         #spriteAnimEditButtons { display: flex; gap: 8px; }
         #spriteAnimFrameEditDoneBtn {
             position: fixed; z-index: 1200; display: none;
@@ -687,21 +726,6 @@
                 <div id="spriteAnimEmptyHint">Import a sprite .zip to begin</div>
             </div>
 
-            <!-- Scrubber + play/pause -->
-            <div id="spriteAnimScrubRow">
-                <button class="btn" id="spriteAnimPlayBtn" onclick="uiAction(toggleSpriteAnimPlayback)" style="flex:0 0 auto;">▶️</button>
-                <input type="range" id="spriteAnimScrubber" min="0" max="0" value="0" step="1" style="flex:1;">
-                <div id="spriteAnimFrameReadout" style="flex:0 0 auto; font-size:11px; color:#ccc; min-width:64px; text-align:right;">-- / --</div>
-            </div>
-
-            <!-- Mobile layout: everything that sits beside the preview on the
-                 reference desktop tool (Direction grid, Frame Data) goes
-                 underneath the scrubber instead -- see handoff section 55.3. -->
-            <div id="spriteAnimDirectionSection">
-                <div class="spriteAnimSubLabel">Direction</div>
-                <div id="spriteAnimDirectionGrid"></div>
-            </div>
-
             <div id="spriteAnimFrameDataSection">
                 <div class="spriteAnimSubLabel">Frame Data</div>
                 <div class="spriteAnimFieldRow">
@@ -737,34 +761,36 @@
                 <button class="btn" id="spriteAnimToggleShadowBtn" onclick="uiAction(toggleSpriteAnimShadowVisible)">🌑 SHADOW</button>
                 <button class="btn" id="spriteAnimToggleOffsetsBtn" onclick="uiAction(toggleSpriteAnimOffsetsVisible)">➕ OFFSETS</button>
             </div>
+        </div>
 
-            <div id="spriteAnimOnionSection">
-                <div class="spriteAnimSubLabel">Onion Skinning</div>
-                <div class="spriteAnimFieldRow">
-                    <label>Enabled</label>
-                    <input type="checkbox" id="spriteAnimOnionEnabledField">
-                </div>
-                <div class="spriteAnimFieldRow">
-                    <label>Opacity</label>
-                    <input type="range" id="spriteAnimOnionOpacityField" min="5" max="80" step="5">
-                </div>
-                <div class="spriteAnimFieldRow">
-                    <label>Range Enabled</label>
-                    <input type="checkbox" id="spriteAnimOnionRangeEnabledField">
-                </div>
-                <div class="spriteAnimFieldRow">
-                    <label>Range (± frames)</label>
-                    <input type="range" id="spriteAnimOnionRangeField" min="1" max="6" step="1">
-                </div>
-            </div>
+        <!-- Floating controls (roadmap item 5): scrubber and direction
+             d-pad pulled out of the flat scroll so they stay reachable
+             regardless of scroll position. Kept inside #sprite-anim-screen
+             (not #sprite-anim-body) so they only render while this screen
+             is open, but escape the scrolling flow entirely. -->
+        <div id="spriteAnimScrubRow" class="floating">
+            <button class="btn" id="spriteAnimPlayBtn" onclick="uiAction(toggleSpriteAnimPlayback)" style="flex:0 0 auto;">▶️</button>
+            <input type="range" id="spriteAnimScrubber" min="0" max="0" value="0" step="1" style="flex:1;">
+            <div id="spriteAnimFrameReadout" style="flex:0 0 auto; font-size:11px; color:#ccc; min-width:64px; text-align:right;">-- / --</div>
+        </div>
 
-            <div id="spriteAnimPlaybackSection">
-                <div class="spriteAnimSubLabel">Playback Speed</div>
-                <div class="spriteAnimFieldRow">
-                    <label id="spriteAnimSpeedLabel">1x (original)</label>
-                    <input type="range" id="spriteAnimSpeedField" min="1" max="8" step="1" value="1">
-                </div>
-            </div>
+        <!-- Wraps #spriteAnimDirectionGrid -- see the CSS comment on
+             #spriteAnimDPadController for why the wrapper exists separately
+             from the grid element itself. Shown by default; toggled via
+             the tab bar's D-PAD button. -->
+        <div id="spriteAnimDPadController">
+            <div class="spriteAnimSubLabel" style="text-align:center;">Direction</div>
+            <div id="spriteAnimDirectionGrid"></div>
+        </div>
+
+        <!-- Bottom tab bar: opens the Sprite Controls drawer (Onion +
+             Playback Speed), toggles the floating d-pad, and opens Debug --
+             the same toggleDrawer('debug') used everywhere else, not a
+             screen-specific Debug mechanism. -->
+        <div id="spriteAnimTabBar">
+            <button class="fbtn" id="spriteAnimControlsTabBtn" onclick="toggleDrawer('spriteControls')">🛠️ CONTROLS</button>
+            <button class="fbtn active" id="spriteAnimDPadToggleBtn" onclick="uiAction(toggleSpriteAnimDPad)">🕹️ D-PAD</button>
+            <button class="fbtn" id="spriteAnimDebugBtn" onclick="toggleDrawer('debug')">⚙️ DEBUG</button>
         </div>
     </div>
 
@@ -1190,6 +1216,39 @@
     </div>
 
     <div id="drawerBackdrop"></div>
+    <!-- Sprite Controls drawer: Onion Skinning + Playback Speed, pulled out
+         of the sprite editor's flat scrolling stack (roadmap item 5).
+         Kept outside #sprite-anim-screen alongside #debugDrawer, since
+         openDrawer/closeDrawer/toggleDrawer are screen-agnostic globals,
+         not scoped to any one screen. -->
+        <div class="side-drawer right" id="spriteControlsDrawer">
+            <div id="spriteAnimOnionSection">
+                <div class="spriteAnimSubLabel">Onion Skinning</div>
+                <div class="spriteAnimFieldRow">
+                    <label>Enabled</label>
+                    <input type="checkbox" id="spriteAnimOnionEnabledField">
+                </div>
+                <div class="spriteAnimFieldRow">
+                    <label>Opacity</label>
+                    <input type="range" id="spriteAnimOnionOpacityField" min="5" max="80" step="5">
+                </div>
+                <div class="spriteAnimFieldRow">
+                    <label>Range Enabled</label>
+                    <input type="checkbox" id="spriteAnimOnionRangeEnabledField">
+                </div>
+                <div class="spriteAnimFieldRow">
+                    <label>Range (± frames)</label>
+                    <input type="range" id="spriteAnimOnionRangeField" min="1" max="6" step="1">
+                </div>
+            </div>
+            <div id="spriteAnimPlaybackSection">
+                <div class="spriteAnimSubLabel">Playback Speed</div>
+                <div class="spriteAnimFieldRow">
+                    <label id="spriteAnimSpeedLabel">1x (original)</label>
+                    <input type="range" id="spriteAnimSpeedField" min="1" max="8" step="1" value="1">
+                </div>
+            </div>
+        </div>
     <!-- Debug drawer: kept outside #pixel-canvas-screen, alongside the on-screen keyboard, so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
         <div class="side-drawer right" id="debugDrawer">
             <div id="debugDrawerControls" style="display:flex; flex-direction:column; gap:8px;">
@@ -11187,6 +11246,14 @@ function openSpriteAnimEditor() {
     updateSpriteAnimFrameDataFields();
     updateSpriteAnimToggleButtons();
     updateSpriteAnimOnionFields();
+    // D-pad defaults to shown each time the editor opens (roadmap item 5)
+    // rather than persisting whatever hidden/shown state was left from a
+    // previous session -- consistent with everything else this function
+    // resets to a known-good state on open.
+    const dpadWrap = document.getElementById('spriteAnimDPadController');
+    const dpadBtn = document.getElementById('spriteAnimDPadToggleBtn');
+    if (dpadWrap) dpadWrap.classList.remove('hidden');
+    if (dpadBtn) dpadBtn.classList.add('active');
     startSpriteAnimLoop();
 }
 function closeSpriteAnimEditor() {
@@ -11586,6 +11653,17 @@ const SPRITE_ANIM_8DIR_LAYOUT = [
     [6,'←'], [null,''], [2,'→'],
     [7,'↙'], [0,'↓'], [1,'↘'],
 ];
+// Toggles the floating d-pad controller (roadmap item 5) -- shown by
+// default each time the sprite editor opens. Purely a visibility/label
+// toggle on the wrapper; never touches updateSpriteAnimDirectionGrid or
+// the grid's own contents.
+function toggleSpriteAnimDPad() {
+    const wrap = document.getElementById('spriteAnimDPadController');
+    const btn = document.getElementById('spriteAnimDPadToggleBtn');
+    if (!wrap || !btn) return;
+    const nowHidden = wrap.classList.toggle('hidden');
+    btn.classList.toggle('active', !nowHidden);
+}
 function updateSpriteAnimDirectionGrid() {
     const grid = document.getElementById('spriteAnimDirectionGrid');
     grid.innerHTML = '';
