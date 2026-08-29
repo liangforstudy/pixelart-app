@@ -781,6 +781,8 @@
         <div id="spriteAnimDPadController">
             <div class="spriteAnimSubLabel" style="text-align:center;">Direction</div>
             <div id="spriteAnimDirectionGrid"></div>
+            <div class="spriteAnimSubLabel" style="text-align:center; margin-top:8px;">Opacity <span id="spriteAnimDPadOpacityLabel">50%</span></div>
+            <input type="range" id="spriteAnimDPadOpacityField" min="10" max="100" step="5" value="50" oninput="updateSpriteAnimDPadOpacity()" style="width:100%;">
         </div>
 
         <!-- Bottom tab bar: opens the Sprite Controls drawer (Onion +
@@ -789,7 +791,7 @@
              screen-specific Debug mechanism. -->
         <div id="spriteAnimTabBar">
             <button class="fbtn" id="spriteAnimControlsTabBtn" onclick="toggleDrawer('spriteControls')">🛠️ CONTROLS</button>
-            <button class="fbtn active" id="spriteAnimDPadToggleBtn" onclick="uiAction(toggleSpriteAnimDPad)">🕹️ D-PAD</button>
+            <button class="fbtn active" id="spriteAnimDPadToggleBtn" onclick="uiAction(toggleSpriteAnimDPad)">🕹️ HIDE D-PAD</button>
             <button class="fbtn" id="spriteAnimDebugBtn" onclick="toggleDrawer('debug')">⚙️ DEBUG</button>
         </div>
     </div>
@@ -1305,7 +1307,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_42';
+const BUILD_VERSION = 'V1_43_1';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -11246,14 +11248,17 @@ function openSpriteAnimEditor() {
     updateSpriteAnimFrameDataFields();
     updateSpriteAnimToggleButtons();
     updateSpriteAnimOnionFields();
-    // D-pad defaults to shown each time the editor opens (roadmap item 5)
-    // rather than persisting whatever hidden/shown state was left from a
-    // previous session -- consistent with everything else this function
+    // D-pad defaults to shown, at 50% opacity, each time the editor opens
+    // (roadmap item 5) rather than persisting whatever state was left from
+    // a previous session -- consistent with everything else this function
     // resets to a known-good state on open.
     const dpadWrap = document.getElementById('spriteAnimDPadController');
     const dpadBtn = document.getElementById('spriteAnimDPadToggleBtn');
+    const dpadOpacityField = document.getElementById('spriteAnimDPadOpacityField');
     if (dpadWrap) dpadWrap.classList.remove('hidden');
-    if (dpadBtn) dpadBtn.classList.add('active');
+    if (dpadBtn) { dpadBtn.classList.add('active'); dpadBtn.innerText = '🕹️ HIDE D-PAD'; }
+    if (dpadOpacityField) dpadOpacityField.value = 50;
+    updateSpriteAnimDPadOpacity();
     startSpriteAnimLoop();
 }
 function closeSpriteAnimEditor() {
@@ -11663,6 +11668,18 @@ function toggleSpriteAnimDPad() {
     if (!wrap || !btn) return;
     const nowHidden = wrap.classList.toggle('hidden');
     btn.classList.toggle('active', !nowHidden);
+    btn.innerText = nowHidden ? '🕹️ SHOW D-PAD' : '🕹️ HIDE D-PAD';
+}
+// Live-updates the d-pad controller's opacity from its own slider,
+// independent of the wrapper's hidden/shown state. Defaults to 50% each
+// time the sprite editor opens (see openSpriteAnimEditor).
+function updateSpriteAnimDPadOpacity() {
+    const wrap = document.getElementById('spriteAnimDPadController');
+    const field = document.getElementById('spriteAnimDPadOpacityField');
+    const label = document.getElementById('spriteAnimDPadOpacityLabel');
+    if (!wrap || !field) return;
+    wrap.style.opacity = (field.value / 100).toString();
+    if (label) label.textContent = field.value + '%';
 }
 function updateSpriteAnimDirectionGrid() {
     const grid = document.getElementById('spriteAnimDirectionGrid');
