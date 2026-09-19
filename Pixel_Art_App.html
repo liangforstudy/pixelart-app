@@ -1307,7 +1307,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_43_1';
+const BUILD_VERSION = 'V1_44';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1375,6 +1375,49 @@ class Canvas2DImageRenderer {
 // concrete renderer class it's using.
 function createImageRenderer(layer) {
     return new Canvas2DImageRenderer(layer);
+}
+
+/* ============================================================
+   BULK PIXEL WRITE BATCHING (V1_44)
+   ImageLayer.plot() repaints the ENTIRE layer (putImageData +
+   renderer.render) for every single pixel, because it was written for
+   one-off edits. Any loop that plots thousands of pixels -- wand
+   delete, rect delete, bucket fill, soft-brush stamps, selection
+   cut/stamp, shape commit -- therefore cost one full-layer render per
+   pixel; a 637,000-pixel wand delete froze the tab outright.
+   This was latent for the whole history of the file: the layer-type
+   gates all read `window.ImageLayer`, which was undefined until
+   V1_43_1 added the explicit `window.ImageLayer = ImageLayer` export,
+   so large imports had always silently fallen back to PixelLayer and
+   nothing ever took the ImageLayer bulk path at scale.
+   bulkPixelWrite(fn) suppresses redrawFromData() for the duration of
+   fn, records which layers went dirty, and issues exactly one redraw
+   per layer afterwards. Nested calls are safe (the depth is counted,
+   only the outermost flushes) and the flush is in a finally, so a
+   throw inside fn still repaints rather than leaving a stale canvas.
+   CONSTRAINT: while a bulk block is open the layer's visible canvas
+   (layer.el / layer.ctx) is deliberately stale. fn is synchronous so
+   nothing can observe it from outside, but code *inside* fn must read
+   layer.pixelData / layer.imageData -- which stay authoritative
+   throughout -- and never the canvas.
+   `var` rather than `let` is deliberate: redrawFromData() reads the
+   depth counter, and a hoisted-undefined read (undefined > 0 -> false)
+   is safe, whereas a temporal-dead-zone read would throw if any layer
+   ever repainted before this line executed.
+   ============================================================ */
+var bulkPixelWriteDepth = 0;
+var bulkPixelWriteDirty = new Set();
+function bulkPixelWrite(fn) {
+    bulkPixelWriteDepth++;
+    try { return fn(); }
+    finally {
+        bulkPixelWriteDepth--;
+        if (bulkPixelWriteDepth === 0 && bulkPixelWriteDirty.size) {
+            const dirty = Array.from(bulkPixelWriteDirty);
+            bulkPixelWriteDirty.clear();
+            dirty.forEach(l => { if (l && typeof l.redrawFromData === 'function') l.redrawFromData(); });
+        }
+    }
 }
 
 class ImageLayer {
@@ -1469,7 +1512,12 @@ class ImageLayer {
       this.redrawFromData();
     }
     plot(x, y, color) { this.setPixel(x, y, color); this.redrawFromData(); }
-    redrawFromData() { invalidateRenderer(this, 'image-document-state', true); }
+    redrawFromData() {
+      // Deferred during a bulkPixelWrite block -- see that helper. One
+      // redraw for the whole batch instead of one per plotted pixel.
+      if (bulkPixelWriteDepth > 0) { bulkPixelWriteDirty.add(this); return; }
+      invalidateRenderer(this, 'image-document-state', true);
+    }
     redraw() { this.redrawFromData(); }
     loadFromImage(img) {
       this.ctx.clearRect(0, 0, this.gridW, this.gridH);
@@ -3714,10 +3762,18 @@ class PixelLayer extends Layer {
             this.loadFromImage(source);
         }
         this.pixelData[x][y] = color;
+        // Inside a bulkPixelWrite block the per-pixel canvas writes are
+        // skipped too: the single deferred redrawFromData() repaints the
+        // whole grid from pixelData anyway, so doing them here is pure
+        // waste on a loop of thousands of pixels.
+        if (bulkPixelWriteDepth > 0) { bulkPixelWriteDirty.add(this); return; }
         this.ctx.clearRect(x, y, 1, 1);
         if (color) { this.ctx.fillStyle = color; this.ctx.fillRect(x, y, 1, 1); }
     }
-    redrawFromData() { invalidateRenderer(this, 'pixel-document-state', true); }
+    redrawFromData() {
+        if (bulkPixelWriteDepth > 0) { bulkPixelWriteDirty.add(this); return; }
+        invalidateRenderer(this, 'pixel-document-state', true);
+    }
     setImageRenderSource(img) {
         this.renderMode = 'image';
         this.imageSource = img;
@@ -6757,7 +6813,11 @@ function performWandDelete(){
     const layer=activeLayer(); if(!isPixelLike(layer))return;
     const snap=beginEdit();
     const mask=wandSelection;
-    for(let x=0;x<gridW;x++) for(let y=0;y<gridH;y++) if(mask[y*gridW+x]) layer.plot(x,y,null);
+    // y-outer walks the mask in memory order; bulkPixelWrite collapses
+    // what used to be one full-layer render per deleted pixel into one.
+    bulkPixelWrite(()=>{
+        for(let y=0;y<gridH;y++){ const row=y*gridW; for(let x=0;x<gridW;x++) if(mask[row+x]) layer.plot(x,y,null); }
+    });
     commitEdit(snap); clearWandSelection();
 }
 
@@ -6923,21 +6983,26 @@ function performDeleteSelection() {
     const layer = activeLayer();
     if (!isPixelLike(layer) || !selection) return;
     const snap = beginEdit();
-    for (let x = selection.x0; x <= selection.x1; x++)
-        for (let y = selection.y0; y <= selection.y1; y++) layer.plot(x, y, null);
+    bulkPixelWrite(() => {
+        for (let x = selection.x0; x <= selection.x1; x++)
+            for (let y = selection.y0; y <= selection.y1; y++) layer.plot(x, y, null);
+    });
     commitEdit(snap);
 }
 // Lifts the selected pixels out of the layer into a small in-memory buffer and clears them from the layer, ready to be repositioned before stamping back down.
 function cutSelectionBuffer(layer, sel) {
     const w = sel.x1 - sel.x0 + 1, h = sel.y1 - sel.y0 + 1;
     const buf = [];
-    for (let x = 0; x < w; x++) {
-        buf.push([]);
-        for (let y = 0; y < h; y++) {
-            buf[x].push(layer.pixelData[sel.x0 + x][sel.y0 + y]);
-            layer.plot(sel.x0 + x, sel.y0 + y, null);
+    // Reads pixelData, not the canvas, so batching the erase is safe here.
+    bulkPixelWrite(() => {
+        for (let x = 0; x < w; x++) {
+            buf.push([]);
+            for (let y = 0; y < h; y++) {
+                buf[x].push(layer.pixelData[sel.x0 + x][sel.y0 + y]);
+                layer.plot(sel.x0 + x, sel.y0 + y, null);
+            }
         }
-    }
+    });
     return buf;
 }
 // Draws a cut selection buffer into the floating preview canvas so it can be dragged around without touching the real layer data yet.
@@ -6961,7 +7026,9 @@ function positionFloatingBuffer(gx, gy, w, h) {
 function stampFloatingBuffer(layer, buf, sel) {
     if (!isPixelLike(layer)) return;
     const w = buf.length, h = buf[0] ? buf[0].length : 0;
-    for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) { const c = buf[x][y]; if (c) layer.plot(sel.x0 + x, sel.y0 + y, c); }
+    bulkPixelWrite(() => {
+        for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) { const c = buf[x][y]; if (c) layer.plot(sel.x0 + x, sel.y0 + y, c); }
+    });
 }
 // Hides the floating selection preview canvas once a move is finished.
 function hideFloatingBuffer() {
@@ -7055,7 +7122,9 @@ function resampleFloatingBuffer(buf, newW, newH, method) {
 function stampResizedBuffer(layer, buf, sel) {
     if (!isPixelLike(layer)) return;
     const w = buf.length, h = buf[0] ? buf[0].length : 0;
-    for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) { const c = buf[x][y]; if (c) layer.plot(sel.x0 + x, sel.y0 + y, c); }
+    bulkPixelWrite(() => {
+        for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) { const c = buf[x][y]; if (c) layer.plot(sel.x0 + x, sel.y0 + y, c); }
+    });
 }
 
 /* ============================================================
@@ -7123,7 +7192,7 @@ function commitShape(kind, start, end) {
     const pts = kind === 'line' ? linePixels(start.x, start.y, end.x, end.y)
               : kind === 'rect' ? rectOutlinePixels(start.x, start.y, end.x, end.y)
               : ellipseOutlinePixels(start.x, start.y, end.x, end.y);
-    pts.forEach(([x, y]) => layer.plot(x, y, selectedColor));
+    bulkPixelWrite(() => pts.forEach(([x, y]) => layer.plot(x, y, selectedColor)));
 }
 
 /* ============================================================
@@ -8131,7 +8200,7 @@ function setupDrawingEvents() {
     const parseStoredRGBA=(v)=>{if(!v)return[0,0,0,0];let m=String(v).match(/^#([0-9a-f]{6})$/i);if(m)return[parseInt(m[1].slice(0,2),16),parseInt(m[1].slice(2,4),16),parseInt(m[1].slice(4,6),16),1];m=String(v).match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)$/i);return m?[+m[1],+m[2],+m[3],m[4]==null?1:+m[4]]:[0,0,0,0];};
     const rgbaString=(r,g,b,a)=>a<=.0005?null:(a>=.9995?'#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('').toUpperCase():`rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${a.toFixed(4)})`);
     const blendPixel=(l,x,y,sr,sg,sb,sa,erase)=>{if(x<0||y<0||x>=l.gridW||y>=l.gridH)return;const[dr,dg,db,da]=parseStoredRGBA(l.pixelData[x][y]);if(erase){l.plot(x,y,rgbaString(dr,dg,db,da*(1-sa)));return;}const oa=sa+da*(1-sa);l.plot(x,y,rgbaString((sr*sa+dr*da*(1-sa))/oa,(sg*sa+dg*da*(1-sa))/oa,(sb*sa+db*da*(1-sa))/oa,oa));};
-    const applyPixelToolAt=(cx,cy)=>{const l=activeLayer();if(!isPixelLike(l))return;const s=window.getPixelToolStroke();let c=portraitStrokeColor!==null?portraitStrokeColor:selectedColor;const erase=!!s.erase;if(erase)c='#000000';const[sr,sg,sb]=parseStoredRGBA(c||'#000000');if(s.size===1&&!s.soft){l.plot(cx,cy,erase?null:c);return;}const r=s.size/2;for(let y=Math.floor(cy-r);y<=Math.ceil(cy+r-1);y++)for(let x=Math.floor(cx-r);x<=Math.ceil(cx+r-1);x++){let a=s.alpha;if(s.soft){const d=Math.hypot(x+.5-(cx+.5),y+.5-(cy+.5))/Math.max(.5,r);if(d>1)continue;a*=Math.pow(Math.max(0,1-d),2);}blendPixel(l,x,y,sr,sg,sb,a,erase);}};
+    const applyPixelToolAt=(cx,cy)=>{const l=activeLayer();if(!isPixelLike(l))return;const s=window.getPixelToolStroke();let c=portraitStrokeColor!==null?portraitStrokeColor:selectedColor;const erase=!!s.erase;if(erase)c='#000000';const[sr,sg,sb]=parseStoredRGBA(c||'#000000');if(s.size===1&&!s.soft){l.plot(cx,cy,erase?null:c);return;}const r=s.size/2;bulkPixelWrite(()=>{for(let y=Math.floor(cy-r);y<=Math.ceil(cy+r-1);y++)for(let x=Math.floor(cx-r);x<=Math.ceil(cx+r-1);x++){let a=s.alpha;if(s.soft){const d=Math.hypot(x+.5-(cx+.5),y+.5-(cy+.5))/Math.max(.5,r);if(d>1)continue;a*=Math.pow(Math.max(0,1-d),2);}blendPixel(l,x,y,sr,sg,sb,a,erase);}});};
     const doToolAt = (x, y) => {
         if (currentTool === 'eyedrop') {
             const activeL = activeLayer();
@@ -8203,24 +8272,28 @@ function setupDrawingEvents() {
                 if (bucketGlobal) {
                     // GLOBAL mode: replace every pixel matching the sampled target,
                     // regardless of whether it is connected to the tapped pixel.
-                    for (let fy = 0; fy < gridH; fy++) {
-                        for (let fx = 0; fx < gridW; fx++) {
-                            if (matches(layer.pixelData[fx][fy])) plot(fx, fy);
+                    bulkPixelWrite(() => {
+                        for (let fy = 0; fy < gridH; fy++) {
+                            for (let fx = 0; fx < gridW; fx++) {
+                                if (matches(layer.pixelData[fx][fy])) plot(fx, fy);
+                            }
                         }
-                    }
+                    });
                 } else {
                     // CONTIGUOUS mode: classic flood fill starting at the tapped pixel.
-                    const stack = [[x, y]];
-                    const seen = new Uint8Array(gridW * gridH);
-                    while (stack.length) {
-                        const [nx, ny] = stack.pop();
-                        if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
-                        const idx=ny*gridW+nx;
-                        if(seen[idx] || !matches(layer.pixelData[nx][ny])) continue;
-                        seen[idx]=1;
-                        plot(nx, ny);
-                        stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
-                    }
+                    bulkPixelWrite(() => {
+                        const stack = [[x, y]];
+                        const seen = new Uint8Array(gridW * gridH);
+                        while (stack.length) {
+                            const [nx, ny] = stack.pop();
+                            if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
+                            const idx=ny*gridW+nx;
+                            if(seen[idx] || !matches(layer.pixelData[nx][ny])) continue;
+                            seen[idx]=1;
+                            plot(nx, ny);
+                            stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
+                        }
+                    });
                 }
             }
         } else plot(x, y);
@@ -9266,7 +9339,7 @@ function setupDrawingEvents() {
                     const cut = pts.findIndex(([px,py]) => portraitTileKeyForPoint(px,py) !== g.strokeTileKey);
                     if (cut !== -1) pts = pts.slice(0, cut);
                 }
-                pts.forEach(([lx,ly])=>applyPixelToolAt(lx,ly));
+                bulkPixelWrite(()=>pts.forEach(([lx,ly])=>applyPixelToolAt(lx,ly)));
                 g.lastBrushPos={x,y}; if(activeLayerHasLiveHook())scheduleHookedCompositeRefresh();
             }
             else if (currentTool === 'select') { if (g.transformDrag) updateSelTransformDrag(x, y); else updateSelectionDrag(x, y); }
