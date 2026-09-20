@@ -263,6 +263,18 @@
         }
         #spriteAnimToastMsg { font-size: 13px; color: #eee; }
         #spriteAnimToastDontShow { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aaa; }
+        /* Generic transient message. Separate from #spriteAnimToast, which
+           is a persistent dismiss-with-checkbox panel, not a timed toast. */
+        #appToast {
+            position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 1450;
+            background: #232334; border: 1px solid #45475a; border-radius: 10px; padding: 12px 14px;
+            font-size: 13px; color: #eee; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+            display: none; opacity: 0; transition: opacity .18s ease;
+        }
+        #appToast.showing { opacity: 1; }
+        /* Size-gated raster tools keep their greyed look now that they are
+           no longer `disabled` -- see applyCanvasSizeToolGating for why. */
+        .tool-btn.size-gated { opacity: 0.35; }
 
         .gallery-card {
             background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
@@ -804,6 +816,8 @@
         <label id="spriteAnimToastDontShow"><input type="checkbox" id="spriteAnimToastDontShowCheckbox"> Don't show me again</label>
         <button class="btn" id="spriteAnimToastDismissBtn" onclick="uiAction(dismissSpriteAnimToast)">Dismiss</button>
     </div>
+    <!-- Generic timed toast (showAppToast). Tap anywhere on it to dismiss early. -->
+    <div id="appToast" onclick="hideAppToast()"></div>
 
     <!-- New Canvas / Import sheet (slides up over gallery) -->
     <div id="new-canvas-modal">
@@ -1307,7 +1321,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_44';
+const BUILD_VERSION = 'V1_44_1';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1430,6 +1444,11 @@ class ImageLayer {
       this.visible = true;
       this.opacity = 1;
       this.color = null;
+      // Layers panel offers the blend-mode dropdown for type 'image'
+      // (see renderLayersPanel), so this must exist and default the same
+      // way Layer's constructor defaults it -- without it the dropdown
+      // was writing to an undefined property.
+      this.blendMode = 'source-over';
       this.type = 'image';
       this.id = 'image_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
@@ -1577,9 +1596,23 @@ class ImageLayer {
       this.renderer.render(this.imageData);
     }
     layoutCSS() { this.el.style.width = (this.gridW * scale) + 'px'; this.el.style.height = (this.gridH * scale) + 'px'; }
+    // Deliberate duplicate of Layer.applyVisualState (same three lines).
+    // ImageLayer does NOT extend Layer -- it builds el/ctx/cpuCanvas
+    // differently -- so it does not inherit this, and every generic
+    // layer-visibility path calls it (addLayer, renderLayersPanel's
+    // visibility/opacity/blend controls, applyGroupVisualState, the
+    // tree-op undo paths). Its absence is what made addPixelLayer()
+    // throw on any canvas large enough to take the ImageLayer branch.
+    // Mask/clip has no branch here: ImageLayer.type is always 'image'.
+    applyVisualState() {
+      this.el.style.display = (this.visible && this._groupVisible !== false) ? 'block' : 'none';
+      this.el.style.opacity = this.opacity * (this._groupOpacity == null ? 1 : this._groupOpacity);
+      this.el.style.mixBlendMode = cssBlendMode(this.blendMode);
+    }
     clone() {
       const copy = new ImageLayer(this.name, this.gridW, this.gridH);
       copy.visible = this.visible; copy.opacity = this.opacity; copy.color = this.color;
+      copy.blendMode = this.blendMode;
       copy.imageData.data.set(this.imageData.data); copy.redrawFromData(); return copy;
     }
   }
@@ -7677,6 +7710,40 @@ function hideLongPressTooltip() {
 // with the button's own click handler -- the tooltip only shows on a
 // sustained hold, and clearHold()/hideLongPressTooltip() both fire on
 // release so a genuine tap-click still goes through normally.
+/* ============================================================
+   GENERIC TOAST (V1_44_1)
+   A short timed message for cases where the app silently changes
+   something out from under the person. Deliberately NOT built on
+   #spriteAnimToast: that one is a persistent panel with its own
+   "don't show again" checkbox and an explicit Dismiss button, a
+   different thing from a timed notice.
+   Repeat suppression is by message text: callers sit on paths that
+   re-run often (updateUI -> applyCanvasSizeToolGating), so showing
+   the identical message again while it is still on screen just
+   restarts its timer rather than stacking or flickering.
+   ============================================================ */
+let appToastTimer = 0;
+let appToastCurrentMsg = '';
+function showAppToast(msg, ms) {
+    const el = document.getElementById('appToast');
+    if (!el || !msg) return;
+    el.textContent = msg;
+    appToastCurrentMsg = msg;
+    el.style.display = 'block';
+    // Next frame, so the opacity transition actually runs from 0.
+    requestAnimationFrame(() => el.classList.add('showing'));
+    if (appToastTimer) clearTimeout(appToastTimer);
+    appToastTimer = setTimeout(hideAppToast, ms || 5000);
+}
+function hideAppToast() {
+    const el = document.getElementById('appToast');
+    if (appToastTimer) { clearTimeout(appToastTimer); appToastTimer = 0; }
+    appToastCurrentMsg = '';
+    if (!el) return;
+    el.classList.remove('showing');
+    setTimeout(() => { if (!el.classList.contains('showing')) el.style.display = 'none'; }, 200);
+}
+
 function attachLongPressTooltip(el, text) {
     if (!el) return;
     el.title = text;
@@ -7886,6 +7953,11 @@ function handleToolBtn(t) {
     // pixelToolDefs' tools and so never reaches window.selectPixelTool),
     // unlike selectPixelTool which only some tool switches reach.
     if (portraitIsolationPickMode && t !== 'pan') { portraitIsolationPickMode = false; updatePortraitTileControls(); }
+    // Canvas-size gate (roadmap item 13): refuse the switch and say why,
+    // rather than letting the tap do nothing. Placed before the
+    // pixelToolDefs branch below, which would otherwise route straight
+    // into window.selectPixelTool for exactly these tool ids.
+    if (rasterToolIsSizeGated(t)) { showAppToast(rasterGateToastMessage()); return; }
     // Portrait mode disables tools that don't fit its per-tile, fixed-size,
     // curated-palette model (Colour to Alpha bypasses the tile palette
     // entirely by design). PORTRAIT_TOOL_FALLBACK covers the pixelToolDefs
@@ -7961,18 +8033,45 @@ function updateUI() {
 // elements themselves, and never touches the show/hide logic for
 // #bucketControls/#wandControls/#pixelToolControls/etc. -- that logic
 // belongs to updateToolVisibility() and is out of scope here.
+// True when `id` is a raster tool currently switched off by the canvas
+// size gate. Single source of truth shared by applyCanvasSizeToolGating
+// (which greys the buttons) and handleToolBtn (which refuses the switch
+// and explains why).
+function rasterToolIsSizeGated(id) {
+    if (!RASTER_TOOL_IDS.includes(id)) return false;
+    if (forceEnableRasterTools) return false;
+    return ((gridW || 0) * (gridH || 0)) > rasterToolGateThresholdPx;
+}
+function rasterGateToastMessage() {
+    const area = (gridW || 0) * (gridH || 0);
+    return 'Pencil, brush and eraser tools are off on canvases above '
+        + rasterToolGateThresholdPx.toLocaleString() + ' pixels -- this one is '
+        + (gridW || 0) + ' x ' + (gridH || 0) + ' = ' + area.toLocaleString()
+        + '. Fill, wand, lasso and the shape tools still work. To re-enable them, '
+        + 'turn on "force enable raster tools" (or raise the threshold) in the Debug drawer.';
+}
 function applyCanvasSizeToolGating() {
     const area = (gridW || 0) * (gridH || 0);
     const shouldGate = !forceEnableRasterTools && area > rasterToolGateThresholdPx;
     let currentToolWasGated = false;
     RASTER_TOOL_IDS.forEach(id => {
         document.querySelectorAll('.tool-btn[data-tool="' + id + '"]').forEach(btn => {
-            btn.disabled = shouldGate;
+            // V1_44_1: greyed via .size-gated instead of `disabled`. A
+            // disabled button dispatches no pointer or click events at
+            // all, so a tap on one was silently swallowed -- the person
+            // got no feedback and no way to find out why the tool was
+            // unreachable. Keeping it enabled lets handleToolBtn catch
+            // the tap and explain; the refusal itself lives there, so
+            // the tool still cannot actually be selected.
+            btn.disabled = false;
             btn.classList.toggle('size-gated', shouldGate);
         });
         if (shouldGate && typeof currentTool !== 'undefined' && currentTool === id) currentToolWasGated = true;
     });
-    if (currentToolWasGated) handleToolBtn('bucket');
+    // Only fires on a real forced switch (currentTool was a gated tool),
+    // which cannot repeat: handleToolBtn('bucket') moves currentTool off
+    // the gated set before the next updateUI pass re-runs this.
+    if (currentToolWasGated) { handleToolBtn('bucket'); showAppToast(rasterGateToastMessage()); }
 }
 
 // Session 7a (roadmap item 12, group blend modes): recursively composites
