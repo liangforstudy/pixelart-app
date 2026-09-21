@@ -1321,7 +1321,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_44_1';
+const BUILD_VERSION = 'V1_44_2';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -4652,12 +4652,31 @@ function shouldUseCustomKeyboard() {
     return false;
 }
 
+// Canvas transparency checkerboard (V1_44_2). The square size is measured
+// in CANVAS pixels, not screen pixels, so it scales with zoom the way
+// Paint.NET and MediBang do. It was previously 1 canvas pixel per square
+// (backgroundSize = scale * 2), which at normal pixel-art zoom made the
+// checker read as per-pixel noise rather than a background texture.
+// The screen-space floor exists because the zoom range goes down to 0.1x:
+// 8 canvas pixels at 0.1x would be a 0.8px square, which shimmers and
+// moires instead of reading as a checker. Below 0.5x the pattern stops
+// tracking canvas pixels and just holds at the floor -- at that zoom the
+// checker is only conveying "this area is transparent" anyway.
+const CHECKER_SQUARE_CANVAS_PX = 8;
+const CHECKER_SQUARE_MIN_SCREEN_PX = 4;
+function checkerSquareScreenPx() {
+    return Math.max(CHECKER_SQUARE_MIN_SCREEN_PX, CHECKER_SQUARE_CANVAS_PX * scale);
+}
 // Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/canvasRotation.
 function layoutAll() {
     container.style.width = (gridW * scale) + 'px';
     container.style.height = (gridH * scale) + 'px';
-    container.style.backgroundSize = (scale * 2) + 'px ' + (scale * 2) + 'px';
-    container.style.backgroundPosition = '0 0, ' + scale + 'px ' + scale + 'px';
+    // background-size is two squares across: the 45deg gradient pair draws
+    // one square per half-tile, and the second layer is offset by exactly
+    // one square to interleave them.
+    const checkerSq = checkerSquareScreenPx();
+    container.style.backgroundSize = (checkerSq * 2) + 'px ' + (checkerSq * 2) + 'px';
+    container.style.backgroundPosition = '0 0, ' + checkerSq + 'px ' + checkerSq + 'px';
     applyCameraTransform();
     pixelCursor.style.width = scale + 'px';
     pixelCursor.style.height = scale + 'px';
