@@ -1321,7 +1321,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_44_2';
+const BUILD_VERSION = 'V1_44_3';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -4606,19 +4606,32 @@ function setResizeDimension(which,v){
 /* ============================================================
    LAYOUT
    ============================================================ */
-let canvasRotation = 0; // degrees, purely a view transform -- grid data is unaffected
+// Canvas view rotation lives in cameraRotation (below), which is what
+// applyCameraTransform() renders and what getPosFromClient() un-rotates
+// by. V1_44_3 removed the separate `canvasRotation`: the gesture-end
+// commit used to park the finished rotation there, but nothing ever
+// rendered it, so every twist snapped visually back to zero while the
+// degree label and the reset FAB went on reporting the parked value.
+// Rotation is purely a view transform either way -- grid data is unaffected.
 // Pinch camera: presentation-only transform. Document scale/layers are not resized while fingers move.
 let cameraScale = 1;
 let cameraPanX = 0;
 let cameraPanY = 0;
 let cameraRotation = 0;
+// How close to a multiple of 90 degrees a two-finger twist has to get
+// before it snaps square, in degrees. Applied live during the gesture.
+const ROTATION_SNAP_DEGREES = 3;
 function applyCameraTransform() {
     if (!container) return;
     container.style.transformOrigin = 'center center';
     container.style.transform = 'translate(' + cameraPanX + 'px,' + cameraPanY + 'px) rotate(' + cameraRotation + 'deg) scale(' + cameraScale + ')';
 }
-function resetCameraTransform() {
-    cameraScale = 1; cameraPanX = 0; cameraPanY = 0; cameraRotation = 0;
+// Resets pan and zoom but deliberately NOT rotation. cameraRotation is
+// now the persistent home of the canvas's rotation (see its declaration
+// above), so clearing it here would mean the zoom buttons silently
+// straightened a rotated canvas. Use resetCanvasRotation() for that.
+function resetCameraPanZoom() {
+    cameraScale = 1; cameraPanX = 0; cameraPanY = 0;
     applyCameraTransform();
 }
 let showGridLines = false;
@@ -4667,7 +4680,7 @@ const CHECKER_SQUARE_MIN_SCREEN_PX = 4;
 function checkerSquareScreenPx() {
     return Math.max(CHECKER_SQUARE_MIN_SCREEN_PX, CHECKER_SQUARE_CANVAS_PX * scale);
 }
-// Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/canvasRotation.
+// Re-applies every size-and-position-dependent style: canvas container size, checkerboard alignment, canvas rotation, and every layer's own layoutCSS(). Call this after anything that changes gridW/gridH/scale/cameraRotation.
 function layoutAll() {
     container.style.width = (gridW * scale) + 'px';
     container.style.height = (gridH * scale) + 'px';
@@ -4778,7 +4791,7 @@ function updateCanvasWrapPadding() {
 function updateRotationFab() {
     const fab = document.getElementById('rotationResetFab');
     if (!fab || !container) return;
-    const normalized = ((canvasRotation % 360) + 360) % 360;
+    const normalized = ((cameraRotation % 360) + 360) % 360;
     const offBy = Math.min(normalized, 360 - normalized);
     if (offBy < 3) { fab.style.display = 'none'; return; }
     const rect = container.getBoundingClientRect();
@@ -4802,8 +4815,9 @@ function updateUndoRedoFabs() {
     if (tr) tr.disabled = !redoStack.length;
 }
 
-// Sets the canvas view rotation back to 0 degrees.
-function resetCanvasRotation() { canvasRotation = 0; layoutAll(); }
+// Sets the canvas view rotation back to 0 degrees. layoutAll() re-applies
+// the camera transform and refreshes the label and FAB.
+function resetCanvasRotation() { cameraRotation = 0; layoutAll(); }
 
 // Shows draggable-point handles on the active vector layer's committed
 // splines while the Edit Points tool is selected -- without this, a
@@ -5174,16 +5188,16 @@ function toggleGridLines() {
     if (btn) { btn.innerText = '\u25A6 GRID LINES: ' + (showGridLines ? 'ON' : 'OFF'); btn.classList.toggle('active', showGridLines); }
     updateGridOverlay();
 }
-// Updates the degree readout in the View panel to match canvasRotation.
+// Updates the degree readout in the View panel to match cameraRotation.
 function updateRotationLabel() {
     const el = document.getElementById('rotationLabel');
-    if (el) el.innerText = Math.round(((canvasRotation % 360) + 360) % 360) + '\u00B0';
+    if (el) el.innerText = Math.round(((cameraRotation % 360) + 360) % 360) + '\u00B0';
 }
 
 // Steps zoom up to the next value in ZOOM_STEPS (integer scales only, so pixels always stay crisp).
-function zoomIn() { if (zoomIndex < ZOOM_STEPS.length - 1) { zoomIndex++; scale = ZOOM_STEPS[zoomIndex]; resetCameraTransform(); layoutAll(); } }
+function zoomIn() { if (zoomIndex < ZOOM_STEPS.length - 1) { zoomIndex++; scale = ZOOM_STEPS[zoomIndex]; resetCameraPanZoom(); layoutAll(); } }
 // Steps zoom down to the previous value in ZOOM_STEPS.
-function zoomOut() { if (zoomIndex > 0) { zoomIndex--; scale = ZOOM_STEPS[zoomIndex]; resetCameraTransform(); layoutAll(); } }
+function zoomOut() { if (zoomIndex > 0) { zoomIndex--; scale = ZOOM_STEPS[zoomIndex]; resetCameraPanZoom(); layoutAll(); } }
 // Updates the "Nx" readout in the View panel to match the current scale.
 function updateZoomLabel() {
     const el = document.getElementById('zoomLabel');
@@ -9333,6 +9347,15 @@ function setupDrawingEvents() {
         const ratio = g.cameraGesture.dist > 0 ? touchDistance(t0, t1) / g.cameraGesture.dist : 1;
         cameraScale = Math.max(0.05, Math.min(64, g.cameraGesture.startScale * ratio));
         cameraRotation = g.cameraGesture.startRotation + normalizeAngleDelta(touchAngle(t0, t1) - (g.cameraGesture.startAngle || touchAngle(t0, t1)));
+        // Snap while the fingers are still down, within 3 degrees of any
+        // multiple of 90, so square lands cleanly without the rotation
+        // being quantised on release (which is what the old gesture-end
+        // Math.round(.../90)*90 did -- it threw away every angle in
+        // between). Computed rather than matched against a fixed list, so
+        // it keeps working now that rotation accumulates across gestures
+        // and can exceed the old list's -270..360 range.
+        const nearestRightAngle = Math.round(cameraRotation / 90) * 90;
+        if (Math.abs(cameraRotation - nearestRightAngle) < ROTATION_SNAP_DEGREES) cameraRotation = nearestRightAngle;
         // Re-anchor: find where the gesture's fixed local point (captured in
         // startTwoFingerGesture, relative to the container's untransformed
         // center) lands at the *new* scale/rotation, then set cameraPanX/Y so
@@ -9494,12 +9517,15 @@ function setupDrawingEvents() {
             scale = ZOOM_STEPS[zoomIndex];
             // Preserve the visual pan through the snap. No per-frame layout was performed.
             cameraScale = 1;
-            canvasRotation = Math.round(cameraRotation / 90) * 90;
-            cameraRotation = 0;
+            // Rotation is NOT committed anywhere and NOT zeroed: cameraRotation
+            // is its permanent home, it is already snapped live by
+            // ROTATION_SNAP_DEGREES during the gesture, and applyCameraTransform()
+            // keeps rendering it. Normalising into 0..360 only keeps the value
+            // from growing without bound across repeated twists; it is visually
+            // identical, since rotation is modulo 360.
+            cameraRotation = ((cameraRotation % 360) + 360) % 360;
             layoutAll();
             applyCameraTransform();
-            cameraPanX += 0;
-            cameraPanY += 0;
             updatePortraitTileOverlay();
         }
         g.xform = null;
