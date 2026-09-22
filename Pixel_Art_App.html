@@ -1321,7 +1321,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_44_3';
+const BUILD_VERSION = 'V1_45';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1524,10 +1524,34 @@ class ImageLayer {
       const c=this._historyCapture; if(!c || c.mode!=='full' || c.before) return;
       c.before=new Uint8ClampedArray(this.imageData.data);
     }
+    // Writes the incoming grid into imageData, which is this layer's
+    // authoritative store. Two bugs were fixed here in V1_45:
+    //   1. It read `this._historyCapture.before.has(...)`, assuming the
+    //      Map that beginEdit() builds for a PixelLayer. For an ImageLayer
+    //      beginEdit() sets `before: null` and captures by tile instead,
+    //      so this threw "Cannot read properties of null" and aborted --
+    //      which is why the CLEAR button and the per-row broom icon did
+    //      nothing at all on any canvas over 999px per side.
+    //   2. It then replaced `this.pixelData` with makeTrackedPixelData(),
+    //      a PixelLayer-style array proxy. On an ImageLayer pixelData is a
+    //      live Proxy over imageData (see the constructor), so swapping it
+    //      silently disconnected the layer from its own canvas: later
+    //      writes went to a detached array and never reached the bitmap.
+    // Both came from this method being copied from PixelLayer without
+    // being adapted, and going unexercised while `window.ImageLayer` was
+    // undefined. History is captured in 'full' mode for the same reason
+    // clear() does: this rewrites the whole layer, so a full before-image
+    // is both simpler and smaller than one tile entry per tile.
     setPixelData(data) {
-      const w=this.gridW, h=this.gridH;
-      if (this._historyCapture) for(let x=0;x<w;x++) for(let y=0;y<h;y++) if(!this._historyCapture.before.has(x+','+y)) this._historyCapture.before.set(x+','+y,this.pixelData[x][y]);
-      this.pixelData=makeTrackedPixelData(this,w,h,data);
+      if (this._historyCapture) { this._historyCapture.mode='full'; this.captureHistoryFull(); }
+      // Clamp to the overlap so a mismatched grid can't run off the end;
+      // resizing is resizeToCanvas()'s job, not this method's.
+      const w=Math.min(this.gridW, data ? data.length : 0);
+      const h=Math.min(this.gridH, (data && data[0]) ? data[0].length : 0);
+      this.imageData.data.fill(0);
+      // setPixel parses the stored colour form; its per-tile history
+      // capture is a no-op now that mode is 'full'.
+      for(let x=0;x<w;x++) for(let y=0;y<h;y++) this.setPixel(x,y,data[x][y]);
       this.redrawFromData();
     }
     plot(x, y, color) { this.setPixel(x, y, color); this.redrawFromData(); }
@@ -4618,6 +4642,36 @@ let cameraScale = 1;
 let cameraPanX = 0;
 let cameraPanY = 0;
 let cameraRotation = 0;
+// After a pinch gesture ends, `scale` changes (the fluid cameraScale is
+// folded into the nearest ZOOM_STEP) while cameraPanX/Y still hold values
+// that were solved against the OLD scale, in rotated screen space. The
+// container's untransformed size changes with `scale`, so the anchor's
+// offset from the container centre changes too -- leaving the pan stale.
+// Unrotated that error happened to cancel, but on a rotated canvas it
+// threw the canvas ~250px sideways on every release (V1_45).
+// This re-solves the pan from the gesture's own anchor, expressed in grid
+// units so it is independent of scale, so the grid point that was under
+// the fingers stays under them across the snap. Must be called AFTER
+// layoutAll() (which resizes the container and re-centres the viewport)
+// and BEFORE the final applyCameraTransform().
+function reanchorCameraPanAfterZoomSnap(gesture) {
+    if (!gesture || gesture.lastMidX == null || !gesture.startCanvasScale) return;
+    // localOffX/Y are in untransformed container CSS px at the scale in
+    // effect when the gesture began; /startCanvasScale converts to grid
+    // units, *scale re-expresses them at the new scale.
+    const offX = (gesture.localOffX / gesture.startCanvasScale) * scale;
+    const offY = (gesture.localOffY / gesture.startCanvasScale) * scale;
+    const r = container.getBoundingClientRect();
+    // The rect still carries the previous transform, so back the old pan
+    // out to recover the untransformed centre (rotation preserves the
+    // centroid, so the AABB centre is the true centre even when rotated).
+    const centerX = r.left + r.width / 2 - cameraPanX;
+    const centerY = r.top + r.height / 2 - cameraPanY;
+    const rad = cameraRotation * Math.PI / 180;
+    cameraPanX = gesture.lastMidX - centerX - (offX * Math.cos(rad) - offY * Math.sin(rad));
+    cameraPanY = gesture.lastMidY - centerY - (offX * Math.sin(rad) + offY * Math.cos(rad));
+}
+
 // How close to a multiple of 90 degrees a two-finger twist has to get
 // before it snaps square, in degrees. Applied live during the gesture.
 const ROTATION_SNAP_DEGREES = 3;
@@ -5645,6 +5699,20 @@ function makeThumbnail(layer, size) {
     }
 }
 
+// Wipes one layer's pixels to transparent, the single way both clear
+// entry points (the CLEAR button's executeClear and the per-row broom's
+// clearLayerAt) do it. A layer that provides its own clear() knows how to
+// zero its own storage -- ImageLayer's fills imageData directly and
+// captures a full before-image for undo -- so prefer that over building a
+// grid of nulls. Only PixelLayer takes the setPixelData path.
+// Callers own beginEdit()/commitEdit(); this function only writes pixels.
+function clearLayerContent(layer) {
+    if (!layer) return;
+    if (typeof layer.clear === 'function') { layer.clear(); return; }
+    layer.setPixelData(Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null)));
+    layer.redrawFromData();
+}
+
 // Clears a specific pixel layer (by index) without first having to select it, via the per-row broom button.
 function clearLayerAt(i) {
     const layer = layers[i];
@@ -5662,8 +5730,7 @@ function clearLayerAt(i) {
     const wasActive = activeLayerIndex;
     activeLayerIndex = i;
     const snap = beginEdit();
-    layer.setPixelData(Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null)));
-    layer.redrawFromData();
+    clearLayerContent(layer);
     commitEdit(snap);
     activeLayerIndex = wasActive;
     renderLayersPanel();
@@ -8244,8 +8311,7 @@ function executeClear() {
     const layer = activeLayer();
     if (isPixelLike(layer)) {
         const snap = beginEdit();
-        layer.setPixelData(Array(layer.gridW).fill().map(() => Array(layer.gridH).fill(null)));
-        layer.redrawFromData();
+        clearLayerContent(layer);
         commitEdit(snap);
     }
     cancelClear();
@@ -9315,7 +9381,10 @@ function setupDrawingEvents() {
             const rad = -cameraRotation * Math.PI / 180;
             const localOffX = (dx * Math.cos(rad) - dy * Math.sin(rad)) / cameraScale;
             const localOffY = (dx * Math.sin(rad) + dy * Math.cos(rad)) / cameraScale;
-            g.cameraGesture = { dist: touchDistance(t0, t1), startScale: cameraScale, startRotation: cameraRotation, startAngle: touchAngle(t0, t1), localOffX, localOffY };
+            // startCanvasScale is the document `scale` (not cameraScale) at gesture
+            // start; reanchorCameraPanAfterZoomSnap needs it to convert localOff
+            // back into scale-independent grid units on release.
+            g.cameraGesture = { dist: touchDistance(t0, t1), startScale: cameraScale, startRotation: cameraRotation, startAngle: touchAngle(t0, t1), localOffX, localOffY, startCanvasScale: scale, lastMidX: null, lastMidY: null };
         }
     };
     const updateRefLayerTransformDrag = (cx, cy) => {
@@ -9377,6 +9446,11 @@ function setupDrawingEvents() {
         const rotOffY = offX * Math.sin(rad) + offY * Math.cos(rad);
         cameraPanX = m.x - centerX - rotOffX;
         cameraPanY = m.y - centerY - rotOffY;
+        // Remembered for the post-release re-anchor (see
+        // reanchorCameraPanAfterZoomSnap): the grid point under this
+        // midpoint must stay under it once `scale` snaps.
+        g.cameraGesture.lastMidX = m.x;
+        g.cameraGesture.lastMidY = m.y;
         // This is presentation-only: do not call layoutAll(), resize layers, change ImageData, or touch history.
         applyCameraTransform();
     };
@@ -9525,6 +9599,7 @@ function setupDrawingEvents() {
             // identical, since rotation is modulo 360.
             cameraRotation = ((cameraRotation % 360) + 360) % 360;
             layoutAll();
+            reanchorCameraPanAfterZoomSnap(g.cameraGesture);
             applyCameraTransform();
             updatePortraitTileOverlay();
         }
