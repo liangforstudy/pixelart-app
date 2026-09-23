@@ -419,20 +419,6 @@
         }
         .resize-anchor-btn.active { background:#0078d4; }
         .resize-anchor-btn:active { filter:brightness(1.25); }
-        #numericKeyboardBackdrop { position:fixed; inset:0; z-index:2090; display:none; background:rgba(0,0,0,.28); }
-        #numericKeyboardBackdrop.open { display:block; pointer-events:auto; }
-        #numericKeyboard {
-            position:fixed; left:0; right:0; bottom:0; z-index:2100; background:#1c1c1e; border-top:1px solid #333;
-            padding:8px; padding-bottom:max(8px,env(safe-area-inset-bottom)); box-sizing:border-box;
-            transform:translateY(100%); transition:transform .2s ease-out; display:flex; flex-direction:column; gap:6px;
-        }
-        #numericKeyboard.open { transform:translateY(0); }
-        #numericPreviewRow { display:flex; align-items:center; gap:10px; padding:2px 4px 8px; }
-        #numericPreviewText { flex:1; font-size:22px; color:#fff; text-align:center; border-bottom:1px solid #444; padding-bottom:6px; min-height:28px; }
-        #numericDoneBtn { background:#0078d4; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:bold; }
-        #numericKeys { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; max-width:420px; width:100%; margin:0 auto; }
-        .numeric-key { height:52px; background:#3a3a3c; border:none; border-radius:7px; color:#fff; font-size:21px; font-weight:700; box-shadow:0 1px 0 rgba(0,0,0,.4); }
-        .numeric-key.special { background:#232325; }
 
         #panelBackdrop {
             position: fixed; inset: 0; z-index: 800; display: none;
@@ -476,7 +462,7 @@
         .side-drawer.right { right: 0; border-left: 1px solid #333; transform: translateX(100%); }
         .side-drawer.open { transform: translateX(0); }
         /* Debug drawer sits above every other overlay in the app (modals,
-           keyboards, confirm sheets) but below the global command palette
+           confirm sheets) but below the global command palette
            (z-index 3000), which is meant to be reachable from literally
            anywhere, including while debugging. #toolsDrawer, sharing the
            same .side-drawer base class, is deliberately left at the
@@ -601,8 +587,7 @@
         .layer-row.drop-after { box-shadow: inset 0 -3px 0 #4da3ff; }
         .layer-row.drop-inside { box-shadow: inset 0 0 0 3px #4da3ff; }
         .layer-search-results { display:flex; flex-direction:column; gap:4px; margin-top:4px; max-height:260px; overflow:auto; }
-        /* Search is intentionally collapsed by default. Touch devices reveal it and use the app
-           custom on-screen keyboard; desktop users can reveal it and use the native keyboard. */
+        /* Search is intentionally collapsed by default; revealing it focuses the native keyboard. */
         .layer-search-shell { display:flex; align-items:center; gap:6px; }
         .layer-search-shell.collapsed #layerSearchInput { display:none; }
         .layer-search-shell #layerSearchInput { flex:1; min-width:0; }
@@ -626,32 +611,6 @@
         .layer-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
         .layer-name-input { flex: 1; font-size: 16px; background: #1c1c1c; border: 1px solid #0078d4; border-radius: 4px; color: #fff; padding: 2px 4px; min-width: 0; transform-origin: left center; }
 
-        #keyboardBackdrop { position: fixed; inset: 0; z-index: 1990; display: none; background: rgba(0,0,0,0.3); }
-        #keyboardBackdrop.open { display: block; pointer-events: auto; }
-        #customKeyboard {
-            position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000;
-            background: #1c1c1e; border-top: 1px solid #333;
-            padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom));
-            box-sizing: border-box; transform: translateY(100%);
-            transition: transform 0.2s ease-out; display: flex; flex-direction: column; gap: 6px;
-        }
-        #customKeyboard.open { transform: translateY(0); }
-        #keyboardPreviewRow { display: flex; align-items: center; gap: 10px; padding: 2px 4px 8px; }
-        #keyboardKeysArea { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-        #keyboardPreviewText {
-            flex: 1; font-size: 16px; color: #fff; overflow: hidden; text-overflow: ellipsis;
-            white-space: nowrap; border-bottom: 1px solid #444; padding-bottom: 6px; min-height: 20px;
-        }
-        #keyboardDoneBtn { background: #0078d4; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: bold; }
-        .kb-row { display: flex; gap: 5px; justify-content: center; }
-        .kb-key {
-            flex: 1; height: 40px; background: #3a3a3c; border: none; border-radius: 5px;
-            color: #fff; font-size: 15px; box-shadow: 0 1px 0 rgba(0,0,0,0.4);
-        }
-        .kb-key.kb-special { background: #232325; flex: 1.6; font-size: 13px; }
-        .kb-key.active { background: #fff; color: #000; }
-        .kb-caret { display: inline-block; width: 1px; height: 16px; background: #0078d4; vertical-align: middle; animation: kbCaretBlink 1s step-end infinite; }
-        @keyframes kbCaretBlink { 50% { opacity: 0; } }
         .layer-type-badge { flex: none; font-size: 8px; color: #888; text-transform: uppercase; border: 1px solid #444; border-radius: 4px; padding: 2px 4px; }
         .layer-vis.off { opacity: 0.3; }
         .layer-opacity-row { display: flex; align-items: center; gap: 6px; padding: 6px; background: #1e2c3f; border: 1px solid #0078d4; border-top: 1px solid rgba(255,255,255,.12); border-radius: 0 0 6px 6px; margin-top: -4px; }
@@ -851,7 +810,7 @@
         </div>
     </div>
 
-    <!-- Canvas resize sheet. Size fields open the built-in numeric keypad. -->
+    <!-- Canvas resize sheet. Size fields use the native numeric keyboard (inputmode=numeric). -->
     <div id="resize-canvas-modal">
         <div id="resize-canvas-sheet">
             <div class="sheet-title">Resize Canvas</div>
@@ -873,12 +832,6 @@
         </div>
     </div>
 
-    <!-- Built-in numeric keypad for canvas dimensions. -->
-    <div id="numericKeyboardBackdrop"></div>
-    <div id="numericKeyboard">
-        <div id="numericPreviewRow"><div id="numericPreviewText">0</div><button id="numericDoneBtn">Done</button></div>
-        <div id="numericKeys"></div>
-    </div>
 
     <div id="init-screen" style="display:none;">
         <div style="font-size:20px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px;">🎨 Pixel Art Hub</div>
@@ -1121,7 +1074,7 @@
             </div>
             <div id="layerSearchShell" class="layer-search-shell collapsed">
                 <button id="layerSearchOpenBtn" class="btn layer-search-open-btn" onclick="uiAction(toggleLayerSearch)">🔍 SEARCH</button>
-                <input id="layerSearchInput" class="num-input" style="height:42px; text-align:left; padding:0 12px;" placeholder="Search layers, groups, tools…" autocomplete="off" readonly onclick="uiAction(focusLayerSearch)">
+                <input id="layerSearchInput" class="num-input" style="height:42px; text-align:left; padding:0 12px;" placeholder="Search layers, groups, tools…" autocomplete="off" onclick="uiAction(focusLayerSearch)">
                 <button id="globalSearchBtn" class="btn" style="min-width:70px;" onclick="uiAction(openGlobalCommandPalette)">⌘ SEARCH</button>
             </div>
             <div id="layerSearchResults" class="layer-search-results"></div>
@@ -1265,7 +1218,7 @@
                 </div>
             </div>
         </div>
-    <!-- Debug drawer: kept outside #pixel-canvas-screen, alongside the on-screen keyboard, so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
+    <!-- Debug drawer: kept outside #pixel-canvas-screen so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
         <div class="side-drawer right" id="debugDrawer">
             <div id="debugDrawerControls" style="display:flex; flex-direction:column; gap:8px;">
                 <div class="panel-title">JS Logs</div>
@@ -1280,7 +1233,6 @@
                     <button class="btn" id="debugVectorToggleBtn" onclick="uiAction(toggleDebugUnrestrictedVector)">🐛 UNRESTRICTED VECTOR</button>
                 </div>
                 <div class="row">
-                    <button class="btn" id="forceKeyboardToggleBtn" onclick="uiAction(toggleForceCustomKeyboard)">⌨️ FORCE BUILT-IN KEYBOARD</button>
                 </div>
                 <div class="panel-subtitle">History Memory Budget</div>
                 <div class="row" style="align-items:center; gap:6px;">
@@ -1310,9 +1262,6 @@
             <div id="debugLogPane"><div id="debugLog"></div></div>
         </div>
 
-    <!-- Global on-screen keyboard: kept outside #pixel-canvas-screen so it remains usable from the Hub. -->
-    <div id="keyboardBackdrop"></div>
-    <div id="customKeyboard"></div>
 
 <script>
 // Shown as a static label at the top of the Debug drawer (and in the Debug
@@ -1321,7 +1270,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_45';
+const BUILD_VERSION = 'V1_46';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1840,16 +1789,6 @@ function toggleDebugUnrestrictedVector() {
     frames.forEach(f => f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); }));
 }
 
-// Debug-only: forces the custom on-screen keyboard even on a desktop
-// (non-touch) device, for testing it without needing a touch screen.
-// Persisted the same way as toggleDebugUnrestrictedVector above.
-function toggleForceCustomKeyboard() {
-    forceCustomKeyboard = !forceCustomKeyboard;
-    panelVisibility.debugOptions.forceCustomKeyboard = forceCustomKeyboard;
-    savePanelVisibility();
-    const btn = document.getElementById('forceKeyboardToggleBtn');
-    if (btn) btn.classList.toggle('active', forceCustomKeyboard);
-}
 
 // Debug-only: adjusts the raster-tool size-gating area threshold (total
 // pixels, width x height). Above this threshold, raster tools (pencil,
@@ -2666,295 +2605,6 @@ let eventsInitialized = false;
 /* ============================================================
    SPLASH SCREEN PROFILES
    ============================================================ */
-/* ============================================================
-   CUSTOM ON-SCREEN KEYBOARD (iOS-styled)
-   A self-contained text entry keyboard, used instead of focusing a real
-   <input> (and therefore the device's native keyboard) so text entry
-   works the same way everywhere regardless of how reliably a given
-   browser/webview triggers its own on-screen keyboard on focus.
-   ============================================================ */
-let customKeyboardState = null; // {value, shift, onCommit, onChange}
-const KB_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
-
-// Builds one keyboard key button. Mirrors mkLayerIconBtn's pattern.
-function mkKbKey(text, flex, onClick, special) {
-    const btn = document.createElement('button');
-    btn.className = special ? 'kb-key kb-special' : 'kb-key';
-    if (flex != null) btn.style.flex = flex;
-    btn.innerText = text;
-    btn.onclick = onClick;
-    return btn;
-}
-
-let kbMode = 'letters'; // 'letters' | 'symbols' | 'emoji'
-const KB_SYMBOL_ROWS = ['1234567890', '-/:;()$&@"', '.,?!\'[]{}#%^*+=_\\|~'];
-// Not the full Unicode emoji set (thousands of hand-coded buttons isn't
-// practical) but a much broader curated list across common categories,
-// in a scrollable grid -- see the .kb-key[flex:0 0 17%] emoji grid CSS.
-const KB_EMOJI = [
-    '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙',
-    '😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥',
-    '😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','🧐',
-    '😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓',
-    '😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','👻','👽','🤖','😺','😸','😹','😻','😼','😽','🙀',
-    '👍','👎','👏','🙌','👐','🤝','🙏','✍️','💪','🦾','👀','👋','🤙','✌️','🤞','🫶','👊','✊','🤛','🤜',
-    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','💯','✨','⭐','🌟','💫','🔥','💥','💢','💤',
-    '✅','❌','⚠️','❗','❓','➕','➖','🔁','🔀','🔄','⏰','⌛','🔒','🔓','🔑','💡','🔍','📌','📍','🚀',
-    '🎉','🎊','🎈','🎁','🏆','🥇','🎨','🖌️','✏️','📝','📷','🎵','🎮','🧩','🔧','⚙️','💻','📱','🖥️','🕹️',
-    '🍎','🍕','🍔','🍟','🍩','🍪','☕','🍺','🍷','🍰',
-    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐸',
-    '🌞','🌙','⭐','☁️','🌈','🌧️','❄️','🔥','🌊','🌍'
-];
-
-// Builds the custom keyboard's static shell (preview row, key area, persistent bottom row) once; renderKeyboardKeys() fills in the actual keys per mode.
-function buildCustomKeyboard() {
-    const kb = document.getElementById('customKeyboard');
-    if (!kb || kb.childElementCount) return; // build once
-    kb.innerHTML = '';
-
-    const preview = document.createElement('div');
-    preview.id = 'keyboardPreviewRow';
-    const previewText = document.createElement('div');
-    previewText.id = 'keyboardPreviewText';
-    const doneBtn = document.createElement('button');
-    doneBtn.id = 'keyboardDoneBtn';
-    doneBtn.innerText = 'Done';
-    doneBtn.onclick = () => closeCustomKeyboard(true);
-    preview.append(previewText, doneBtn);
-    kb.appendChild(preview);
-
-    const keysArea = document.createElement('div');
-    keysArea.id = 'keyboardKeysArea';
-    kb.appendChild(keysArea);
-
-    // Persistent bottom row regardless of mode: switch letters<->symbols,
-    // jump to/from emoji, cursor, space, backspace.
-    const bottomRow = document.createElement('div');
-    bottomRow.className = 'kb-row';
-    const modeBtn = mkKbKey('', '2', () => { kbMode = kbMode === 'symbols' ? 'letters' : 'symbols'; renderKeyboardKeys(); }, true);
-    modeBtn.id = 'kbModeBtn';
-    const emojiBtn = mkKbKey('\u{1F600}', '1.4', () => { kbMode = kbMode === 'emoji' ? 'letters' : 'emoji'; renderKeyboardKeys(); }, true);
-    emojiBtn.id = 'kbEmojiBtn';
-    const leftBtn = mkKbKey('\u25C0', '1.2', () => kbMoveCursor(-1), true);
-    const spaceBtn = mkKbKey('space', '4', () => kbTapKey(' '));
-    const rightBtn = mkKbKey('\u25B6', '1.2', () => kbMoveCursor(1), true);
-    const bsBtn = mkKbKey('\u232B', '2', () => kbBackspace(), true);
-    bottomRow.append(modeBtn, emojiBtn, leftBtn, spaceBtn, rightBtn, bsBtn);
-    kb.appendChild(bottomRow);
-
-    renderKeyboardKeys();
-}
-
-// Rebuilds just the key grid for the current kbMode -- called on open and
-// whenever the mode switches, leaving the preview row and bottom row
-// (built once in buildCustomKeyboard) untouched.
-function renderKeyboardKeys() {
-    const area = document.getElementById('keyboardKeysArea');
-    if (!area) return;
-    area.innerHTML = '';
-    const modeBtn = document.getElementById('kbModeBtn');
-    if (modeBtn) modeBtn.innerText = kbMode === 'symbols' ? 'ABC' : '#+=';
-    const emojiBtn = document.getElementById('kbEmojiBtn');
-    if (emojiBtn) emojiBtn.classList.toggle('active', kbMode === 'emoji');
-
-    if (kbMode === 'emoji') {
-        const grid = document.createElement('div');
-        grid.className = 'kb-row';
-        grid.style.flexWrap = 'wrap';
-        KB_EMOJI.forEach(em => {
-            const btn = document.createElement('button');
-            btn.className = 'kb-key';
-            btn.style.cssText = 'flex:0 0 17%; font-size:20px; margin-bottom:5px;';
-            btn.innerText = em;
-            btn.onclick = () => kbTapKey(em);
-            grid.appendChild(btn);
-        });
-        area.appendChild(grid);
-        return;
-    }
-
-    const rows = kbMode === 'symbols' ? KB_SYMBOL_ROWS : KB_ROWS;
-    rows.forEach((row, rowIdx) => {
-        const rowEl = document.createElement('div');
-        rowEl.className = 'kb-row';
-        if (kbMode === 'letters' && rowIdx === 2) {
-            const shiftBtn = document.createElement('button');
-            shiftBtn.className = 'kb-key kb-special';
-            shiftBtn.id = 'kbShiftBtn';
-            shiftBtn.innerText = '\u21E7';
-            shiftBtn.classList.toggle('active', !!(customKeyboardState && customKeyboardState.shift));
-            shiftBtn.onclick = () => kbToggleShift();
-            rowEl.appendChild(shiftBtn);
-        }
-        row.split('').forEach(ch => {
-            const btn = document.createElement('button');
-            btn.className = 'kb-key';
-            const shown = (kbMode === 'letters' && customKeyboardState && customKeyboardState.shift) ? ch.toUpperCase() : ch;
-            btn.innerText = shown;
-            if (kbMode === 'letters') btn.dataset.ch = ch;
-            btn.onclick = () => kbTapKey(ch);
-            rowEl.appendChild(btn);
-        });
-        area.appendChild(rowEl);
-    });
-}
-
-// Inserts text at the current cursor position and advances the cursor
-// past it -- the shared primitive behind tapped keys, physical typing,
-// and paste.
-function kbInsertText(text) {
-    if (!customKeyboardState || !text) return;
-    const { value, cursorPos } = customKeyboardState;
-    customKeyboardState.value = value.slice(0, cursorPos) + text + value.slice(cursorPos);
-    customKeyboardState.cursorPos = cursorPos + text.length;
-    renderCustomKeyboardPreview();
-    if (customKeyboardState.onChange) customKeyboardState.onChange(customKeyboardState.value);
-}
-// Inserts one tapped character at the cursor, applying shift-case in letters mode.
-function kbTapKey(ch) {
-    if (!customKeyboardState) return;
-    kbInsertText((kbMode === 'letters' && customKeyboardState.shift) ? ch.toUpperCase() : ch);
-}
-// Deletes the character immediately before the cursor, if any.
-function kbBackspace() {
-    if (!customKeyboardState || customKeyboardState.cursorPos === 0) return;
-    const { value, cursorPos } = customKeyboardState;
-    customKeyboardState.value = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
-    customKeyboardState.cursorPos = cursorPos - 1;
-    renderCustomKeyboardPreview();
-    if (customKeyboardState.onChange) customKeyboardState.onChange(customKeyboardState.value);
-}
-// Moves the caret left/right (delta = -1 or 1), clamped to the text bounds.
-function kbMoveCursor(delta) {
-    if (!customKeyboardState) return;
-    customKeyboardState.cursorPos = Math.max(0, Math.min(customKeyboardState.value.length, customKeyboardState.cursorPos + delta));
-    renderCustomKeyboardPreview();
-}
-// Flips the keyboard's shift state and re-renders the key labels to match.
-function kbToggleShift() {
-    if (!customKeyboardState) return;
-    customKeyboardState.shift = !customKeyboardState.shift;
-    renderKeyboardKeys();
-}
-// Renders the preview text with a visible blinking caret at cursorPos,
-// so the on-screen keyboard has an actual editable cursor rather than
-// always appending/deleting at the end.
-function renderCustomKeyboardPreview() {
-    const el = document.getElementById('keyboardPreviewText');
-    if (!el || !customKeyboardState) return;
-    const { value, cursorPos } = customKeyboardState;
-    const before = escapeHtml(value.slice(0, cursorPos));
-    const after = escapeHtml(value.slice(cursorPos));
-    el.innerHTML = before + '<span class="kb-caret"></span>' + after;
-}
-
-// Opens the custom keyboard pre-filled with initialValue; onCommit(value)
-// runs when Done is tapped or the backdrop is tapped (tapping outside
-// commits rather than discards, so an accidental outside-tap can't lose
-// what was typed).
-function openCustomKeyboard(initialValue, onCommit, onChange) {
-    buildCustomKeyboard();
-    // The custom keyboard is also used by the Gallery (for project rename).
-    // In the original layout it lives inside #pixel-canvas-screen, which is display:none
-    // while the Gallery is visible. Move the fixed keyboard elements to body
-    // once so iOS can actually display and receive their touch events.
-    const kb = document.getElementById('customKeyboard');
-    const backdrop = document.getElementById('keyboardBackdrop');
-    if (kb && kb.parentElement !== document.body) document.body.appendChild(kb);
-    if (backdrop && backdrop.parentElement !== document.body) document.body.appendChild(backdrop);
-    const v = initialValue || '';
-    customKeyboardState = { value: v, cursorPos: v.length, shift: false, onCommit, onChange };
-    renderCustomKeyboardPreview();
-    kbMode = 'letters';
-    renderKeyboardKeys();
-    document.getElementById('customKeyboard').classList.add('open');
-    document.getElementById('keyboardBackdrop').classList.add('open');
-}
-// Closes the custom keyboard; commit=true runs the pending onCommit callback with whatever was typed, commit=false discards it.
-function closeCustomKeyboard(commit) {
-    if (!customKeyboardState) return;
-    const { value, onCommit } = customKeyboardState;
-    customKeyboardState = null;
-    document.getElementById('customKeyboard').classList.remove('open');
-    document.getElementById('keyboardBackdrop').classList.remove('open');
-    if (commit && onCommit) onCommit(value);
-}
-
-/* ============================================================
-   BUILT-IN NUMERIC KEYPAD
-   Used by New Canvas and Resize Canvas. Touch users tap these keys;
-   physical keyboards feed the same state through keydown.
-   ============================================================ */
-let numericKeyboardState = null; // {value, onCommit, maxLength}
-function buildNumericKeyboard(){
-    const area=document.getElementById('numericKeys'); if(!area || area.childElementCount) return;
-    const keys=['1','2','3','4','5','6','7','8','9','⌫','0','Clear'];
-    keys.forEach(k=>{
-        const b=document.createElement('button'); b.type='button'; b.className='numeric-key'+((k==='⌫'||k==='Clear')?' special':'');
-        b.textContent=k; b.onclick=()=>{ if(k==='⌫') numericBackspace(); else if(k==='Clear') numericSetValue(''); else numericInsert(k); };
-        area.appendChild(b);
-    });
-}
-function numericSetValue(v){
-    if(!numericKeyboardState)return;
-    let s=String(v).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
-    if(!s)s='';
-    s=s.slice(0,numericKeyboardState.maxLength||4);
-    numericKeyboardState.value=s;
-    document.getElementById('numericPreviewText').textContent=s||'0';
-}
-function numericInsert(ch){ numericSetValue((numericKeyboardState?.value||'')+ch); }
-function numericBackspace(){ numericSetValue((numericKeyboardState?.value||'').slice(0,-1)); }
-function openNumericKeyboard(initialValue,onCommit){
-    buildNumericKeyboard();
-    numericKeyboardState={value:String(initialValue||''),onCommit,maxLength:4};
-    numericSetValue(numericKeyboardState.value);
-    document.getElementById('numericKeyboard').classList.add('open');
-    document.getElementById('numericKeyboardBackdrop').classList.add('open');
-}
-function closeNumericKeyboard(commit=true){
-    if(!numericKeyboardState)return;
-    const state=numericKeyboardState; numericKeyboardState=null;
-    document.getElementById('numericKeyboard').classList.remove('open');
-    document.getElementById('numericKeyboardBackdrop').classList.remove('open');
-    if(commit && state.onCommit) state.onCommit(Math.max(1,parseInt(state.value,10)||1));
-}
-function handleNumericPhysicalKeydown(e){
-    if(!numericKeyboardState)return false;
-    if(/^\d$/.test(e.key)){e.preventDefault();numericInsert(e.key);return true;}
-    if(e.key==='Backspace'){e.preventDefault();numericBackspace();return true;}
-    if(e.key==='Delete'){e.preventDefault();numericSetValue('');return true;}
-    if(e.key==='Enter'){e.preventDefault();closeNumericKeyboard(true);return true;}
-    if(e.key==='Escape'){e.preventDefault();closeNumericKeyboard(false);return true;}
-    return false;
-}
-
-// Lets a physical keyboard drive the custom on-screen keyboard directly
-// (typing, arrow keys, backspace, Enter/Escape) and adds real clipboard
-// copy/paste -- something tapping on-screen keys alone can't offer. Only
-// intercepts input while the custom keyboard is actually open.
-function handleKeyboardPhysicalKeydown(e) {
-    if (numericKeyboardState && handleNumericPhysicalKeydown(e)) return;
-    if (!customKeyboardState) return;
-    if (e.key === 'Enter') { e.preventDefault(); closeCustomKeyboard(true); return; }
-    if (e.key === 'Escape') { e.preventDefault(); closeCustomKeyboard(false); return; }
-    if (e.key === 'ArrowLeft') { e.preventDefault(); kbMoveCursor(-1); return; }
-    if (e.key === 'ArrowRight') { e.preventDefault(); kbMoveCursor(1); return; }
-    if (e.key === 'Backspace') { e.preventDefault(); kbBackspace(); return; }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-        e.preventDefault();
-        navigator.clipboard.writeText(customKeyboardState.value).catch(err => console.warn('clipboard write failed:', err && err.message));
-        return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-        e.preventDefault();
-        navigator.clipboard.readText().then(text => kbInsertText(text)).catch(err => console.warn('clipboard read failed:', err && err.message));
-        return;
-    }
-    if (e.ctrlKey || e.metaKey || e.altKey) return; // don't swallow other shortcuts
-    if (e.key.length === 1) { e.preventDefault(); kbInsertText(e.key); }
-}
-window.addEventListener('keydown', handleKeyboardPhysicalKeydown);
 
 function portraitDimensionsCompatible(w, h) {
     return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 && w % 40 === 0 && h % 40 === 0;
@@ -3245,7 +2895,7 @@ let panelVisibility = { tools:true, view:true, colors:true, layers:true, file:tr
     // top level so it stays visually distinct from the panel-tab booleans
     // above, even though nothing currently iterates this object's keys in
     // a way that would actually break if it were flat.
-    debugOptions: { unrestrictedVector:false, forceCustomKeyboard:false, logTouch:false, logJs:false, logTrace:false, historyMemoryBudgetMiB:64, rasterToolGateThresholdPx:1000000, forceEnableRasterTools:false }
+    debugOptions: { unrestrictedVector:false, logTouch:false, logJs:false, logTrace:false, historyMemoryBudgetMiB:64, rasterToolGateThresholdPx:1000000, forceEnableRasterTools:false }
 };
 try { const saved=JSON.parse(localStorage.getItem('pixelAppPanelVisibility')||'null'); if(saved && typeof saved==='object') panelVisibility={...panelVisibility,...saved,debugOptions:{...panelVisibility.debugOptions,...(saved.debugOptions||{})}}; } catch(e) {}
 function savePanelVisibility(){ try{ localStorage.setItem('pixelAppPanelVisibility', JSON.stringify(panelVisibility)); }catch(e){} }
@@ -3564,14 +3214,12 @@ function openDrawer(which) {
     if (which === 'debug') {
         refreshDebugStats();
         renderLogToggleButtons();
-        // These two toggles only update their own button's .active class
-        // from inside their own click handler (toggleDebugUnrestrictedVector/
-        // toggleForceCustomKeyboard), which never runs on page load -- so a
-        // value restored from panelVisibility.debugOptions needs syncing to
-        // the button here too, or the button would show "off" while the
-        // underlying state is actually "on" until the first tap.
+        // This toggle only updates its own button's .active class from
+        // inside its click handler (toggleDebugUnrestrictedVector), which
+        // never runs on page load -- so a value restored from
+        // panelVisibility.debugOptions needs syncing to the button here
+        // too, or it would show "off" while the state is actually "on".
         const vecBtn = document.getElementById('debugVectorToggleBtn'); if (vecBtn) vecBtn.classList.toggle('active', debugUnrestrictedVector);
-        const kbBtn = document.getElementById('forceKeyboardToggleBtn'); if (kbBtn) kbBtn.classList.toggle('active', forceCustomKeyboard);
     }
     // Delete Points is a one-shot "I'm about to tap a point to remove it"
     // mode, not a standing preference -- closing the Tools drawer to make
@@ -4409,7 +4057,6 @@ function revealPixelCanvas() {
         setupPaletteDragEvents();
         setupKeyboardShortcuts();
         registerBuiltInCommands();
-prepareSearchInputs();
         eventsInitialized = true;
     }
     updateCanvasWrapPadding();
@@ -4692,7 +4339,6 @@ let showGridLines = false;
 let largeLayerThumbs = false;
 let currentPenWidth = 1; // grid units, used for new vector strokes/shapes
 let debugUnrestrictedVector = panelVisibility.debugOptions.unrestrictedVector; // debug-only: smooth display-resolution vector rendering instead of pixel-snapped
-let forceCustomKeyboard = panelVisibility.debugOptions.forceCustomKeyboard; // debug-only: use the custom on-screen keyboard even on desktop (for testing it without a touch device)
 // Raster-tool size-gating (roadmap item 13): above rasterToolGateThresholdPx
 // total pixels (width x height), raster tools are disabled in the Tools
 // drawer, steering the person toward vector/fill/wand tools instead. This
@@ -4709,15 +4355,6 @@ let rasterToolGateThresholdPx = (() => {
 })();
 let forceEnableRasterTools = !!panelVisibility.debugOptions.forceEnableRasterTools; // debug-only: overrides the size gate, re-enabling raster tools regardless of canvas area
 
-// The app previously used a custom on-screen keyboard for touch devices
-// (no real keyboard/mouse). It now uses the device's native keyboard
-// (e.g. iOS Safari's own keyboard) everywhere instead, so this always
-// returns false. forceCustomKeyboard (Debug drawer) still overrides this
-// for testing the custom keyboard UI itself.
-function shouldUseCustomKeyboard() {
-    if (forceCustomKeyboard) return true;
-    return false;
-}
 
 // Canvas transparency checkerboard (V1_44_2). The square size is measured
 // in CANVAS pixels, not screen pixels, so it scales with zoom the way
@@ -5746,9 +5383,8 @@ function toggleLayerThumbSize() {
 }
 
 // Rebuilds the entire Layers panel list: one row per layer (thumbnail, visibility, name, reorder, clear, delete), plus the opacity slider and transform UI for whichever layer is active.
-// Layers-panel search is collapsed by default. On touch devices, revealing it also
-// opens the existing custom on-screen keyboard instead of allowing the browser/iOS
-// to summon a native keyboard. Desktop keeps the normal native input behavior.
+// Layers-panel search is collapsed by default; revealing it focuses the input and
+// summons the device's native keyboard.
 function toggleLayerSearch(){
     const shell=document.getElementById('layerSearchShell');
     if(!shell)return;
@@ -5766,21 +5402,8 @@ function focusLayerSearch(){
     const input=document.getElementById('layerSearchInput');
     if(!shell||!input)return;
     shell.classList.remove('collapsed');
-    if(shouldUseCustomKeyboard()){
-        input.readOnly=true;
-        openCustomKeyboard(input.value,
-            value=>{ input.value=value; renderLayerSearchResults(value); },
-            value=>{ input.value=value; renderLayerSearchResults(value); }
-        );
-    }else{
-        input.readOnly=false;
-        input.focus();
-        input.select();
-    }
-}
-function prepareSearchInputs(){
-    const input=document.getElementById('layerSearchInput');
-    if(input) input.readOnly=shouldUseCustomKeyboard();
+    input.focus();
+    input.select();
 }
 
 function fuzzyScore(query,text){
@@ -5836,24 +5459,13 @@ function openGlobalCommandPalette(){
         const input=panel.querySelector('#globalCommandInput');
         input.oninput=()=>renderGlobalCommandResults(input.value);
         input.onkeydown=e=>{if(e.key==='Escape')closeGlobalCommandPalette();};
-        input.onclick=()=>{ if(shouldUseCustomKeyboard()) openGlobalCommandKeyboard(); };
     }
     overlay.style.display='flex';globalPaletteOpen=true;
     const input=document.getElementById('globalCommandInput');
     input.value='';
-    if(shouldUseCustomKeyboard()) openGlobalCommandKeyboard();
-    else { input.focus(); renderGlobalCommandResults(''); }
+    input.focus(); renderGlobalCommandResults('');
 }
-function openGlobalCommandKeyboard(){
-    const input=document.getElementById('globalCommandInput');
-    if(!input)return;
-    input.readOnly=true;
-    openCustomKeyboard(input.value,
-        value=>{ input.value=value; renderGlobalCommandResults(value); },
-        value=>{ input.value=value; renderGlobalCommandResults(value); }
-    );
-}
-function closeGlobalCommandPalette(){const o=document.getElementById('globalCommandPalette');if(o)o.style.display='none';globalPaletteOpen=false;if(customKeyboardState)closeCustomKeyboard(false);}
+function closeGlobalCommandPalette(){const o=document.getElementById('globalCommandPalette');if(o)o.style.display='none';globalPaletteOpen=false;}
 function renderGlobalCommandResults(query){const box=document.getElementById('globalCommandResults');if(!box)return;const q=query||'';const results=q?buildSearchResults(q):commandRegistry.filter(c=>!(c.hiddenWhen&&c.hiddenWhen())).slice(0,20).map(c=>({type:'command',name:(typeof c.name==='function')?c.name():c.name,path:c.category,score:1,action:c.action}));box.innerHTML='';results.slice(0,30).forEach(r=>{const b=document.createElement('button');b.className='layer-search-result';b.innerHTML=escapeHtml(r.name)+'<small>'+escapeHtml(r.type.toUpperCase()+' • '+r.path)+'</small>';b.onclick=()=>{r.action();closeGlobalCommandPalette();};box.appendChild(b);});}
 function registerBuiltInCommands(){
     if(commandRegistry.length)return;
@@ -5946,7 +5558,7 @@ function renderLayersPanel() {
         const vis=document.createElement('button'); vis.className='layer-icon-btn layer-vis'+(layer.visible?'':' off'); vis.innerText=layer.visible?'\u{1F441}\uFE0F':'\u{1F6AB}'; vis.onclick=e=>{e.stopPropagation();layer.visible=!layer.visible;layer.applyVisualState();refreshHookedComposites();renderLayersPanel();};
         const sel=document.createElement('input'); sel.type='checkbox'; sel.checked=isNodeSelected(node); sel.style.display=layerSelectionMode?'block':'none'; sel.disabled=layerSelectionMode&&selectionContainsDescendantOfSelected(node); sel.onclick=e=>{e.stopPropagation();selectTreeNode(node,sel.checked);renderLayersPanel();};
         const name=document.createElement('div'); name.className='layer-name'; name.innerText=layer.name;
-        name.onclick=e=>{e.stopPropagation(); if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();return;} if(i!==activeLayerIndex){setActiveLayer(i);return;} const commit=v=>{v=(v||'').trim();if(v)layer.name=v;renderLayersPanel();}; if(shouldUseCustomKeyboard())openCustomKeyboard(layer.name,commit);else{const input=document.createElement('input');input.type='text';input.className='layer-name-input';input.value=layer.name;input.onclick=ev=>ev.stopPropagation();input.onkeydown=ev=>{if(ev.key==='Enter')input.blur();if(ev.key==='Escape'){input.value=layer.name;input.blur();}};input.onblur=()=>commit(input.value);name.replaceWith(input);input.focus();input.select();}};
+        name.onclick=e=>{e.stopPropagation(); if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();return;} if(i!==activeLayerIndex){setActiveLayer(i);return;} const commit=v=>{v=(v||'').trim();if(v)layer.name=v;renderLayersPanel();}; {const input=document.createElement('input');input.type='text';input.className='layer-name-input';input.value=layer.name;input.onclick=ev=>ev.stopPropagation();input.onkeydown=ev=>{if(ev.key==='Enter')input.blur();if(ev.key==='Escape'){input.value=layer.name;input.blur();}};input.onblur=()=>commit(input.value);name.replaceWith(input);input.focus();input.select();}};
         const badge=document.createElement('div'); badge.className='layer-type-badge'; badge.innerText=layer.type;
         const foundNode=findNode(f.layerTree,nodeId(node));
         const parent=foundNode?foundNode.parent:null;
@@ -10639,8 +10251,8 @@ function openNewCanvasModal() {
         : selectedProfile === 'sprite' ? 'Create Canvas adds a Frames strip for flipbook animation. Import Sprite ZIP opens the PMD animation editor instead.' : '';
     sheet.appendChild(hintEl);
 
-    // Canvas size fields. Touch opens the built-in numeric keypad; a physical
-    // keyboard can type directly while the keypad is open.
+    // Canvas size fields: native numeric inputs (inputmode=numeric), so iOS
+    // shows its own number pad and a physical keyboard types directly.
     let newCanvasModalWidth = selectedProfile === 'portrait' ? 40 : 32;
     let newCanvasModalHeight = selectedProfile === 'portrait' ? 40 : 32;
     const sizeBox = document.createElement('div');
@@ -10654,8 +10266,6 @@ function openNewCanvasModal() {
     hBtn.oninput=()=>{newCanvasModalHeight=Math.max(1,Math.min(2000,parseInt(hBtn.value,10)||1));};
     wBtn.onblur=()=>{wBtn.value=String(newCanvasModalWidth);};
     hBtn.onblur=()=>{hBtn.value=String(newCanvasModalHeight);};
-    wBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ wBtn.blur(); openNumericKeyboard(newCanvasModalWidth,v=>{newCanvasModalWidth=Math.max(1,Math.min(2000,v));wBtn.value=newCanvasModalWidth;}); } };
-    hBtn.onfocus=()=>{ if(shouldUseCustomKeyboard()){ hBtn.blur(); openNumericKeyboard(newCanvasModalHeight,v=>{newCanvasModalHeight=Math.max(1,Math.min(2000,v));hBtn.value=newCanvasModalHeight;}); } };
     sizeRow.append(wBtn,xSep,hBtn); sizeBox.appendChild(sizeRow); sheet.appendChild(sizeBox);
 
     const createBtn = document.createElement('button');
@@ -10791,19 +10401,9 @@ function beginGalleryRename(e) {
     galleryRenameTargetId = id;
     const input = document.getElementById('gallery-rename-input');
     input.value = proj.name;
-    if (shouldUseCustomKeyboard()) {
-        openCustomKeyboard(proj.name, (newName) => {
-            const clean = (newName || '').trim() || 'Untitled';
-            proj.name = clean;
-            if (currentProjectId === proj.id) currentProjectName = clean;
-            renderGallery();
-            galleryRenameTargetId = null;
-        });
-    } else {
-        document.getElementById('gallery-rename-modal').classList.add('open');
-        input.focus();
-        input.select();
-    }
+    document.getElementById('gallery-rename-modal').classList.add('open');
+    input.focus();
+    input.select();
 }
 document.getElementById('ctx-rename').addEventListener('pointerup', beginGalleryRename);
 document.getElementById('rename-cancel-btn').addEventListener('click', () => {
@@ -10969,24 +10569,12 @@ panelBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeP
 panelBackdrop.addEventListener('mousedown', () => closePanel());
 
 const drawerBackdrop = document.getElementById('drawerBackdrop');
-const keyboardBackdrop = document.getElementById('keyboardBackdrop');
-keyboardBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeCustomKeyboard(true); }, {passive: false});
-keyboardBackdrop.addEventListener('mousedown', () => closeCustomKeyboard(true));
-const numericBackdrop = document.getElementById('numericKeyboardBackdrop');
-numericBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeNumericKeyboard(true); }, {passive:false});
-numericBackdrop.addEventListener('mousedown', () => closeNumericKeyboard(true));
-document.getElementById('numericDoneBtn').addEventListener('click', () => closeNumericKeyboard(true));
 document.getElementById('resize-cancel-btn').addEventListener('click', () => closeResizeCanvasSheet());
 document.getElementById('resize-canvas-modal').addEventListener('click', e => { if(e.target.id==='resize-canvas-modal') closeResizeCanvasSheet(); });
 document.getElementById('resize-new-w').addEventListener('input', function(){ setResizeDimension('w', parseInt(this.value,10)||1); });
 document.getElementById('resize-new-h').addEventListener('input', function(){ setResizeDimension('h', parseInt(this.value,10)||1); });
 document.getElementById('resize-new-w').addEventListener('blur', function(){ this.value=document.getElementById('resize-canvas-modal').dataset.w; });
 document.getElementById('resize-new-h').addEventListener('blur', function(){ this.value=document.getElementById('resize-canvas-modal').dataset.h; });
-// forceCustomKeyboard (Debug drawer) also exercises the built-in numeric
-// keypad on these two fields, same as it does for the text keyboard via
-// shouldUseCustomKeyboard() elsewhere -- see V1_29 bugfix notes.
-document.getElementById('resize-new-w').addEventListener('focus', function(){ if(shouldUseCustomKeyboard()){ this.blur(); const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.w,v=>setResizeDimension('w',v)); } });
-document.getElementById('resize-new-h').addEventListener('focus', function(){ if(shouldUseCustomKeyboard()){ this.blur(); const m=document.getElementById('resize-canvas-modal'); openNumericKeyboard(m.dataset.h,v=>setResizeDimension('h',v)); } });
 document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListener('click', () => {
     const [ax,ay]=btn.dataset.anchor.split(','); const m=document.getElementById('resize-canvas-modal'); m.dataset.ax=ax; m.dataset.ay=ay;
     document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
@@ -10996,7 +10584,6 @@ document.getElementById('resize-apply-btn').addEventListener('click', () => {
     applyCanvasResize(Number(m.dataset.w),Number(m.dataset.h),Number(m.dataset.ax),Number(m.dataset.ay));
     closeResizeCanvasSheet(false);
 });
-requestAnimationFrame(() => { buildCustomKeyboard(); });
 drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeDrawer(); }, {passive: false});
 drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
 setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
