@@ -272,6 +272,10 @@
             display: none; opacity: 0; transition: opacity .18s ease;
         }
         #appToast.showing { opacity: 1; }
+        #galleryStorageStatus { font-size: 11px; color: #888; padding: 0 16px 8px; line-height: 1.4; }
+        #galleryStorageStatus.warn { color: #f0c36a; }
+        #galleryStorageStatus .storage-status-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+        #galleryStorageStatus .storage-status-actions .btn { flex: 0 0 auto; padding: 6px 12px; font-size: 11px; }
         /* Size-gated raster tools keep their greyed look now that they are
            no longer `disabled` -- see applyCanvasSizeToolGating for why. */
         .tool-btn.size-gated { opacity: 0.35; }
@@ -658,6 +662,8 @@
             <button class="btn" id="hubDebugBtn" onclick="uiAction(() => toggleDrawer('debug'))" style="flex:0 0 auto; padding:8px 14px;">⚙️ DEBUG</button>
             <button class="btn" id="hubSpriteEditorBtn" onclick="uiAction(openSpriteAnimEditor)" style="flex:0 0 auto; padding:8px 14px;">🎞️ SPRITE ANIM</button>
         </div>
+        <!-- Storage state, backup reminder, and recovery actions (renderStorageStatus). -->
+        <div id="galleryStorageStatus"></div>
 
         <div id="gallery-grid">
             <div class="gallery-card new-canvas-card"><div class="new-canvas-card-icon">+</div><div class="new-canvas-card-label">Pixel Art Hub</div><div class="new-canvas-card-hint">Loading gallery…</div></div>
@@ -1227,6 +1233,7 @@
                 <div class="row">
                     <button class="btn" onclick="uiAction(refreshDebugStats)">🔄 REFRESH STATS</button>
                     <button class="btn" id="printVersionBtn" onclick="uiAction(printBuildVersion)">🏷️ PRINT VERSION</button>
+                    <button class="btn" id="debugResetStorageBtn" onclick="uiAction(() => debugStorageResetConfirm.trigger())">🗑️ RESET PROJECT STORAGE</button>
                 </div>
                 <div class="panel-subtitle">Rendering</div>
                 <div class="row">
@@ -1270,7 +1277,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V1_46';
+const BUILD_VERSION = 'V1_47';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -1852,6 +1859,7 @@ function refreshDebugStats() {
         'Undo stack: ' + undoStack.length + ' / Redo: ' + redoStack.length + '<br>' +
         'History memory: ~' + historyMb + ' / ' + budgetMb + ' MiB<br>' +
         'Est. raster memory: ~' + mb + ' MB (our own count -- iOS/WebKit has no memory API to read from)<br>' +
+        'Saved projects: ' + projectStore.length + ' (storage: ' + projectStorageState + (projectStorageUsage && Number.isFinite(projectStorageUsage.usage) ? ', ' + formatBytes(projectStorageUsage.usage) + ' of ' + formatBytes(projectStorageUsage.quota) : '') + ')<br>' +
         'devicePixelRatio: ' + (window.devicePixelRatio || 1);
     // Keep the History Memory Budget slider in sync with the live value --
     // it can change from setHistoryMemoryBudgetMiB itself (normal case) but
@@ -2430,9 +2438,11 @@ function mergeSelectedGroups(){
 
 function addEmptyGroup(){
     const f=frames[activeFrameIndex]; if(!f)return;
+    const before=captureTreeState();
     const g=makeGroupNode('Group');
     insertNodeForActive(g);
     activeGroupId=g.id; activeLayerId=null; activeLayerIndex=-1;
+    pushTreeOperation('Add group',before);
     renderLayersPanel();
 }
 
@@ -8649,6 +8659,9 @@ function setupDrawingEvents() {
             return;
         }
         g.vecDragTarget = (layer && layer.type === 'vector') ? findNearestVectorPoint(layer, x, y) : null;
+        // Snapshot the grabbed spline's points so the release can push one
+        // editSplinePoints undo entry (Fix List 7: point drags weren't undoable).
+        if (g.vecDragTarget) g.vecDragTarget.before = g.vecDragTarget.spline.points.map(p => ({ x: p.x, y: p.y }));
         traceLog('vedit start: ' + (g.vecDragTarget ? 'grabbed a point' : 'no point within reach'));
     };
     const updateVectorEditDrag = (x, y) => {
@@ -8695,6 +8708,13 @@ function setupDrawingEvents() {
             renderGradientStopsBar();
             if (openPanelName === 'layers') renderLayersPanel();
             return;
+        }
+        const t = g.vecDragTarget;
+        if (t && t.before) {
+            const after = t.spline.points.map(p => ({ x: p.x, y: p.y }));
+            const changed = after.length !== t.before.length || after.some((p, i) => p.x !== t.before[i].x || p.y !== t.before[i].y);
+            const layer = activeLayer();
+            if (changed && layer) pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: t.spline, before: t.before, after });
         }
         g.vecDragTarget = null;
     };
@@ -9812,148 +9832,467 @@ function serializeLayerTree(nodes, frameLayers) {
 }
 
 // Serializes every frame/layer into one JSON file and triggers a download. This -- not cookies or localStorage -- is the only way project state is ever persisted.
-function saveProject() {
-    const data = {
-        version: 6,
-        name: currentProjectName || 'Untitled',
+/* ============================================================
+   PROJECT SAVE FORMAT -- one serializer + one loader for every path
+   (file export/import and the IndexedDB gallery). The gallery used to
+   hold live `frames` references while file export had its own
+   serializer plus a second inline copy in the gallery's Save File
+   action; they drifted (Fix List 2: file export dropped the Portrait
+   palette fields, nothing restored portraitTileIsolation).
+   ============================================================ */
+const PROJECT_SAVE_VERSION = 7;
+function serializeFramesForSave(framesArr) {
+    return framesArr.map(f => {
+        const serialized = f.layers.map(serializeLayer);
+        serialized.forEach(sl => {
+            if (sl.hookedTo != null) { const i = f.layers.findIndex(l => l.id === sl.hookedTo); sl.hookedToIndex = i !== -1 ? i : null; }
+            delete sl.hookedTo;
+            if (sl.gradientHostFor != null) { const i = f.layers.findIndex(l => l.id === sl.gradientHostFor); sl.gradientHostForIndex = i !== -1 ? i : null; }
+            delete sl.gradientHostFor;
+        });
+        ensureFrameLayerTree(f);
+        return { name: f.name, layers: serialized, layerTree: serializeLayerTree(f.layerTree, f.layers) };
+    });
+}
+// Snapshot of the project currently open in the editor.
+function currentProjectSaveData(name) {
+    return {
+        version: PROJECT_SAVE_VERSION,
+        name: name || currentProjectName || 'Untitled',
         gridW, gridH, profile: selectedProfile,
         activeFrameIndex, activeLayerIndex, activeLayerId,
-        frames: frames.map(f => {
-            const serialized = f.layers.map(serializeLayer);
-            serialized.forEach(sl => {
-                if (sl.hookedTo != null) {
-                    const idx = f.layers.findIndex(l => l.id === sl.hookedTo);
-                    sl.hookedToIndex = idx !== -1 ? idx : null;
-                }
-                delete sl.hookedTo;
-                if (sl.gradientHostFor != null) {
-                    const idx = f.layers.findIndex(l => l.id === sl.gradientHostFor);
-                    sl.gradientHostForIndex = idx !== -1 ? idx : null;
-                }
-                delete sl.gradientHostFor;
-            });
-            ensureFrameLayerTree(f); return { name: f.name, layers: serialized, layerTree: serializeLayerTree(f.layerTree, f.layers) };
-        })
+        frames: serializeFramesForSave(frames),
+        portraitTilePalettes: selectedProfile === 'portrait' ? Object.fromEntries(portraitTilePalettes) : null,
+        portraitActiveTileKey,
+        portraitTileIsolation: selectedProfile === 'portrait' && !!portraitTileIsolation
     };
+}
+function downloadProjectData(data, fileBase) {
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const link = document.createElement('a');
-    link.download = 'project.pxproj.json';
+    link.download = (fileBase || 'project') + '.pxproj.json';
     link.href = URL.createObjectURL(blob);
     link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+function saveProject() { downloadProjectData(currentProjectSaveData(), 'project'); }
+
+// Builds frames (layers, trees, mask/clip hooks) from save data without
+// touching editor state -- used for opening and for exporting a stored
+// project without opening it. Layers decode async; onDone(frames, failures)
+// fires once all have. A layer whose image can't be decoded becomes a
+// blank layer of the same type (a reference layer is dropped) instead of
+// stalling the load forever, which is what a missing img.onerror used to do.
+function buildFramesFromSaveData(data, onDone) {
+    const w = data.gridW, h = data.gridH;
+    const frameDefs = data.version >= 2 ? (data.frames || []) : [{ name: 'Frame 1', layers: data.layers || [] }];
+    const slots = frameDefs.map(fd => new Array((fd.layers || []).length).fill(null));
+    let failures = 0;
+    let remaining = frameDefs.reduce((n, fd) => n + (fd.layers || []).length, 0);
+    const finish = () => {
+        const built = frameDefs.map((fd, fi) => {
+            const slot = slots[fi];
+            // Hooks resolve against saved order before any filtering, so a
+            // layer that failed to load can't shift the indexes.
+            (fd.layers || []).forEach((ld, li) => {
+                const l = slot[li]; if (!l) return;
+                if ((ld.type === 'mask' || ld.type === 'clip') && ld.hookedToIndex != null && slot[ld.hookedToIndex]) l.hookedTo = slot[ld.hookedToIndex].id;
+                if (ld.type === 'vector' && ld.gradientHostForIndex != null && slot[ld.gradientHostForIndex]) l.gradientHostFor = slot[ld.gradientHostForIndex].id;
+            });
+            const f = { name: fd.name };
+            if (Array.isArray(fd.layerTree)) {
+                const buildTree = nodes => (nodes || []).map(n => {
+                    if (n.kind === 'group' || n.kind === 'folder') return { kind: 'group', id: n.id || ('group-' + (nextGroupId++)), name: n.name || 'Group', color: n.color || null, visible: n.visible !== false, opacity: typeof n.opacity === 'number' ? n.opacity : 1, collapsed: !!n.collapsed, blendMode: n.blendMode || 'source-over', children: buildTree(n.children) };
+                    return slot[n.layerIndex] ? makeLayerNode(slot[n.layerIndex]) : null;
+                }).filter(Boolean);
+                f.layerTree = buildTree(fd.layerTree);
+            } else f.layerTree = slot.filter(Boolean).map(makeLayerNode);
+            f.layers = flattenLayerTree(f.layerTree);
+            if (!f.layers.length) { const bl = new PixelLayer('Layer 1', w, h); f.layerTree = [makeLayerNode(bl)]; f.layers = [bl]; }
+            return f;
+        });
+        onDone(built, failures);
+    };
+    if (remaining === 0) { finish(); return; }
+    const done = () => { if (--remaining === 0) finish(); };
+    const common = (l, ld) => {
+        l.color = ld.color || null;
+        if (ld.type === 'pixel' || ld.type === 'image' || ld.type === 'vector') l.blendMode = ld.blendMode || 'source-over';
+        l.visible = ld.visible; l.opacity = ld.opacity;
+        l.applyVisualState();
+    };
+    const blankOf = ld => {
+        if (ld.type === 'reference') return null;
+        const l = ld.type === 'image' ? new ImageLayer(ld.name, w, h) : ld.type === 'mask' ? new MaskLayer(ld.name, w, h) : ld.type === 'clip' ? new ClipLayer(ld.name, w, h) : new PixelLayer(ld.name, w, h);
+        common(l, ld); return l;
+    };
+    frameDefs.forEach((fd, fi) => (fd.layers || []).forEach((ld, li) => {
+        if (ld.type === 'vector') {
+            const l = new VectorLayer(ld.name);
+            l.splines = (ld.splines || []).map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })), stops: sp.stops ? sp.stops.map(st => ({ position: st.position, color: st.color })) : null }));
+            common(l, ld);
+            slots[fi][li] = l; done(); return;
+        }
+        const fail = why => { failures++; console.warn('Layer "' + ld.name + '" could not be read: ' + why); slots[fi][li] = blankOf(ld); done(); };
+        if (!ld.dataURL) { fail('no image data'); return; }
+        const img = new Image();
+        img.onload = () => {
+            let l;
+            try {
+                if (ld.type === 'pixel') { l = new PixelLayer(ld.name, w, h); l.loadFromImage(img); }
+                else if (ld.type === 'image') { l = new ImageLayer(ld.name, w, h); l.loadFromImage(img); }
+                else if (ld.type === 'mask') { l = new MaskLayer(ld.name, w, h); l.loadFromImage(img); }
+                else if (ld.type === 'clip') { l = new ClipLayer(ld.name, w, h); l.loadFromImage(img); }
+                else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
+                common(l, ld);
+            } catch (e) { fail(e && e.message); return; }
+            slots[fi][li] = l; done();
+        };
+        img.onerror = () => fail('image failed to decode');
+        img.src = ld.dataURL;
+    }));
 }
 
-// Rebuilds the entire app state (frames, layers, images) from a saved project file. Builds into indexed slots first so that async image loading can't scramble the saved layer order.
+// Replaces the open project with one built from save data. The old
+// project stays on screen until the new one has fully decoded.
+// opts: { name, projectId } -- projectId null means "not in the gallery yet".
+function openProjectFromSaveData(data, opts, onDone) {
+    opts = opts || {};
+    buildFramesFromSaveData(data, (built, failures) => {
+        try {
+            revealPixelCanvas();
+            if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch (e) {} }));
+            currentProjectName = String(opts.name || data.name || 'Untitled').trim() || 'Untitled';
+            gridW = data.gridW; gridH = data.gridH;
+            selectedProfile = data.profile || 'pixelArt';
+            if (selectedProfile === 'standard') selectedProfile = 'pixelArt';
+            // Always open fit-to-screen, never at the saved zoom (see computeFitToScreenZoomIndex).
+            zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
+            scale = ZOOM_STEPS[zoomIndex];
+            portraitTilePalettes = new Map(Object.entries(data.portraitTilePalettes || {}));
+            portraitActiveTileKey = data.portraitActiveTileKey || '0,0';
+            portraitTileIsolation = selectedProfile === 'portrait' && !!data.portraitTileIsolation;
+            lastEnteredProfile = selectedProfile;
+            frames = built;
+            activeFrameIndex = Math.min(data.activeFrameIndex || 0, frames.length - 1);
+            layers = frames[activeFrameIndex].layers;
+            resetHistory();
+            resetSelectionState();
+            transformMode = false;
+            if (!document.getElementById('portraitTileIsolationOverlay')) { const o = document.createElement('div'); o.id = 'portraitTileIsolationOverlay'; container.appendChild(o); }
+            enforcePixelArtRendererForDimensions();
+            layers = frames[activeFrameIndex].layers;
+            layers.forEach(l => { if (!container.contains(l.el)) container.appendChild(l.el); });
+            reindexDom();
+            setActiveLayer(data.activeLayerId != null && layers.some(l => l.id === data.activeLayerId) ? layers.findIndex(l => l.id === data.activeLayerId) : Math.min(data.activeLayerIndex || 0, layers.length - 1));
+            document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
+            layoutAll();
+            refreshHookedComposites();
+            renderLayersPanel();
+            renderFramesPanel();
+            if (selectedProfile === 'portrait') { updatePortraitTileOverlay(); updatePortraitTileControls(); }
+            currentProjectId = opts.projectId != null ? opts.projectId : null;
+            if (failures) showAppToast(failures + (failures > 1 ? ' layers' : ' layer') + " couldn't be read and " + (failures > 1 ? 'were' : 'was') + ' left blank.', 7000);
+        } catch (e) {
+            console.error('openProjectFromSaveData failed:', e && e.message);
+            alert('Could not open this project -- check the Debug tab for details.');
+        } finally {
+            if (onDone) onDone();
+        }
+    });
+}
+
+// File import: always becomes a new, not-yet-saved gallery project.
 function loadProjectFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
         let data;
         try { data = JSON.parse(reader.result); } catch (e) { alert('Invalid project file.'); return; }
-
-        revealPixelCanvas();
-        currentProjectName = (data.name || file.name.replace(/\.[^.]+$/, '') || 'Untitled').trim() || 'Untitled';
-        frames.forEach(f => f.layers.forEach(l => l.el.remove()));
-        gridW = data.gridW; gridH = data.gridH;
-        selectedProfile = data.profile || 'pixelArt';
-        if (selectedProfile === 'standard') selectedProfile = 'pixelArt';
-        // Deliberately not restoring data.scale here: opening a project should
-        // always start by showing the whole picture fit to screen, the same as
-        // creating a new canvas -- see computeFitToScreenZoomIndex.
-        zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
-        scale = ZOOM_STEPS[zoomIndex];
-        document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
-
-        const frameDefs = data.version >= 2 ? data.frames : [{ name: 'Frame 1', layers: data.layers }];
-        const builtFrames = frameDefs.map(fd => ({ name: fd.name, layers: new Array(fd.layers.length) }));
-        let remaining = frameDefs.reduce((n, fd) => n + fd.layers.length, 0);
-
-        const finalize = () => {
-            if (--remaining > 0) return;
-            frames = builtFrames;
-            // Restore the hierarchical layer tree when loading a v3 project.
-            // Older v2/legacy projects simply become a root-level tree.
-            frames.forEach((f, fi) => {
-                const savedTree = frameDefs[fi].layerTree;
-                if (Array.isArray(savedTree)) {
-                    const buildTree = nodes => (nodes || []).map(n => {
-                        if (n.kind === 'group' || n.kind === 'folder') return { kind: 'group', id: n.id || ('group-' + (nextGroupId++)), name: n.name || 'Group', color: n.color || null, visible: n.visible !== false, opacity: typeof n.opacity === 'number' ? n.opacity : 1, collapsed: !!n.collapsed, blendMode: n.blendMode || 'source-over', children: buildTree(n.children) };
-                        return f.layers[n.layerIndex] ? makeLayerNode(f.layers[n.layerIndex]) : null;
-                    }).filter(Boolean);
-                    f.layerTree = buildTree(savedTree);
-                    f.layers = flattenLayerTree(f.layerTree);
-                } else { f.layerTree = f.layers.map(makeLayerNode); }
-            });
-            // Resolve each mask/clip layer's saved hookedToIndex, and each
-            // gradient-holder vector layer's saved gradientHostForIndex
-            // (both frame-relative positions) back into the actual id of
-            // the newly built layer at that position, now that every
-            // layer in every frame exists.
-            frames.forEach((f, fi) => {
-                frameDefs[fi].layers.forEach((ld, li) => {
-                    if ((ld.type === 'mask' || ld.type === 'clip') && ld.hookedToIndex != null && f.layers[ld.hookedToIndex]) {
-                        f.layers[li].hookedTo = f.layers[ld.hookedToIndex].id;
-                    }
-                    if (ld.type === 'vector' && ld.gradientHostForIndex != null && f.layers[ld.gradientHostForIndex]) {
-                        f.layers[li].gradientHostFor = f.layers[ld.gradientHostForIndex].id;
-                    }
-                });
-            });
-            activeFrameIndex = Math.min(data.activeFrameIndex || 0, frames.length - 1);
-            layers = frames[activeFrameIndex].layers;
-            enforcePixelArtRendererForDimensions();
-            layers = frames[activeFrameIndex].layers;
-            layers.forEach(l => container.appendChild(l.el));
-            reindexDom();
-            setActiveLayer(data.activeLayerId != null && layers.some(l => l.id === data.activeLayerId) ? layers.findIndex(l => l.id === data.activeLayerId) : Math.min(data.activeLayerIndex || 0, layers.length - 1));
-            lastEnteredProfile = selectedProfile;
-            layoutAll();
-            refreshHookedComposites();
-            renderLayersPanel();
-            renderFramesPanel();
-        };
-
-        frameDefs.forEach((fd, fi) => {
-            fd.layers.forEach((ld, li) => {
-                if (ld.type === 'vector') {
-                    const l = new VectorLayer(ld.name);
-                    l.splines = (ld.splines || []).map(sp => ({ closed: sp.closed, filled: sp.filled, color: sp.color, width: sp.width, points: sp.points.map(p => ({ x: p.x, y: p.y })), stops: sp.stops ? sp.stops.map(s => ({ position: s.position, color: s.color })) : null }));
-                    l.color = ld.color || null;
-                    l.blendMode = ld.blendMode || 'source-over';
-                    l.visible = ld.visible; l.opacity = ld.opacity;
-                    l.applyVisualState();
-                    builtFrames[fi].layers[li] = l;
-                    finalize();
-                    return;
-                }
-                const img = new Image();
-                img.onload = () => {
-                    let l;
-                    if (ld.type === 'pixel') { l = new PixelLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
-                    else if (ld.type === 'image') { l = new ImageLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
-                    else if (ld.type === 'mask') { l = new MaskLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
-                    else if (ld.type === 'clip') { l = new ClipLayer(ld.name, gridW, gridH); l.loadFromImage(img); }
-                    else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
-                    l.color = ld.color || null;
-                    if (ld.type === 'pixel' || ld.type === 'image') l.blendMode = ld.blendMode || 'source-over';
-                    l.visible = ld.visible; l.opacity = ld.opacity;
-                    l.applyVisualState();
-                    builtFrames[fi].layers[li] = l;
-                    finalize();
-                };
-                img.src = ld.dataURL;
-            });
-        });
+        openProjectFromSaveData(data, { name: data.name || file.name.replace(/\.[^.]+$/, ''), projectId: null });
     };
     reader.readAsText(file);
 }
 
 /* ============================================================
-   PROJECT GALLERY (in-memory store, Procreate-style grid)
+   PROJECT GALLERY + INDEXEDDB PERSISTENCE (V1_47)
+   Two object stores in DB `pixelAppProjects`:
+     meta  {id, name, gridW, gridH, profile, thumbnailDataURL, updatedAt}
+     data  {id, data}   -- the full save data (same shape as .pxproj.json)
+   Boot reads ONLY `meta`. Project contents load when that one project is
+   opened. So a large gallery can't exhaust memory at startup.
+   Boot-loop guard (localStorage `pixelAppBootGuard`):
+     bootsUnfinished -- set to 1 while startup reads storage, cleared once
+       the gallery has rendered and settled, or on pagehide (a normal
+       reload/close; a crash never fires it). Still set on the next launch
+       => last start crashed => sticky safe mode (storage not read) until
+       the person taps Try Again or Reset Storage.
+     openingProjectId/Name -- set while one project is being opened;
+       still set on next launch => that project crashed the tab; the
+       gallery offers to save it as a file or delete it.
+   Failure handling: every open/read/write is error-checked; when storage
+   is unusable, projects are kept in `projectDataMemory` for the session
+   (the pre-V1_47 behaviour) and the gallery says so. Reset Storage
+   deletes the database (for the "won't open at all" corruption case).
+   Two tabs: BroadcastChannel keeps gallery lists in sync and warns once.
+   IDs are time-based so two tabs can't mint the same id.
+   Browser storage is not a backup (Safari clears it after 7 days without
+   a visit; quota eviction wipes the whole origin) -- file export is.
    ============================================================ */
+let projectStore = [];                  // metadata only, newest first
+const projectDataMemory = new Map();    // id -> save data when not (yet) in IndexedDB
+const PROJECT_DB_NAME = 'pixelAppProjects', PROJECT_DB_VERSION = 1;
+const BOOT_GUARD_KEY = 'pixelAppBootGuard';
+let projectDb = null;
+let projectStorageState = 'loading';   // loading | ready | failed | unsupported | safe
+let projectStorageError = '';
+let projectStorageUsage = null;         // navigator.storage.estimate() result
+let projectStoragePersistRequested = false;
+let projectOpenInFlight = false;
+let crashedProject = null;              // {id, name} from the opening guard
+let projectChannel = null, otherTabWarned = false;
 
-// Each entry: { id, name, gridW, gridH, profile, frames, activeFrameIndex,
-//               activeLayerIndex, scale, thumbnailDataURL, updatedAt }
-let projectStore = [];
-let nextProjectId = 1;
+function readBootGuard() { try { return JSON.parse(localStorage.getItem(BOOT_GUARD_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function updateBootGuard(patch) { try { localStorage.setItem(BOOT_GUARD_KEY, JSON.stringify({ ...readBootGuard(), ...patch })); } catch (e) {} }
+function newProjectId() { return Date.now() * 100 + Math.floor(Math.random() * 100); }
+function projectMetaOf(p) { return { id: p.id, name: p.name, gridW: p.gridW, gridH: p.gridH, profile: p.profile, thumbnailDataURL: p.thumbnailDataURL || '', updatedAt: p.updatedAt || Date.now() }; }
+function isGalleryVisible() { const g = document.getElementById('gallery-screen'); return !!g && g.style.display === 'flex'; }
+function formatBytes(n) { if (!Number.isFinite(n)) return '?'; if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB'; if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB'; return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB'; }
+
+function openProjectDb() {
+    return new Promise(resolve => {
+        if (!window.indexedDB) { resolve({ db: null, state: 'unsupported', error: 'IndexedDB not available' }); return; }
+        let settled = false;
+        const settle = r => {
+            if (settled) { if (r.db) { try { r.db.close(); } catch (e) {} } return; }
+            settled = true; clearTimeout(timer); resolve(r);
+        };
+        // An unopenable database can hang with no event at all; don't wait forever.
+        const timer = setTimeout(() => settle({ db: null, state: 'failed', error: 'timed out opening storage' }), 8000);
+        let req;
+        try { req = indexedDB.open(PROJECT_DB_NAME, PROJECT_DB_VERSION); }
+        catch (e) { settle({ db: null, state: 'failed', error: (e && e.message) || String(e) }); return; }
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
+            if (!db.objectStoreNames.contains('data')) db.createObjectStore('data', { keyPath: 'id' });
+        };
+        req.onsuccess = () => {
+            const db = req.result;
+            db.onversionchange = () => {
+                try { db.close(); } catch (e) {}
+                if (projectDb === db) { projectDb = null; projectStorageState = 'failed'; projectStorageError = 'storage was closed by another tab'; renderStorageStatus(); }
+            };
+            settle({ db, state: 'ready', error: '' });
+        };
+        req.onerror = () => settle({ db: null, state: 'failed', error: req.error ? (req.error.name + ': ' + req.error.message) : 'unknown error' });
+    });
+}
+function idbGetAllMeta(db) {
+    return new Promise((res, rej) => {
+        try { const r = db.transaction('meta', 'readonly').objectStore('meta').getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }
+        catch (e) { rej(e); }
+    });
+}
+function sortProjectsNewestFirst(list) { return list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)); }
+
+// force=true skips the safe-mode check (Try Again / after Reset Storage).
+async function initProjectStorage(force) {
+    const guard = readBootGuard();
+    if (guard.openingProjectId != null) {
+        crashedProject = { id: guard.openingProjectId, name: guard.openingProjectName || 'A project' };
+        updateBootGuard({ openingProjectId: null, openingProjectName: null });
+    }
+    if (!force && (guard.safeMode || (guard.bootsUnfinished | 0) >= 1)) {
+        updateBootGuard({ safeMode: true, bootsUnfinished: 0 });
+        projectStorageState = 'safe'; projectStorageError = '';
+        renderStorageStatus();
+        return;
+    }
+    updateBootGuard({ safeMode: false, bootsUnfinished: 1 });
+    projectStorageState = 'loading'; renderStorageStatus();
+    const r = await openProjectDb();
+    projectDb = r.db; projectStorageState = r.state; projectStorageError = r.error;
+    if (projectDb) {
+        try {
+            const metas = sortProjectsNewestFirst(await idbGetAllMeta(projectDb));
+            const known = new Set(metas.map(m => m.id));
+            // Keep projects made this session before storage finished opening, and store them now.
+            const sessionOnly = projectStore.filter(p => !known.has(p.id));
+            projectStore = sessionOnly.concat(metas);
+            sessionOnly.forEach(p => { if (projectDataMemory.has(p.id)) persistProject(p, projectDataMemory.get(p.id)); });
+        } catch (e) {
+            projectStorageState = 'failed'; projectStorageError = 'could not read saved projects: ' + ((e && e.message) || e);
+            try { projectDb.close(); } catch (_) {}
+            projectDb = null;
+        }
+    }
+    setupProjectChannel();
+    refreshStorageEstimate();
+    if (isGalleryVisible()) renderGallery(); else renderStorageStatus();
+    // Cleared only after thumbnails have had time to decode, so a crash
+    // while painting the gallery still counts as an unfinished start.
+    setTimeout(() => updateBootGuard({ bootsUnfinished: 0 }), 2500);
+}
+// A deliberate reload/close fires pagehide; a crash never does. Clearing
+// both guards here means only a real crash leaves them set, so reloading
+// quickly after launch (or mid-open) doesn't trip safe mode.
+window.addEventListener('pagehide', () => {
+    const g = readBootGuard();
+    if (g.bootsUnfinished || g.openingProjectId != null) updateBootGuard({ bootsUnfinished: 0, openingProjectId: null, openingProjectName: null });
+});
+
+function reportStorageWriteError(err) {
+    const name = err && err.name;
+    const msg = name === 'QuotaExceededError'
+        ? 'Browser storage is full. This project is kept for this session only -- save it as a file (long-press > Save File) or delete old projects.'
+        : "Couldn't save to browser storage" + (err && err.message ? ' (' + err.message + ')' : '') + '. This project is kept for this session only.';
+    console.warn('project storage write failed:', name, err && err.message);
+    showAppToast(msg, 8000);
+}
+// Writes meta (and data, if given) in one transaction. data=null means meta-only (e.g. rename).
+function persistProject(entry, data) {
+    const meta = projectMetaOf(entry);
+    if (!projectDb) { if (data != null) projectDataMemory.set(meta.id, data); return; }
+    try {
+        const tx = projectDb.transaction(['meta', 'data'], 'readwrite');
+        tx.objectStore('meta').put(meta);
+        if (data != null) tx.objectStore('data').put({ id: meta.id, data });
+        tx.oncomplete = () => {
+            if (data != null) projectDataMemory.delete(meta.id);
+            broadcastProjectsChanged();
+            requestPersistentStorage();
+            refreshStorageEstimate();
+        };
+        const onFail = () => { if (data != null) projectDataMemory.set(meta.id, data); reportStorageWriteError(tx.error); };
+        tx.onabort = onFail;
+    } catch (e) {
+        if (data != null) projectDataMemory.set(meta.id, data);
+        reportStorageWriteError(e);
+    }
+}
+function deleteProjectRecord(id) {
+    projectDataMemory.delete(id);
+    if (!projectDb) return;
+    try {
+        const tx = projectDb.transaction(['meta', 'data'], 'readwrite');
+        tx.objectStore('meta').delete(id);
+        tx.objectStore('data').delete(id);
+        tx.oncomplete = () => { broadcastProjectsChanged(); refreshStorageEstimate(); };
+        tx.onabort = () => reportStorageWriteError(tx.error);
+    } catch (e) { reportStorageWriteError(e); }
+}
+// cb(data|null, errorMessage)
+function getProjectData(id, cb) {
+    if (projectDataMemory.has(id)) { cb(projectDataMemory.get(id), ''); return; }
+    if (!projectDb) { cb(null, 'browser storage is not available'); return; }
+    try {
+        const r = projectDb.transaction('data', 'readonly').objectStore('data').get(id);
+        r.onsuccess = () => cb(r.result ? r.result.data : null, r.result ? '' : 'no saved data');
+        r.onerror = () => cb(null, r.error ? r.error.message : 'read failed');
+    } catch (e) { cb(null, (e && e.message) || String(e)); }
+}
+function refreshStorageEstimate() {
+    try {
+        if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => { projectStorageUsage = e; renderStorageStatus(); }).catch(() => {});
+    } catch (e) {}
+}
+function requestPersistentStorage() {
+    if (projectStoragePersistRequested) return;
+    projectStoragePersistRequested = true;
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
+}
+
+function setupProjectChannel() {
+    if (projectChannel || !window.BroadcastChannel) return;
+    try {
+        projectChannel = new BroadcastChannel('pixelAppProjects');
+        projectChannel.onmessage = e => {
+            const m = e.data || {};
+            if (m.type === 'hello') { projectChannel.postMessage({ type: 'here' }); warnOtherTab(); }
+            else if (m.type === 'here') warnOtherTab();
+            else if (m.type === 'changed') reloadProjectListFromDb();
+        };
+        projectChannel.postMessage({ type: 'hello' });
+    } catch (e) { projectChannel = null; }
+}
+function warnOtherTab() {
+    if (otherTabWarned) return;
+    otherTabWarned = true;
+    showAppToast('This app is also open in another tab. Editing the same project in both can overwrite changes.', 7000);
+}
+function broadcastProjectsChanged() { try { if (projectChannel) projectChannel.postMessage({ type: 'changed' }); } catch (e) {} }
+async function reloadProjectListFromDb() {
+    if (!projectDb) return;
+    try {
+        const metas = sortProjectsNewestFirst(await idbGetAllMeta(projectDb));
+        const known = new Set(metas.map(m => m.id));
+        projectStore = projectStore.filter(p => !known.has(p.id) && projectDataMemory.has(p.id)).concat(metas);
+        if (isGalleryVisible()) renderGallery();
+    } catch (e) { console.warn('reloadProjectListFromDb failed:', e && e.message); }
+}
+
+// Deletes the whole database (the fix for "storage won't open at all"),
+// then reopens it fresh, keeping any projects that only exist in memory.
+function resetProjectStorage() {
+    const keep = projectStore.filter(p => projectDataMemory.has(p.id));
+    try { if (projectDb) projectDb.close(); } catch (e) {}
+    projectDb = null;
+    projectStorageState = 'loading'; renderStorageStatus();
+    const fail = why => {
+        projectStorageState = 'failed'; projectStorageError = 'could not reset storage: ' + why;
+        renderStorageStatus();
+        showAppToast("Couldn't reset storage. Clear this site's data in your browser settings instead.", 9000);
+    };
+    let req;
+    try { req = indexedDB.deleteDatabase(PROJECT_DB_NAME); } catch (e) { fail((e && e.message) || String(e)); return; }
+    req.onsuccess = () => {
+        projectStore = keep;
+        try { localStorage.removeItem(BOOT_GUARD_KEY); } catch (e) {}
+        crashedProject = null;
+        initProjectStorage(true);
+        showAppToast('Browser storage reset.', 4000);
+    };
+    req.onerror = () => fail(req.error ? req.error.message : 'unknown error');
+    req.onblocked = () => showAppToast('Close this app in other tabs to finish resetting storage.', 7000);
+}
+const storageResetConfirm = makeTapTwiceConfirm({ btnId: 'storageResetBtn', idleText: 'RESET STORAGE', armedText: '⚠️ TAP AGAIN: DELETES SAVED PROJECTS', onConfirm: resetProjectStorage, timeoutMs: 5000 });
+const debugStorageResetConfirm = makeTapTwiceConfirm({ btnId: 'debugResetStorageBtn', idleText: '🗑️ RESET PROJECT STORAGE', armedText: '⚠️ TAP AGAIN: DELETES SAVED PROJECTS', onConfirm: resetProjectStorage, timeoutMs: 5000 });
+
+function renderStorageStatus() {
+    const el = document.getElementById('galleryStorageStatus');
+    if (!el) return;
+    let html = '', warn = false;
+    if (crashedProject) {
+        warn = true;
+        html += '<div>“' + escapeHtml(crashedProject.name) + '” closed the app while opening last time.</div>' +
+            '<div class="storage-status-actions"><button class="btn" id="crashedSaveBtn">SAVE AS FILE</button><button class="btn" id="crashedDeleteBtn">DELETE IT</button><button class="btn" id="crashedDismissBtn">DISMISS</button></div>';
+    }
+    const usage = projectStorageUsage && Number.isFinite(projectStorageUsage.usage) ? ' · ' + formatBytes(projectStorageUsage.usage) + ' used' : '';
+    if (projectStorageState === 'loading') html += '<div>Loading saved projects…</div>';
+    else if (projectStorageState === 'ready') html += '<div>Saved in this browser' + usage + '. Browsers can clear site data (Safari: after 7 days without a visit), so keep files of projects you care about: long-press › Save File.</div>';
+    else if (projectStorageState === 'unsupported') { warn = true; html += "<div>This browser can't store projects, so they last until the tab closes. Long-press › Save File to keep them.</div>"; }
+    else if (projectStorageState === 'failed') { warn = true; html += "<div>Browser storage isn't working (" + escapeHtml(projectStorageError) + '). New projects last until the tab closes.</div><div class="storage-status-actions"><button class="btn" id="storageRetryBtn">TRY AGAIN</button><button class="btn" id="storageResetBtn">RESET STORAGE</button></div>'; }
+    else if (projectStorageState === 'safe') { warn = true; html += "<div>The app didn't finish starting last time, so saved projects weren't loaded.</div><div class=\"storage-status-actions\"><button class=\"btn\" id=\"storageRetryBtn\">TRY AGAIN</button><button class=\"btn\" id=\"storageResetBtn\">RESET STORAGE</button></div>"; }
+    el.innerHTML = html;
+    el.classList.toggle('warn', warn);
+    const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
+    on('storageRetryBtn', () => initProjectStorage(true));
+    on('storageResetBtn', () => storageResetConfirm.trigger());
+    on('crashedDismissBtn', () => { crashedProject = null; renderStorageStatus(); });
+    on('crashedSaveBtn', () => {
+        const c = crashedProject; if (!c) return;
+        getProjectData(c.id, (data, err) => { if (!data) { showAppToast("Couldn't read it: " + err, 6000); return; } downloadProjectData(data, c.name); });
+    });
+    const del = document.getElementById('crashedDeleteBtn');
+    if (del) del.addEventListener('click', () => elementTapTwiceConfirm(del, 'DELETE IT', 'TAP AGAIN TO DELETE', () => {
+        const c = crashedProject; if (!c) return;
+        const idx = projectStore.findIndex(p => p.id === c.id);
+        if (idx !== -1) projectStore.splice(idx, 1);
+        deleteProjectRecord(c.id);
+        crashedProject = null;
+        renderGallery();
+    }));
+}
 let galleryCtxTargetId = null; // which project the context menu is open for
 let galleryRenameTargetId = null;
 
@@ -9986,69 +10325,52 @@ function galleryFlattenLayers(layerTree, gW, gH) {
 
 // ── Save current editor state into the store ────────────────
 // Creates a new entry if id is null, otherwise updates in place.
+// Saves the open project into the gallery (and IndexedDB). Returns its id.
 function saveCurrentStateToStore(existingId, nameOverride) {
-    const thumb = generateThumbnailDataURL(frames, gridW, gridH);
-    const entry = {
-        id: existingId || nextProjectId++,
-        name: nameOverride || currentProjectName || ('Untitled ' + (projectStore.length + 1)),
-        gridW, gridH,
-        profile: selectedProfile,
-        frames, // live reference -- the editor holds the same objects
-        activeFrameIndex,
-        activeLayerIndex,
-        activeLayerId,
-        portraitTilePalettes: selectedProfile==='portrait' ? Object.fromEntries(portraitTilePalettes) : null,
-        portraitActiveTileKey,
-        thumbnailDataURL: thumb,
-        updatedAt: Date.now()
-    };
-    if (existingId) {
-        const idx = projectStore.findIndex(p => p.id === existingId);
-        if (idx !== -1) { projectStore[idx] = { ...projectStore[idx], ...entry, name: projectStore[idx].name }; return; }
-    }
-    projectStore.unshift(entry); // newest first
+    const name = nameOverride || currentProjectName || ('Untitled ' + (projectStore.length + 1));
+    const data = currentProjectSaveData(name);
+    const meta = { id: existingId || newProjectId(), name, gridW, gridH, profile: selectedProfile, thumbnailDataURL: generateThumbnailDataURL(frames, gridW, gridH), updatedAt: Date.now() };
+    const idx = existingId ? projectStore.findIndex(p => p.id === existingId) : -1;
+    if (idx !== -1) projectStore[idx] = meta; else projectStore.unshift(meta);
+    persistProject(meta, data);
+    return meta.id;
 }
 
 // ── Open a project from the store ───────────────────────────
-function openProjectFromStore(id) {
+// Reads its save data (IndexedDB or memory) and rebuilds it. The opening
+// guard names this project if it crashes the tab mid-open.
+function openProjectFromStore(id, onDone) {
     const proj = projectStore.find(p => p.id === id);
-    if (!proj) return;
-    currentProjectName = proj.name || 'Untitled';
-    // Tear down any live canvas elements from a previous session
-    if (frames && frames.length) frames.forEach(f => f.layers.forEach(l => { try { l.el.remove(); } catch(e){} }));
-    // Restore state
-    frames = proj.frames;
-    gridW = proj.gridW; gridH = proj.gridH;
-    // Deliberately not restoring proj.scale here: opening a project should
-    // always start by showing the whole picture fit to screen, the same as
-    // creating a new canvas (see computeFitToScreenZoomIndex), rather than
-    // whatever zoom level happened to be active when it was last saved.
-    zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
-    scale = ZOOM_STEPS[zoomIndex];
-    selectedProfile = proj.profile || 'pixelArt';
-    if (selectedProfile === 'standard') selectedProfile = 'pixelArt';
-    portraitTilePalettes = new Map(Object.entries(proj.portraitTilePalettes || {}));
-    portraitActiveTileKey = proj.portraitActiveTileKey || '0,0';
-    lastEnteredProfile = selectedProfile;
-    activeFrameIndex = proj.activeFrameIndex || 0;
-    layers = frames[activeFrameIndex].layers;
-    resetHistory();
-    resetSelectionState();
-    transformMode = false;
-    hideGallery();
-    revealPixelCanvas();
-    if(!document.getElementById('portraitTileIsolationOverlay')){ const o=document.createElement('div'); o.id='portraitTileIsolationOverlay'; container.appendChild(o); }
-    // Re-attach all layer canvases to the container
-    layers.forEach(l => { if (!container.contains(l.el)) container.appendChild(l.el); });
-    reindexDom();
-    setActiveLayer(proj.activeLayerId != null && layers.some(l => l.id === proj.activeLayerId) ? layers.findIndex(l => l.id === proj.activeLayerId) : Math.min(proj.activeLayerIndex || 0, layers.length - 1));
-    document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
-    layoutAll();
-    renderLayersPanel();
-    renderFramesPanel();
-    // Tag the editor with this project id so "Main Menu" can update it
-    currentProjectId = id;
+    if (!proj || projectOpenInFlight) return;
+    projectOpenInFlight = true;
+    getProjectData(id, (data, err) => {
+        if (!data) {
+            projectOpenInFlight = false;
+            showAppToast("Couldn't read \u201C" + proj.name + "\u201D from browser storage (" + err + ').', 7000);
+            return;
+        }
+        updateBootGuard({ openingProjectId: id, openingProjectName: proj.name });
+        openProjectFromSaveData(data, { name: proj.name, projectId: id }, () => {
+            projectOpenInFlight = false;
+            updateBootGuard({ openingProjectId: null, openingProjectName: null });
+            if (onDone) onDone();
+        });
+    });
 }
+
+// Best-effort autosave when the app is backgrounded (iOS can kill a
+// backgrounded tab without warning). Skipped during sprite frame editing,
+// whose temporary one-frame project must never become a gallery entry.
+function autosaveOpenProject() {
+    try {
+        const screen = document.getElementById('pixel-canvas-screen');
+        if (!screen || screen.style.display !== 'block') return;
+        if (spriteAnimFrameEditSnapshot || !frames || !frames.length) return;
+        const existing = currentProjectId ? projectStore.find(p => p.id === currentProjectId) : null;
+        currentProjectId = saveCurrentStateToStore(existing ? existing.id : null, currentProjectName || (existing && existing.name));
+    } catch (e) { console.warn('autosave failed:', e && e.message); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosaveOpenProject(); });
 
 // Which project is currently open in the editor (null = unsaved new)
 let currentProjectId = null;
@@ -10056,6 +10378,7 @@ let currentProjectName = 'Untitled';
 
 // ── Gallery render ───────────────────────────────────────────
 function renderGallery() {
+    renderStorageStatus();
     const grid = document.getElementById('gallery-grid');
     grid.innerHTML = '';
 
@@ -10095,6 +10418,7 @@ function renderGallery() {
         applyCheckerProfile(thumbWrap, checkerSettings.canvas, 'canvas'); // gallery cards always mirror the canvas profile, not an independent selection
         if (proj.thumbnailDataURL) {
             const img = document.createElement('img');
+            img.loading = 'lazy'; img.decoding = 'async'; // off-screen thumbnails don't decode, so a large gallery stays light
             img.src = proj.thumbnailDataURL;
             thumbWrap.appendChild(img);
         }
@@ -10413,7 +10737,7 @@ document.getElementById('rename-cancel-btn').addEventListener('click', () => {
 document.getElementById('rename-ok-btn').addEventListener('click', () => {
     const newName = document.getElementById('gallery-rename-input').value.trim() || 'Untitled';
     const proj = projectStore.find(p => p.id === galleryRenameTargetId);
-    if (proj) { proj.name = newName; if (currentProjectId === proj.id) currentProjectName = newName; renderGallery(); }
+    if (proj) { proj.name = newName; if (currentProjectId === proj.id) currentProjectName = newName; persistProject(proj, null); renderGallery(); }
     document.getElementById('gallery-rename-modal').classList.remove('open');
     galleryRenameTargetId = null;
 });
@@ -10423,35 +10747,26 @@ document.getElementById('ctx-duplicate').addEventListener('click', () => {
     closeGalleryCtxMenu();
     const proj = projectStore.find(p => p.id === id);
     if (!proj) return;
-    // Deep-clone frames
-    const clonedFrames = proj.frames.map(f => ({
-        name: f.name,
-        layers: f.layers.map(l => cloneLayer(l))
-    }));
-    const newEntry = {
-        id: nextProjectId++,
-        name: proj.name + ' copy',
-        gridW: proj.gridW, gridH: proj.gridH,
-        profile: proj.profile,
-        frames: clonedFrames,
-        activeFrameIndex: proj.activeFrameIndex,
-        activeLayerIndex: proj.activeLayerIndex,
-        portraitTilePalettes: selectedProfile==='portrait' ? Object.fromEntries(portraitTilePalettes) : null,
-        portraitActiveTileKey,
-        thumbnailDataURL: proj.thumbnailDataURL,
-        updatedAt: Date.now()
-    };
-    const idx = projectStore.findIndex(p => p.id === id);
-    projectStore.splice(idx + 1, 0, newEntry);
-    renderGallery();
+    // A deep copy of the saved data: carries the project's own Portrait
+    // palettes and group tree (the old live-frames copy used the open
+    // project's palettes and dropped groups and mask hooks).
+    getProjectData(id, (data, err) => {
+        if (!data) { showAppToast("Couldn't duplicate: " + err, 6000); return; }
+        const copy = JSON.parse(JSON.stringify(data));
+        const meta = { ...projectMetaOf(proj), id: newProjectId(), name: proj.name + ' copy', updatedAt: Date.now() };
+        copy.name = meta.name;
+        const idx = projectStore.findIndex(p => p.id === id);
+        projectStore.splice(idx + 1, 0, meta);
+        persistProject(meta, copy);
+        renderGallery();
+    });
 });
 
 document.getElementById('ctx-resize').addEventListener('click', () => {
     const id = galleryCtxTargetId;
     closeGalleryCtxMenu();
     if (!id) return;
-    openProjectFromStore(id);
-    openResizeCanvasSheet(true);
+    openProjectFromStore(id, () => openResizeCanvasSheet(true));
 });
 
 document.getElementById('ctx-export').addEventListener('click', () => {
@@ -10459,13 +10774,25 @@ document.getElementById('ctx-export').addEventListener('click', () => {
     closeGalleryCtxMenu();
     const proj = projectStore.find(p => p.id === id);
     if (!proj) return;
-    try {
-        const out = galleryFlattenLayers(ensureFrameLayerTree(proj.frames[proj.activeFrameIndex || 0]), proj.gridW, proj.gridH);
-        const link = document.createElement('a');
-        link.download = (proj.name || 'pixel') + '.png';
-        link.href = out.toDataURL();
-        link.click();
-    } catch(e) { alert('Export failed.'); }
+    getProjectData(id, (data, err) => {
+        if (!data) { showAppToast("Couldn't export: " + err, 6000); return; }
+        buildFramesFromSaveData(data, built => {
+            // Vector layers render against the global grid size, so borrow
+            // this project's size just for the synchronous flatten.
+            const keepW = gridW, keepH = gridH;
+            try {
+                gridW = data.gridW; gridH = data.gridH;
+                const f = built[Math.min(data.activeFrameIndex || 0, built.length - 1)];
+                f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); });
+                const out = galleryFlattenLayers(f.layerTree, gridW, gridH);
+                const link = document.createElement('a');
+                link.download = (proj.name || 'pixel') + '.png';
+                link.href = out.toDataURL();
+                link.click();
+            } catch (e) { alert('Export failed.'); }
+            finally { gridW = keepW; gridH = keepH; }
+        });
+    });
 });
 
 document.getElementById('ctx-save-file').addEventListener('click', () => {
@@ -10473,37 +10800,10 @@ document.getElementById('ctx-save-file').addEventListener('click', () => {
     closeGalleryCtxMenu();
     const proj = projectStore.find(p => p.id === id);
     if (!proj) return;
-    try {
-        const data = {
-            version: 2,
-            name: proj.name || 'Untitled',
-            gridW: proj.gridW, gridH: proj.gridH,
-            profile: proj.profile,
-            activeFrameIndex: proj.activeFrameIndex,
-            activeLayerIndex: proj.activeLayerIndex,
-            frames: proj.frames.map(f => {
-                const serialized = f.layers.map(serializeLayer);
-                serialized.forEach(sl => {
-                    if (sl.hookedTo != null) {
-                        const idx = f.layers.findIndex(l => l.id === sl.hookedTo);
-                        sl.hookedToIndex = idx !== -1 ? idx : null;
-                        delete sl.hookedTo;
-                    }
-                    if (sl.gradientHostFor != null) {
-                        const idx = f.layers.findIndex(l => l.id === sl.gradientHostFor);
-                        sl.gradientHostForIndex = idx !== -1 ? idx : null;
-                        delete sl.gradientHostFor;
-                    }
-                });
-                ensureFrameLayerTree(f); return { name: f.name, layers: serialized, layerTree: serializeLayerTree(f.layerTree, f.layers) };
-            })
-        };
-        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-        const link = document.createElement('a');
-        link.download = (proj.name || 'project') + '.pxproj.json';
-        link.href = URL.createObjectURL(blob);
-        link.click();
-    } catch(e) { alert('Save failed.'); }
+    getProjectData(id, (data, err) => {
+        if (!data) { showAppToast("Couldn't save file: " + err, 6000); return; }
+        downloadProjectData({ ...data, name: proj.name }, proj.name || 'project');
+    });
 });
 
 document.getElementById('ctx-delete').addEventListener('click', () => {
@@ -10514,6 +10814,8 @@ document.getElementById('ctx-delete').addEventListener('click', () => {
     // The user has already explicitly opened the long-press context menu and tapped Delete.
     // Avoid browser confirm() here because it can be unreliable in touch/PWA environments.
     projectStore.splice(idx, 1);
+    deleteProjectRecord(id);
+    if (currentProjectId === id) currentProjectId = null;
     renderGallery();
 });
 
@@ -10533,20 +10835,10 @@ function goToMainMenu() {
 
         // Save / update project in the gallery store
         if (frames && frames.length > 0) {
+            // Re-saving an existing project now refreshes everything,
+            // including its Portrait palettes (previously frozen at first save).
             const existingProj = currentProjectId ? projectStore.find(p => p.id === currentProjectId) : null;
-            if (existingProj) {
-                existingProj.thumbnailDataURL = generateThumbnailDataURL(frames, gridW, gridH);
-                existingProj.gridW = gridW; existingProj.gridH = gridH;
-                existingProj.profile = selectedProfile;
-                existingProj.name = currentProjectName || existingProj.name;
-                existingProj.frames = frames;
-                existingProj.activeFrameIndex = activeFrameIndex;
-                existingProj.activeLayerIndex = activeLayerIndex;
-                existingProj.updatedAt = Date.now();
-            } else {
-                saveCurrentStateToStore(null, currentProjectName || ('Untitled ' + (projectStore.length + 1)));
-                currentProjectId = projectStore[0].id;
-            }
+            currentProjectId = saveCurrentStateToStore(existingProj ? existingProj.id : null, currentProjectName || (existingProj && existingProj.name) || ('Untitled ' + (projectStore.length + 1)));
         }
 
         document.getElementById('pixel-canvas-screen').style.display = 'none';
@@ -10758,6 +11050,7 @@ requestAnimationFrame(() => {
     if (hubVersionLabel) hubVersionLabel.textContent = BUILD_VERSION;
     initSpriteAnimEditor();
     showGallery();
+    initProjectStorage();
 });
 
 /* ============================================================
