@@ -6,7 +6,7 @@ Made by [liangforstudy](https://github.com/liangforstudy), coding with AI.
 
 ## Docs
 
-Start with [`docs/Pixel_Art_App___Code_Documentation_and_Handoff.md`](docs/Pixel_Art_App___Code_Documentation_and_Handoff.md). It and the other `Pixel_Art_App___*.md` files (Roadmap, Fix List, Functions, DOM, Class Methods, Renamed Identifiers) describe V1 47. The other files in `docs/` are older notes and handoffs, kept for history.
+Start with [`docs/Pixel_Art_App___Code_Documentation_and_Handoff.md`](docs/Pixel_Art_App___Code_Documentation_and_Handoff.md). It and the other `Pixel_Art_App___*.md` files (Roadmap, Fix List, Functions, DOM, Class Methods, Renamed Identifiers) describe V1 47. [`Pixel art app core code philosophy.md`](docs/Pixel%20art%20app%20core%20code%20philosophy.md) sets the rules the Code Documentation follows. Older notes and handoffs are in [`docs/archived/`](docs/archived), kept for history.
 
 ## History
 
