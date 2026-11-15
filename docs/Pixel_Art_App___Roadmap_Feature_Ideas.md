@@ -30,6 +30,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven on 8 images in a Python test bench); passes, presets, Advanced and cockpit mode decided; not built |
 | 21 | Vector tracing of extracted lines into VectorLayer splines | Idea only; prototype in `experiments/` first |
 | 22 | App-wide onboarding (tutorials for the whole app, like #20's) | Idea only; after the app is polished |
+| 23 | Mirror mode (symmetry drawing) with a freely adjustable mirror line | Idea; next up for planning |
 
 ## Open items
 
@@ -164,6 +165,17 @@ Pull line art out of a flattened, coloured image (an anime frame, a coloured ske
 - **Dismissing the popup hides it for that one tool only** (decided 2026-11-15).
 - **Tutorial settings** (inside the Tutorials tab): turn tutorial popups off for one tool or for all tools, and bring them back (one tool or all). Saved in localStorage (try/catch); if storage is unavailable, popups just show again next session.
 - Undecided: lesson list and order, a one-time app welcome on first launch, whether tutorials need tests in their own group (likely yes: each lesson's steps must still match the UI).
+
+### 23. Mirror mode -- idea, next up for planning
+- Symmetry drawing: whatever you draw on one side of a mirror line is drawn mirrored on the other side at the same time.
+- **The mirror line can be adjusted freely:** drag it to move it anywhere (also outside the canvas), drag an end handle to turn it to any angle. Handles are 44 pt touch targets; a second finger never moves the line by accident (pinch/pan as usual).
+- Snapping while dragging: canvas centre, horizontal / vertical / 45 degrees, and pixel positions -- the line can sit **on a pixel's centre** (that pixel column is shared, odd-width symmetry) or **between two pixels** (even-width symmetry). The difference matters in pixel art, so the line shows which one it is.
+- Pixel-perfect at 0 / 45 / 90 degrees. At other angles the mirrored stroke is drawn by mirroring the stroke's path and then drawing it (reuse `linePixels`), not pixel by pixel, so a mirrored line has no gaps.
+- The line is an overlay: never artwork, never exported (principle 15). Saved with the project (line position/angle and on/off), like gridW/profile.
+- One stroke plus its mirror = one undo entry (principle 14). All writes still go through `PixelLayer.plot()` (isolation, history).
+- Tools to mirror: pencil, brush, soft brush, both erasers, line, rect/ellipse, fill (the mirrored tap point fills too). Undecided: gradient, selection tools, vector layers (mirror the spline points?), Portrait (isolation already blocks writes outside the active tile).
+- Undecided: where the toggle lives (Tools panel? View panel? a button on the canvas?); a lock so the line can't be moved by mistake; more than one line later (horizontal + vertical = 4-way, radial / kaleidoscope with N copies).
+- Tests: a new `mirror` group -- mirrored pixel positions for on-centre vs between-pixel lines, a stroke at an odd angle has no gaps, one undo removes both halves, line moves with real drags, a second finger doesn't move it.
 
 ## Item 7 (IndexedDB) -- what shipped, what didn't
 - Shipped: `meta`/`data` split (boot reads metadata only; 300 projects / ~120 MB boots in ~0.4s headless); boot and project-open crash guards with sticky safe mode; every open/read/write error-checked with in-memory fallback; Reset Storage (gallery + Debug); quota-aware write errors; `storage.persist()`; two-tab warning + list sync; time-based ids; autosave on page hide; backup reminder in the gallery.

@@ -45,7 +45,7 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 
 ## 2. Principles
 
-1. **Single file.** One HTML file, opens directly, no build step. CDN libraries are allowed for hard problems (e.g. 3D). Comments matter: the file is the source.
+1. **Single file.** One HTML file, opens directly, no build step. CDN libraries are allowed for hard problems (e.g. 3D). **No new code comments (decided 2026-11-15):** don't write comments in new or changed code; explain the code in these docs instead. Leave existing comments alone unless the code around them changes (then update or remove them so they don't go stale).
 2. **Touch-first, desktop-compatible.** Comfortable targets (44pt for handles), every operation reachable by touch; keyboard shortcuts are extras. iOS: native `confirm()` and `title` tooltips are unreliable (use tap-twice confirm and long-press tooltips).
 3. **Document state > rendering > camera.** Document state is authoritative. Pan/zoom/rotate are presentation only: never document edits, undo entries, or layout rebuilds mid-gesture.
 4. **Profiles:** Pixel Art (default), Portrait, Sprite. `'photo'`/`'standard'` are legacy aliases normalized to `pixelArt`. Storage class is chosen by size, not profile: both sides <= 999 -> PixelLayer, else ImageLayer (Pixel Art only; Portrait and Sprite always PixelLayer).
