@@ -27,7 +27,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 17 | Standalone gallery for exported JSON files | Idea only |
 | 18 | Nudge menu (18a) / nudge transformation (18b) | Idea only |
 | 19 | Feather for Bucket fill edges and Wand selections | Idea only |
-| 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven in a Python test bench); not built |
+| 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven on 8 images in a Python test bench); passes, presets and cockpit decided; not built |
 | 21 | Vector tracing of extracted lines into VectorLayer splines | Idea only; prototype in `experiments/` first |
 | 22 | App-wide onboarding (tutorials for the whole app, like #20's) | Idea only; after the app is polished |
 
@@ -107,6 +107,31 @@ Pull line art out of a flattened, coloured image (an anime frame, a coloured ske
 2. **Shapes pass (eyes)** -- dark mask (brightness < ~150), erode ~3 px so thin lines vanish, label connected pieces, keep cores of 20-2,500 px (Quaxly: 4 kept, the 6,880 px hat band skipped), grow them back inside the dark mask, then either trace a 2 px outline or fill them solid (EX's "threshold of fill black"). Composite on top of pass 1 (max). Side effect seen: a few extra edges (hat band top edge, inside the ear, inner mouth).
 3. **Clean-up + smoothing** -- drop line pieces under ~12 px; then at 4x: blur slightly, re-sharpen with a smoothstep ramp, box-downsample. Removes stair-steps, grey fuzz and specks and gives anti-aliased, ink-like edges. Trade-off: line weight becomes even (taper mostly lost); strong settings can merge details closer than the blur size.
 4. **Output** -- a new layer with real alpha (alpha = line strength). Option: black lines, or keep each line's original colour (neither MediBang nor CSP offers this directly; colours come from antialiased line pixels, so they're slightly mixed with the neighbouring fill).
+
+**Update after testing 8 images (2026-11-15): the Shapes pass as built**
+- Test set: Quaxly (anime frame), frog sketch sheet, Dogday and a purple cat (flat reference sheets, the cat with dark-purple lines), Greninja (clean single character), Buizel (4-view sheet), two busy Snivy room scenes. One set of settings for all eight; no per-image tuning.
+- The first Shapes pass (single "darker than 150" level, grow back "as far as the dark area goes") broke four ways: a fill sitting right at the level (Buizel's orange at 151) flickered into hundreds of blotches; eyes touching face lines grew along the lines over the whole face; one level can't fit both dark-blue eyes on white (Quaxly) and black eyes on purple fur (the cat, whose fur is ~128); bigger "surroundings" windows made boxy shapes around back-view heads.
+- **Method that works on all eight:** try several darkness levels (150, 110, 70) and keep a blob if it passes at any of them (the idea behind MSER). At each level: erode 3 px (thin lines vanish), keep cores of 20 px up to ~0.55% of the image area (scales with image size), grow back by exactly 3 px inside the dark mask (can't leak along touching lines), then keep a blob only if it is (a) at least 50 levels darker than a ring just outside it, (b) still under 3x the size limit, and (c) at least 25 levels below the level it was found at (a fill hovering on the level, like Dogday's red ear at ~110, is rejected).
+- Results: all six character images clean (eyes, dark paws, zipper teeth, fur tufts, text); the two busy scenes work for the characters but the rooms come out cluttered (wood grain, window grids, shadows), and dark frame edges / vignettes turn into black shapes. Solid black boxes (Dogday's #202020 swatch) come out empty.
+- **Known trade-off (Quaxly):** the inner mouth and the right edge of the hat are colour borders with little or no ink. The first, leaky Shapes pass found them by accident (it outlined every dark-ish area); the fixed pass doesn't. A quick colour-border (gradient) pass found them only as dotted pieces and also picked up the hat highlight and background stripes -- not good enough yet.
+
+**Passes (decided 2026-11-15): all of these, each with its own on/off and sliders**
+1. Ink (drawn lines) -- on by default.
+2. Shapes (eyes, pupils, noses) -- on by default; outline or fill.
+3. **Outline mid-dark areas** -- off by default; a level slider. Brings back the old "outline dark-ish areas" behaviour on purpose (Quaxly's mouth and hat band); needs care on images like Buizel.
+4. **Outline colour areas** -- off by default ("colouring book"): group similar colours into areas and trace their borders, for anime frames without full outlines. Slowest pass; also outlines highlights, stripes and shading.
+- Order and merging: passes run in that order, from most to least trustworthy, and each later pass only fills gaps -- it skips places where a strong line already exists, so edges never double up.
+- Clean-up + smoothing run after all passes.
+
+**Controls: presets plus a "cockpit" (decided 2026-11-15)**
+- **Presets** for the common cases, e.g. *Clean line art* (passes 1+2), *Anime frame* (1+2+3), *Sketch* (1, gentler strength), *Colouring book* (1+2+4). One tap, then adjust.
+- **Advanced = an aeroplane-cockpit dashboard:** every pass and every slider visible at once, grouped by pass. Each slider has:
+  - a plain-language name and a one-line explanation of what it does and which problem it fixes (e.g. "Darkness levels: which darknesses count as a shape. Add a lower level if black eyes on dark fur go missing.");
+  - a small live example: a tiny generated sample (from the tutorial's sample generator) showing the effect of that slider as you drag it, next to the real preview;
+  - its current value and a per-slider reset to the preset's value;
+  - long-press for the longer explanation (existing long-press tooltip system).
+- Apple HIG touch targets (44 pt) for every slider, toggle and reset; the panel scrolls rather than shrinking controls.
+- Changing a slider after picking a preset shows the preset as "modified", with a reset-all button.
 
 **Timings (Python test bench, not the app)**: Levels ~2-4 ms; Ink pass ~0.3-0.7 s at 703x656 / 1152x918; smoothing ~0.46 s at 703x656. Canvas JS should allow a live preview.
 
