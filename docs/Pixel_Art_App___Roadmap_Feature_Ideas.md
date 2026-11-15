@@ -29,6 +29,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 19 | Feather for Bucket fill edges and Wand selections | Idea only |
 | 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven in a Python test bench); not built |
 | 21 | Vector tracing of extracted lines into VectorLayer splines | Idea only; prototype in `experiments/` first |
+| 22 | App-wide onboarding (tutorials for the whole app, like #20's) | Idea only; after the app is polished |
 
 ## Open items
 
@@ -121,13 +122,21 @@ Pull line art out of a flattened, coloured image (an anime frame, a coloured ske
 - A guided tutorial that teaches the Line Extraction tools step by step on sample artworks: what each pass does, which slider fixes which problem (dark fill showing as lines -> Ink mode; eyes as broken rings -> Shapes pass; jaggies -> Smoothness), before/after at each step. Reuse the long-press tooltip and drawer systems; tap-twice confirm only where something is destructive.
 - **Samples generated in the app (default):** an algorithm draws each sample from a seed: line art with known thickness, a dark fill close to line darkness (the Quaxly hat-band problem), thick dark shapes (eyes), weak pencil-like lines (the frog problem), colour fills and optional JPEG-like noise. Always works offline, adds almost nothing to the file size, no copyright questions, and every lesson can show exactly the problem it teaches. The same generator feeds the `line-extraction` test group, so the tutorial's samples are also the regression images.
 - **Fetched samples (optional extra):** `liangforstudy/pixelart-app` is private, so its files can't be downloaded by the app without a login. Fetching would need a public home: a separate public repo (e.g. `pixelart-app-samples`) or GitHub Pages, MIT or CC-licensed artwork the user owns or may share -- never anime frames or other copyrighted art. If the fetch fails (offline, blocked), show an in-page message ("couldn't download the sample artworks") and fall back to the generated samples; the rest of the app keeps running.
-- Undecided: where the tutorial starts (first use of the tool, a Help entry, or both), whether progress is remembered (localStorage, try/catch), and the lesson list.
+- **Decided (2026-11-15):** the tutorial starts on the first use of the tool. On later uses a small "Rewatch the tutorial?" prompt appears, with an option to hide it for good (remembered in localStorage, try/catch; hidden means hidden, and the tutorial stays reachable from the Tutorials tab). Tutorials also live in a new **Tutorials** tab on the bottom bar (see #22), placed right after Customise and before History/Debug.
+- Undecided: whether lesson progress is remembered, and the lesson list.
 
 ### 21. Vector tracing of extracted lines -- idea
 - Turn item 20's lines into strokes with tapering ends, so they look hand-drawn and scale without blur. Steps: centre-line (skeleton) of each line, join pieces into strokes, fit curves, estimate width along the stroke for taper.
 - Output must be the existing `VectorLayer.splines` format (Catmull-Rom, pen width, gradient stops) so traced art opens as a normal, editable vector layer -- the one authoritative spline representation from "Keep flexible".
 - Licence: Potrace (the best-known tracer) is GPL, which conflicts with this repo's MIT licence. Write our own; don't copy GPL code.
 - Prototype as a standalone page in `experiments/` on the item 20 test images first; plan the in-app version (entry point, sliders, tests) once it works.
+
+### 22. App-wide onboarding -- idea, after polishing
+- Same approach as #20's tutorial, for the whole app: short guided lessons per system (drawing tools, layers, fill, selection, resize screen, gallery, Portrait, sprite animation, ...), on generated sample artworks where a canvas is needed.
+- Timing: build after the app is polished, so lessons don't have to be rewritten as the UI keeps changing.
+- **Tutorials tab** on the bottom bar (`#floatingBar`), right after Customise and before the optional History tab and Debug. It lists every tutorial (#20's included) and can replay any of them. Bottom bar scrolls rather than shrinking buttons (principle 18), so one more tab is fine.
+- Same first-use rule as #20: a tool's tutorial starts the first time it's used; later uses show a "Rewatch the tutorial?" prompt that can be hidden for good (per tool or for all, undecided).
+- Undecided: lesson list and order, a one-time app welcome on first launch, whether tutorials need tests in their own group (likely yes: each lesson's steps must still match the UI).
 
 ## Item 7 (IndexedDB) -- what shipped, what didn't
 - Shipped: `meta`/`data` split (boot reads metadata only; 300 projects / ~120 MB boots in ~0.4s headless); boot and project-open crash guards with sticky safe mode; every open/read/write error-checked with in-memory fallback; Reset Storage (gallery + Debug); quota-aware write errors; `storage.persist()`; two-tab warning + list sync; time-based ids; autosave on page hide; backup reminder in the gallery.
