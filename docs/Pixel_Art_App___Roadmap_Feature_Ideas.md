@@ -126,7 +126,7 @@ Pull line art out of a flattened, coloured image (an anime frame, a coloured ske
 **Controls: three levels (decided 2026-11-15)**
 1. **Presets (simple users):** e.g. *Clean line art* (passes 1+2), *Anime frame* (1+2+3), *Sketch* (1, gentler strength), *Colouring book* (1+2+4). One tap; this is all most people need.
 2. **Advanced section:** the sliders for every pass, compact (name, value, per-slider reset), grouped by pass. Changing a slider after picking a preset shows the preset as "modified", with a reset-all button.
-3. **Cockpit mode (a toggle inside Advanced):** an aeroplane-cockpit dashboard that expands every pass and slider with:
+3. **Cockpit mode (a toggle inside Advanced):** the *same* panel and the same controls -- not a second panel. Advanced is the compact view (for when you know what each slider does); cockpit mode expands every pass and slider in place with:
    - a plain-language explanation of what it does and which problem it fixes (e.g. "Darkness levels: which darknesses count as a shape. Add a lower level if black eyes on dark fur go missing.");
    - a small live example: a tiny generated sample (from the tutorial's sample generator) showing that slider's effect as you drag, next to the real preview;
    - long-press for the longer explanation (existing long-press tooltip system).
