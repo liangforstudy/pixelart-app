@@ -27,6 +27,8 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 17 | Standalone gallery for exported JSON files | Idea only |
 | 18 | Nudge menu (18a) / nudge transformation (18b) | Idea only |
 | 19 | Feather for Bucket fill edges and Wand selections | Idea only |
+| 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven in a Python test bench); not built |
+| 21 | Vector tracing of extracted lines into VectorLayer splines | Idea only; prototype in `experiments/` first |
 
 ## Open items
 
@@ -87,6 +89,39 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 ### 19. Feather
 - Soft edges for Bucket fills and Wand selections; feathered selections erase proportionally.
 - An earlier attempt exists (`bucket_projectname_colourtool_fix_2`, branch `feather-colourtool-fix-2`: 0-20 px sliders). That algorithm was excluded on purpose in later handoffs; treat it as a reference, not a base. New engine needs the usual research and agreement first.
+
+### 20. Line Extraction -- researched V2.1, not built
+Pull line art out of a flattened, coloured image (an anime frame, a coloured sketch) onto a new transparent layer, so you can colour underneath. Fully offline: plain pixel maths on a canvas, no server, no AI.
+
+**How other apps do it (researched 2026-11-15)**
+- MediBang (iOS) Line Extraction = a Levels filter on brightness: Shadow (black point), Halftone (midtone gamma), Highlight (white point). Pixels between the two points stay grey, so dark fills come through as lines. That's why it looks "grayscale and not grayscale at the same time".
+- Clip Studio: Edit > Convert brightness to opacity (white -> transparent; all editions); Layer Property > Expression colour Gray/Monochrome with thresholds (PRO/EX); Layer Property > Extract line (EX only): edge-based, with Threshold of edge, Threshold of fill black and Correction line width.
+
+**Measured on the test images**
+- Quaxly anime frame: outlines are dark grey, brightness ~80-120, never black; the hat's shaded band is ~130, mouth 163, hat 170, background stripes 194-208. Only 10-20 levels separate lines from the darkest fill, so no Levels setting removes the band without breaking thin lines (best compromise ~ Shadow 90 / Highlight 140-150).
+- Frog character sheet: sketchy pencil lines, weak contrast; Levels loses many inner contours.
+
+**Method that worked (build these as passes)**
+1. **Ink pass ("darker than surroundings")** -- background estimate = grey closing of brightness (max filter then min filter, ~7 px): thin dark lines vanish, big fills stay. Ink strength = background - pixel, ramped between ~12 and ~45 levels. Removes dark fills that Levels can't (Quaxly's hat band); keeps sketchy inner lines (frog). Weak spots: solid dark areas keep only their outline; sharp colour boundaries (green/cream belly edge) can show as faint lines; watch the image border (a stray dashed line appeared at the left edge).
+2. **Shapes pass (eyes)** -- dark mask (brightness < ~150), erode ~3 px so thin lines vanish, label connected pieces, keep cores of 20-2,500 px (Quaxly: 4 kept, the 6,880 px hat band skipped), grow them back inside the dark mask, then either trace a 2 px outline or fill them solid (EX's "threshold of fill black"). Composite on top of pass 1 (max). Side effect seen: a few extra edges (hat band top edge, inside the ear, inner mouth).
+3. **Clean-up + smoothing** -- drop line pieces under ~12 px; then at 4x: blur slightly, re-sharpen with a smoothstep ramp, box-downsample. Removes stair-steps, grey fuzz and specks and gives anti-aliased, ink-like edges. Trade-off: line weight becomes even (taper mostly lost); strong settings can merge details closer than the blur size.
+4. **Output** -- a new layer with real alpha (alpha = line strength). Option: black lines, or keep each line's original colour (neither MediBang nor CSP offers this directly; colours come from antialiased line pixels, so they're slightly mixed with the neighbouring fill).
+
+**Timings (Python test bench, not the app)**: Levels ~2-4 ms; Ink pass ~0.3-0.7 s at 703x656 / 1152x918; smoothing ~0.46 s at 703x656. Canvas JS should allow a live preview.
+
+**Planned UI (to agree before building)**
+- Mode: *Levels* (MediBang-style Shadow / Halftone / Highlight) or *Ink* (line width, strength).
+- Shapes pass: on/off, dark level, blob size range, outline or fill.
+- Clean-up: speck size; Smoothness slider (low = keeps the original wobble, high = cleaner even lines).
+- Colour: black / original colours. Output to a new layer above the source; the source layer is untouched.
+- Undecided: entry point (Layers panel action on a layer? File > Import with extraction?), whether to run on the active layer only or the flattened frame, live preview cost on large ImageLayer canvases (>999 px), and whether it needs a Web Worker.
+- Tests: a new `line-extraction` group with small synthetic images (thin line + dark fill + dark blob) and pixel-count checks; no copyrighted frames in the repo.
+
+### 21. Vector tracing of extracted lines -- idea
+- Turn item 20's lines into strokes with tapering ends, so they look hand-drawn and scale without blur. Steps: centre-line (skeleton) of each line, join pieces into strokes, fit curves, estimate width along the stroke for taper.
+- Output must be the existing `VectorLayer.splines` format (Catmull-Rom, pen width, gradient stops) so traced art opens as a normal, editable vector layer -- the one authoritative spline representation from "Keep flexible".
+- Licence: Potrace (the best-known tracer) is GPL, which conflicts with this repo's MIT licence. Write our own; don't copy GPL code.
+- Prototype as a standalone page in `experiments/` on the item 20 test images first; plan the in-app version (entry point, sliders, tests) once it works.
 
 ## Item 7 (IndexedDB) -- what shipped, what didn't
 - Shipped: `meta`/`data` split (boot reads metadata only; 300 projects / ~120 MB boots in ~0.4s headless); boot and project-open crash guards with sticky safe mode; every open/read/write error-checked with in-memory fallback; Reset Storage (gallery + Debug); quota-aware write errors; `storage.persist()`; two-tab warning + list sync; time-based ids; autosave on page hide; backup reminder in the gallery.
