@@ -12,9 +12,32 @@ playwright install chromium
 python3 tests/run_tests.py
 ```
 
+Tests are grouped by the system they cover. Run only the groups for the code you changed:
+
+```
+python3 tests/run_tests.py --list          # groups and what code each covers
+python3 tests/run_tests.py fill            # one group
+python3 tests/run_tests.py fill resize     # several
+```
+
+The static checks always run (under a second). If you changed shared code (layer classes, `plot()`, history, camera/layout, boot, the canvas gesture handlers), run everything. To run single tests, give part of their name: `ONLY=snap python3 tests/run_tests.py resize-screen`.
+
 If you already have Chrome installed you can skip `playwright install chromium`; the script finds it. To point at a specific browser: `CHROME=/path/to/chrome python3 tests/run_tests.py`.
 
 Each test prints how long it took, each group (static, browser) prints its total, and the last line gives the pass/fail count and the overall time. Anything other than `0 failed` means something broke.
+
+## Groups
+
+| Group | Covers |
+|---|---|
+| `core` | boot, New Canvas, pencil, `plot()`, undo/redo |
+| `layout` | floating bars, panels and drawers |
+| `fill` | bucket fill and its gestures |
+| `resize` | resize engine and the number sheet |
+| `resize-screen` | the resize screen |
+| `settings` | Customise settings and saved preferences |
+| `new-canvas` | New Canvas sheet and Create Canvas → resize screen |
+| `gallery` | hub, saving, long-press menu |
 
 ## What's covered
 
@@ -30,9 +53,11 @@ Headless Chromium can't reproduce iOS Safari touch behaviour or memory limits. R
 
 ## Adding a test
 
-Add an `async def test_something(pg):` function in `run_tests.py` that uses `check('name', condition)`. It runs automatically on a fresh 32×32 canvas and gets its own timing line.
+Add an `async def test_something(pg):` function in `run_tests.py` that uses `check('name', condition)`, and add its name to a group in `GROUPS` (make a new group for a new system). A test that isn't in a group fails the run. It runs automatically on a fresh 32×32 canvas and gets its own timing line.
 
 ## Rules
 
-- Every test, and every group of tests, prints how long it took.
+- Every test, and every group of tests, prints how long it took (times of 120 s or more also in minutes, e.g. `2m 05s (125.3s)`); the end shows time per group and the 3 slowest tests.
+- Run the groups for the code you changed; run everything after changing shared code, and before pushing a new version.
+- **Feature deleted or changed on request:** the agent deletes or updates that feature's tests (and empty groups) itself, without asking again. It lists in its report which tests it removed or changed and why. A test failing in a feature nobody asked to change is a regression: fix the app, don't edit the test.
 - Run the tests before every commit; add a test with each new feature.

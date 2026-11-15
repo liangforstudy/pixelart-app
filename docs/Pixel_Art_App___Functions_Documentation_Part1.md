@@ -26,7 +26,11 @@
 
 ## Canvas Resize
 
-- `applyCanvasResize(newW,newH,ax=.5,ay=.5)` Performs an actual canvas resize: clamps both dimensions to 1-2000.
+- `applyCanvasResize(newW,newH,ax=.5,ay=.5)` Performs an actual canvas resize: clamps both dimensions to 1-2000. Since V2_1 a thin wrapper that turns the anchor into an offset and calls `applyCanvasResizeOffset`.
+- `applyCanvasResizeOffset(newW,newH,offX,offY)` (V2_1) The real resize: the old drawing's top-left lands at (offX, offY); negative offsets crop top/left. Same size with a shift is allowed. One `canvasResize` undo entry.
+- `openResizeFor(kind,returnTo)` (V2_1) Every Resize button goes through this: kind `auto`/`screen`/`sheet`, returnTo `gallery`/`editor`. Portrait/Sprite always get the sheet.
+- `enterResizeScreen(returnTo)` / `exitResizeScreen()` / `rsConfirm()` / `rsDiscard()` (V2_1) Resize screen lifecycle. `rsConfirm` uses `elementTapTwiceConfirm` when `rsCroppedPixelCount()` > 0; from the gallery it calls `goToMainMenu()` to save.
+- `rsApplyHandleDrag`, `rsApplyDrawDrag`, `rsSnapSize` (V2_1) Rectangle maths: whole pixels, 1-2000 per side, lock ratio, snap to `RS_COMMON_SIZES`.
 - `closeResizeCanvasSheet(returnToGallery)` Closes the resize modal.
 - `openResizeCanvasSheet(returnToGalleryOnCancel)` Opens the resize modal, seeding it with the current dimensions.
 - `restoreCanvasResizeState(state)` The inverse of `applyCanvasResize`, used by undo/redo: restores grid dimensions.

@@ -63,10 +63,13 @@ Container overlays 100-200 < FABs 780 < panel backdrop 800 < swatch-edit backdro
 
 ## Gallery
 - Cards: long-press opens the context menu; tap opens (`openProjectFromStore`, guarded against double taps). New Canvas card: long-press imports an image, tap opens the modal.
-- Context menu: rename (pointerup > native modal, persists meta), duplicate (deep copy of save data), resize (opens then shows the resize sheet), export PNG (builds frames off-screen), save file (downloads stored save data), delete (removes from memory and IndexedDB).
+- Context menu: rename (pointerup > native modal, persists meta), duplicate (deep copy of save data), resize (opens the project, then `openResizeFor()`: the resize screen or the sheet, per `resizePrefs`; a second `#ctx-resize-numbers` item when `resizePrefs.both`), export PNG (builds frames off-screen), save file (downloads stored save data), delete (removes from memory and IndexedDB).
+
+## Resize screen (V2_1)
+`#resizeScreen` (z 1160: above the editor and gallery, below the sheet at 1850) holds `#rsCanvas` (pointer + wheel listeners from `setupResizeScreen()`) and `#rsBar` (`#rsSize`, `#rsDetail`, `#rsLockBtn`, `#rsSnapBtn`, `#rsNumbersBtn`, `#rsResetBtn`, `#rsDiscardBtn`, `#rsConfirmBtn`). State lives in `RS`. Entry buttons: New Canvas `#newCanvasCreateBtn` (Pixel Art; `#newCanvasSizeBox` hidden), `#ctx-resize`, `#ctx-resize-numbers`, File panel `#fileResizeBtn` / `#fileResizeNumbersBtn`. Preferences: Customise > `#customisationSection-resize` (`#resizePrefOpensBtn`, `#resizePrefBothBtn`), saved in localStorage `pixelArtResizePrefs`.
 
 ## Resize modal
-`input` > `setResizeDimension`; `blur` restores the dataset value; anchor grid click sets the anchor; apply > `applyCanvasResize`. Fields are native `inputmode="numeric"` (built-in keypad removed V1_46).
+`input` > `setResizeDimension`; `blur` restores the dataset value; anchor grid click sets the anchor; apply > `applyCanvasResize`, or with `dataset.target='rect'` (opened by NUMBERS on the resize screen) it moves `RS.rect` instead. Fields are native `inputmode="numeric"` (built-in keypad removed V1_46).
 
 ## Debug drawer
 REFRESH STATS, PRINT VERSION, RESET PROJECT STORAGE (tap twice), UNRESTRICTED VECTOR, history-budget slider, raster-gate slider + force-enable, log toggles (touch/js/trace), COPY LOG, CLEAR LOG, split handle.

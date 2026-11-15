@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
         html, body {
@@ -351,6 +352,21 @@
         }
         .ctx-item:active { background: #2a2a2a; }
         .ctx-item.danger { color: #ff453a; }
+        .ctx-item.ctx-gated { opacity: .45; }
+        /* Resize screen (V2_0). Above the editor and gallery (1150), below the
+           number sheet (1850) so NUMBERS can open on top, and below toasts. */
+        #resizeScreen { position: fixed; inset: 0; z-index: 1160; background: #0e0e0e; display: flex; flex-direction: column;
+            padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        #rsHint { flex: none; font-size: 11px; color: #999; text-align: center; padding: 8px 12px; line-height: 1.35; }
+        #rsStage { flex: 1 1 auto; min-height: 0; position: relative; }
+        #rsCanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+        #rsBar { flex: none; background: #1c1c1c; border-top: 1px solid #333; padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 6px; }
+        #rsInfo { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 36px; justify-content: center; }
+        #rsSize { font-size: 18px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+        #rsDetail { font-size: 11px; color: #aaa; text-align: center; }
+        .rs-row { display: flex; gap: 6px; }
+        .rs-row .btn { flex: 1 1 0; min-height: 44px; }
+        #rsConfirmBtn { background: #0078d4; border-color: #0078d4; color: #fff; }
         .ctx-divider { border: none; border-top: 1px solid #2a2a2a; margin: 4px 0; }
         #gallery-ctx-backdrop {
             position: fixed; inset: 0; z-index: 1190; display: none; background: rgba(0,0,0,.55);
@@ -810,6 +826,7 @@
         <div class="ctx-item" id="ctx-rename">✏️ Rename</div>
         <div class="ctx-item" id="ctx-duplicate">📋 Duplicate</div>
         <div class="ctx-item" id="ctx-resize">📐 Resize Canvas</div>
+        <div class="ctx-item" id="ctx-resize-numbers" style="display:none;">🔢 Resize (numbers)</div>
         <div class="ctx-divider"></div>
         <div class="ctx-item" id="ctx-export">🖼️ Export PNG</div>
         <div class="ctx-item" id="ctx-save-file">💾 Export Project</div>
@@ -825,6 +842,25 @@
             <div class="rename-actions">
                 <button id="rename-cancel-btn">Cancel</button>
                 <button id="rename-ok-btn">Rename</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resize screen (V2_0): drag a rectangle to set the new canvas. -->
+    <div id="resizeScreen" style="display:none;">
+        <div id="rsHint">Drag the edges or corners · drag inside to move · drag outside to draw a new size · two fingers to zoom</div>
+        <div id="rsStage"><canvas id="rsCanvas"></canvas></div>
+        <div id="rsBar">
+            <div id="rsInfo"><span id="rsSize"></span><span id="rsDetail"></span></div>
+            <div class="rs-row">
+                <button class="btn" id="rsLockBtn" onclick="uiAction(rsToggleLock)">🔓 RATIO</button>
+                <button class="btn" id="rsSnapBtn" onclick="uiAction(rsToggleSnap)">🧲 SNAP</button>
+                <button class="btn" id="rsNumbersBtn" onclick="uiAction(rsOpenNumbers)">🔢 NUMBERS</button>
+                <button class="btn" id="rsResetBtn" onclick="uiAction(rsReset)">↺ RESET</button>
+            </div>
+            <div class="rs-row">
+                <button class="btn" id="rsDiscardBtn" onclick="uiAction(rsDiscard)">✖ DISCARD</button>
+                <button class="btn" id="rsConfirmBtn" onclick="uiAction(rsConfirm)">✅ CONFIRM</button>
             </div>
         </div>
     </div>
@@ -1156,6 +1192,18 @@
                 <button class="btn" onclick="uiAction(() => openCustomisationSection('checker'))">🏁 CHECKERBOARD PATTERNS</button>
                 <button class="btn" onclick="uiAction(() => openCustomisationSection('gradient'))">🌈 GRADIENT STOPS</button>
             </div>
+            <div id="customisationMenu3" class="row">
+                <button class="btn" onclick="uiAction(() => openCustomisationSection('resize'))">📐 RESIZE CANVAS (TRYING OUT)</button>
+            </div>
+            <div id="customisationSection-resize" style="display:none;">
+                <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
+                <div class="panel-subtitle">Resize Canvas — try these, then we keep one</div>
+                <div style="font-size:10px;color:#888;line-height:1.4;padding:2px 4px 6px;">What Resize Canvas opens (long-press menu and File panel). Portrait and Sprite always use the number sheet for now.</div>
+                <div class="row"><button class="btn" id="resizePrefOpensBtn" onclick="uiAction(toggleResizePrefOpens)">📐 OPENS: NEW SCREEN</button></div>
+                <div style="font-size:10px;color:#888;line-height:1.4;padding:2px 4px 6px;">Both items: the long-press menu and File panel show the screen and the number sheet as two separate items.</div>
+                <div class="row"><button class="btn" id="resizePrefBothBtn" onclick="uiAction(toggleResizePrefBoth)">MENU: ONE ITEM</button></div>
+                <div style="font-size:10px;color:#888;line-height:1.4;padding:2px 4px 6px;">The resize screen also has a 🔢 NUMBERS button that opens the sheet and moves the rectangle.</div>
+            </div>
             <div id="customisationSection-tools" style="display:none;">
                 <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
                 <div class="panel-subtitle">Tool Button Arrangement</div>
@@ -1197,6 +1245,10 @@
                 <button class="btn" onclick="uiAction(() => projectInput.click())">📂 LOAD PROJECT</button>
             </div>
             <input type="file" id="projectInput" accept="application/json,.json" style="display:none">
+            <div class="row">
+                <button class="btn" id="fileResizeBtn" onclick="uiAction(() => openResizeFor(resizePrefs.both ? 'screen' : 'auto', 'editor'))">📐 RESIZE CANVAS</button>
+                <button class="btn" id="fileResizeNumbersBtn" style="display:none;" onclick="uiAction(() => openResizeFor('sheet', 'editor'))">🔢 RESIZE (NUMBERS)</button>
+            </div>
             <div class="row">
                 <button class="btn btn-clear" id="mainMenuBtn" onclick="handleMainMenuClick()">🏠 MAIN MENU</button>
             </div>
@@ -1315,7 +1367,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_0';
+const BUILD_VERSION = 'V2_1';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -3019,6 +3071,9 @@ function setCheckerProfile(screen, profileKey) {
 function openCustomisationSection(section) {
     document.getElementById('customisationMenu').style.display = 'none';
     document.getElementById('customisationMenu2').style.display = 'none';
+    document.getElementById('customisationMenu3').style.display = 'none';
+    document.getElementById('customisationSection-resize').style.display = section === 'resize' ? '' : 'none';
+    if (section === 'resize') syncResizePrefUI();
     document.getElementById('customisationSection-tools').style.display = section === 'tools' ? '' : 'none';
     document.getElementById('customisationSection-checker').style.display = section === 'checker' ? '' : 'none';
     document.getElementById('customisationSection-gradient').style.display = section === 'gradient' ? '' : 'none';
@@ -3028,6 +3083,8 @@ function openCustomisationSection(section) {
 function closeCustomisationSection() {
     document.getElementById('customisationMenu').style.display = '';
     document.getElementById('customisationMenu2').style.display = '';
+    document.getElementById('customisationMenu3').style.display = '';
+    document.getElementById('customisationSection-resize').style.display = 'none';
     document.getElementById('customisationSection-tools').style.display = 'none';
     document.getElementById('customisationSection-checker').style.display = 'none';
     document.getElementById('customisationSection-gradient').style.display = 'none';
@@ -4280,11 +4337,23 @@ function restoreCanvasResizeState(state){
     });
     enforcePixelArtRendererForDimensions(); deselect(); layoutAll();
 }
+// Anchor version (the Resize sheet): ax/ay 0..1 pick which side the old
+// drawing sticks to. Same size = no-op, as before V2_0.
 function applyCanvasResize(newW,newH,ax=.5,ay=.5){
     newW=Math.max(1,Math.min(2000,Math.round(newW))); newH=Math.max(1,Math.min(2000,Math.round(newH)));
     if(newW===gridW && newH===gridH)return false;
+    const off=anchorOffset(gridW,gridH,newW,newH,ax,ay);
+    return applyCanvasResizeOffset(newW,newH,off.x,off.y);
+}
+// Exact version (V2_0, the resize screen): the old drawing's top-left lands
+// at (offX, offY) in the new canvas. Negative offsets crop from the top/left,
+// a smaller size crops from the bottom/right. One undo entry either way.
+function applyCanvasResizeOffset(newW,newH,offX,offY){
+    newW=Math.max(1,Math.min(2000,Math.round(newW))); newH=Math.max(1,Math.min(2000,Math.round(newH)));
+    offX=Math.round(offX); offY=Math.round(offY);
+    if(newW===gridW && newH===gridH && !offX && !offY)return false;
     const before=snapshotCanvasResizeState();
-    const oldW=gridW,oldH=gridH, off=anchorOffset(oldW,oldH,newW,newH,ax,ay);
+    const off={x:offX,y:offY};
     frames.forEach(f=>f.layers.forEach(l=>{
         if(l instanceof PixelLayer) resizePixelLayerAnchored(l,newW,newH,off.x,off.y);
         else if(l instanceof ImageLayer) resizeImageLayerAnchored(l,newW,newH,off.x,off.y);
@@ -4299,14 +4368,20 @@ function applyCanvasResize(newW,newH,ax=.5,ay=.5){
 // get gridW/gridH/frames in scope, then shows this modal on top. Cancelling
 // in that flow should back out to the gallery, not leave the project open
 // underneath as if the person had chosen to enter it -- see V1_29 bugfix notes.
-function openResizeCanvasSheet(returnToGalleryOnCancel){
+// target 'rect' (V2_0): opened from the resize screen's NUMBERS button --
+// Apply then moves that screen's rectangle instead of resizing, and
+// Cancel just closes the sheet.
+function openResizeCanvasSheet(returnToGalleryOnCancel, target){
     if(!frames.length)return;
     const modal=document.getElementById('resize-canvas-modal');
+    const startW = target==='rect' ? RS.rect.w : gridW, startH = target==='rect' ? RS.rect.h : gridH;
     document.getElementById('resize-current-size').textContent=`Current: ${gridW} × ${gridH}`;
-    document.getElementById('resize-new-w').value=gridW;
-    document.getElementById('resize-new-h').value=gridH;
-    modal.dataset.w=gridW; modal.dataset.h=gridH; modal.dataset.ax='.5'; modal.dataset.ay='.5';
-    modal.dataset.returnToGallery = returnToGalleryOnCancel ? '1' : '';
+    document.getElementById('resize-new-w').value=startW;
+    document.getElementById('resize-new-h').value=startH;
+    modal.dataset.w=startW; modal.dataset.h=startH; modal.dataset.ax='.5'; modal.dataset.ay='.5';
+    modal.dataset.target = target==='rect' ? 'rect' : '';
+    document.getElementById('resize-apply-btn').textContent = target==='rect' ? 'Set Rectangle' : 'Resize Canvas';
+    modal.dataset.returnToGallery = (returnToGalleryOnCancel && target!=='rect') ? '1' : '';
     document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.toggle('active',b.dataset.anchor==='.5,.5'));
     modal.classList.add('open');
 }
@@ -4315,11 +4390,271 @@ function closeResizeCanvasSheet(returnToGallery){
     const shouldReturn = returnToGallery!==undefined ? returnToGallery : (modal.dataset.returnToGallery === '1');
     modal.classList.remove('open');
     modal.dataset.returnToGallery = '';
+    modal.dataset.target = '';
     if(shouldReturn){ showGallery(); }
 }
 function setResizeDimension(which,v){
     const modal=document.getElementById('resize-canvas-modal'); modal.dataset[which]=String(Math.max(1,Math.min(2000,v)));
     document.getElementById(which==='w'?'resize-new-w':'resize-new-h').value=modal.dataset[which];
+}
+
+/* ============================================================
+   RESIZE SCREEN (V2_0) -- roadmap item 15
+   Shows the drawing, and a rectangle you drag (edges, corners, inside to
+   move, outside to draw a new one). The rectangle becomes the new canvas:
+   bigger adds space, smaller crops. Its own little viewer on purpose: a
+   flattened picture of the current frame plus its own pinch/zoom, so the
+   editor's camera, tools and selection clamping are never touched.
+   Pixel Art only for now; Portrait and Sprite use the number sheet.
+   ============================================================ */
+const RS = { open:false, returnTo:'editor', rect:{x:0,y:0,w:1,h:1}, lock:false, ratio:1, snap:false,
+             view:{s:8,ox:0,oy:0}, art:null, alpha:null, drag:null, pinch:null, pointers:new Map(), cssW:0, cssH:0 };
+const RS_COMMON_SIZES = [8,16,24,32,40,48,64,80,96,128,160,192,256,320,384,512,640,768,1024,1280,1536,2000];
+const RS_HANDLE_HIT = 22;     // screen px radius: 44pt touch target
+const RS_SNAP_PX = 14;        // how close (screen px) before a size snaps
+
+// Resize preferences -- TEMPORARY "try them out" settings (Customise >
+// Resize Canvas). Once one is picked, the others get removed.
+//   opens: 'screen' | 'sheet'  -- what Resize Canvas opens by default (option C)
+//   both:  true shows a separate "Resize (numbers)" item too (option B)
+const RESIZE_PREFS_KEY = 'pixelArtResizePrefs';
+let resizePrefs = { opens:'screen', both:false };
+try { const v=JSON.parse(localStorage.getItem(RESIZE_PREFS_KEY)||'null'); if(v&&typeof v==='object'){ if(v.opens==='sheet'||v.opens==='screen') resizePrefs.opens=v.opens; resizePrefs.both=!!v.both; } } catch(_) {}
+function saveResizePrefs(){ try { localStorage.setItem(RESIZE_PREFS_KEY, JSON.stringify(resizePrefs)); } catch(_) {} syncResizePrefUI(); }
+function toggleResizePrefOpens(){ resizePrefs.opens = resizePrefs.opens==='screen' ? 'sheet' : 'screen'; saveResizePrefs(); }
+function toggleResizePrefBoth(){ resizePrefs.both = !resizePrefs.both; saveResizePrefs(); }
+function syncResizePrefUI(){
+    const o=document.getElementById('resizePrefOpensBtn'); if(o){ o.textContent = resizePrefs.opens==='screen' ? '📐 OPENS: NEW SCREEN' : '🔢 OPENS: NUMBER SHEET'; }
+    const b=document.getElementById('resizePrefBothBtn'); if(b){ b.textContent = resizePrefs.both ? 'MENU: BOTH ITEMS' : 'MENU: ONE ITEM'; b.classList.toggle('active', resizePrefs.both); }
+    const second=document.getElementById('ctx-resize-numbers'); if(second) second.style.display = resizePrefs.both ? '' : 'none';
+    const fileSecond=document.getElementById('fileResizeNumbersBtn'); if(fileSecond) fileSecond.style.display = resizePrefs.both ? '' : 'none';
+    const main=document.getElementById('ctx-resize'); if(main) main.textContent = resizePrefs.both ? '📐 Resize Canvas (screen)' : '📐 Resize Canvas';
+    const fileMain=document.getElementById('fileResizeBtn'); if(fileMain) fileMain.textContent = resizePrefs.both ? '📐 RESIZE (SCREEN)' : '📐 RESIZE CANVAS';
+}
+function resizeScreenAllowed(profile){ return profile!=='portrait' && profile!=='sprite'; }
+
+// One entry point for every Resize button. kind: 'auto' (follow the
+// setting), 'screen' or 'sheet'. returnTo: 'gallery' or 'editor'.
+// Call with the project already open.
+function openResizeFor(kind, returnTo){
+    let k = kind==='auto' ? resizePrefs.opens : kind;
+    if (k==='screen' && !resizeScreenAllowed(selectedProfile)) {
+        if (kind==='screen') {
+            showAppToast('The new resize screen is Pixel Art only for now. Use Resize (numbers).', 4000);
+            if (returnTo==='gallery') { document.getElementById('pixel-canvas-screen').style.display='none'; showGallery(); }
+            return;
+        }
+        k='sheet'; // single-item menu: quietly use the sheet for Portrait/Sprite
+    }
+    if (k==='screen') enterResizeScreen(returnTo);
+    else openResizeCanvasSheet(returnTo==='gallery');
+}
+
+function enterResizeScreen(returnTo){
+    if(!frames.length) return;
+    closePanel(); closeDrawer();
+    RS.returnTo = returnTo; RS.open = true;
+    RS.rect = {x:0,y:0,w:gridW,h:gridH}; RS.lock=false; RS.snap=false; RS.drag=null; RS.pinch=null; RS.pointers.clear();
+    try { RS.art = flattenToCanvas(); RS.alpha = RS.art.getContext('2d').getImageData(0,0,gridW,gridH).data; }
+    catch(err){ console.error('resize screen: flatten failed', err && err.message); RS.art=null; RS.alpha=null; }
+    const scr=document.getElementById('resizeScreen'); scr.style.display='flex';
+    document.getElementById('rsHint').textContent = returnTo==='new'
+        ? 'Set the size of your new canvas: drag the edges or corners · drag outside to draw a size · two fingers to zoom'
+        : 'Drag the edges or corners · drag inside to move · drag outside to draw a new size · two fingers to zoom';
+    rsResizeCanvasEl(); rsFit(); rsAfterRectChange();
+}
+function exitResizeScreen(){
+    RS.open=false; RS.drag=null; RS.pinch=null; RS.pointers.clear(); RS.art=null; RS.alpha=null;
+    document.getElementById('resizeScreen').style.display='none';
+    const c=document.getElementById('rsConfirmBtn'); if(c){ elementTapTwiceState.delete(c); c.textContent='✅ CONFIRM'; }
+}
+// returnTo 'new' (V2_1): opened by New Canvas > Create Canvas for Pixel Art.
+// Discard backs out to the hub without creating anything (the blank canvas
+// was never saved); Confirm rebuilds the blank canvas at the chosen size.
+function rsDiscard(){
+    const back=RS.returnTo; exitResizeScreen();
+    if(back==='gallery' || back==='new'){ document.getElementById('pixel-canvas-screen').style.display='none'; showGallery(); } // nothing saved
+}
+// Opaque pixels of the (current frame's) drawing that fall outside the rectangle.
+function rsCroppedPixelCount(){
+    if(!RS.alpha) return 0; const r=RS.rect; let n=0;
+    for(let y=0;y<gridH;y++) for(let x=0;x<gridW;x++){
+        if(x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) continue;
+        if(RS.alpha[(y*gridW+x)*4+3]>0) n++;
+    }
+    return n;
+}
+function rsConfirm(){
+    const btn=document.getElementById('rsConfirmBtn'), r=RS.rect;
+    const doIt=()=>{
+        const back=RS.returnTo; exitResizeScreen();
+        if(back==='new'){ startNewProjectFromGallery(r.w,r.h); return; } // built at the right size: right layer type, no undo entry
+        const changed=applyCanvasResizeOffset(r.w,r.h,-r.x,-r.y);
+        if(back==='gallery') goToMainMenu();               // saves + refreshes the thumbnail
+        else if(changed) showAppToast(`Canvas is now ${gridW} × ${gridH}`, 2500);
+    };
+    const lost=rsCroppedPixelCount();
+    if(lost>0) elementTapTwiceConfirm(btn,'✅ CONFIRM',`⚠️ CROPS ${lost.toLocaleString()} PX · TAP AGAIN`,doIt);
+    else doIt();
+}
+function rsReset(){ RS.rect={x:0,y:0,w:gridW,h:gridH}; rsAfterRectChange(); }
+function rsToggleLock(){ RS.lock=!RS.lock; if(RS.lock) RS.ratio=RS.rect.w/RS.rect.h; rsAfterRectChange(); }
+function rsToggleSnap(){ RS.snap=!RS.snap; rsAfterRectChange(); }
+function rsOpenNumbers(){ openResizeCanvasSheet(false,'rect'); }
+
+function rsResizeCanvasEl(){
+    const c=document.getElementById('rsCanvas'), box=c.parentElement.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+    RS.cssW=Math.max(1,box.width); RS.cssH=Math.max(1,box.height);
+    const w=Math.round(RS.cssW*dpr), h=Math.round(RS.cssH*dpr);
+    if(c.width!==w||c.height!==h){ c.width=w; c.height=h; }  // only when changed: setting it clears the canvas
+}
+function rsFit(){
+    const s=Math.max(0.05, Math.min(RS.cssW/(gridW*1.7), RS.cssH/(gridH*1.7)));
+    RS.view={s, ox:(RS.cssW-gridW*s)/2, oy:(RS.cssH-gridH*s)/2};
+}
+const rsToScreen=(gx,gy)=>[RS.view.ox+gx*RS.view.s, RS.view.oy+gy*RS.view.s];
+function rsClientToLocal(cx,cy){ const b=document.getElementById('rsCanvas').getBoundingClientRect(); return [cx-b.left, cy-b.top]; }
+
+function rsAfterRectChange(){
+    if(!RS.open) return;
+    const c=document.getElementById('rsConfirmBtn');            // any change disarms a pending crop confirm
+    if(c && elementTapTwiceState.get(c)){ elementTapTwiceState.delete(c); c.textContent='✅ CONFIRM'; }
+    rsDraw(); rsUpdateInfo();
+}
+function rsUpdateInfo(){
+    const r=RS.rect, left=-r.x, top=-r.y, right=r.x+r.w-gridW, bottom=r.y+r.h-gridH;
+    const edge=(v,name)=> v ? `${v>0?'+':'−'}${Math.abs(v)} ${name}` : '';
+    const edges=[edge(left,'left'),edge(top,'top'),edge(right,'right'),edge(bottom,'bottom')].filter(Boolean).join(' · ');
+    let note='';
+    if(RS.snap){ const odd=[]; if(!RS_COMMON_SIZES.includes(r.w)) odd.push('width'); if(!RS_COMMON_SIZES.includes(r.h)) odd.push('height'); if(odd.length) note=` · ${odd.join(' & ')} not a common size`; }
+    const lost = RS.drag ? 0 : rsCroppedPixelCount();
+    document.getElementById('rsSize').textContent=`${r.w} × ${r.h}`;
+    document.getElementById('rsDetail').textContent = RS.returnTo==='new'
+        ? 'new canvas' + note.replace(/^ · /,' · ')
+        : `was ${gridW} × ${gridH}` + (edges?` · ${edges}`:' · unchanged') + note + (lost?` · ✂️ crops ${lost.toLocaleString()} px`:'');
+    const lk=document.getElementById('rsLockBtn'); if(lk){ lk.classList.toggle('active',RS.lock); lk.textContent = RS.lock ? '🔒 RATIO' : '🔓 RATIO'; }
+    const sn=document.getElementById('rsSnapBtn'); if(sn) sn.classList.toggle('active',RS.snap);
+}
+function rsDraw(){
+    const c=document.getElementById('rsCanvas'); if(!c) return;
+    const ctx=c.getContext('2d'), dpr=window.devicePixelRatio||1, {s,ox,oy}=RS.view, r=RS.rect;
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,RS.cssW,RS.cssH);
+    ctx.fillStyle='#0e0e0e'; ctx.fillRect(0,0,RS.cssW,RS.cssH);
+    const [rx,ry]=rsToScreen(r.x,r.y), rw=r.w*s, rh=r.h*s;
+    // checkerboard = the new canvas (shows where new empty space will be)
+    ctx.save(); ctx.beginPath(); ctx.rect(rx,ry,rw,rh); ctx.clip();
+    const sq=Math.max(4, 8*s);
+    for(let y=0, yi=0; y<rh; y+=sq, yi++) for(let x=0, xi=0; x<rw; x+=sq, xi++){ ctx.fillStyle=(xi+yi)%2?'#6a6a6a':'#8a8a8a'; ctx.fillRect(rx+x,ry+y,sq,sq); }
+    ctx.restore();
+    // the drawing, at its current place
+    if(RS.art){ ctx.imageSmoothingEnabled=false; ctx.drawImage(RS.art, ox, oy, gridW*s, gridH*s); }
+    // dim everything outside the rectangle (that part gets cropped / isn't canvas)
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.rect(0,0,RS.cssW,RS.cssH); ctx.rect(rx,ry,rw,rh); ctx.fill('evenodd');
+    // current canvas outline (dashed)
+    ctx.setLineDash([5,4]); ctx.strokeStyle='#9a9a9a'; ctx.lineWidth=1; ctx.strokeRect(ox+.5,oy+.5,gridW*s-1,gridH*s-1); ctx.setLineDash([]);
+    // the rectangle + handles
+    ctx.strokeStyle='#0a84ff'; ctx.lineWidth=2; ctx.strokeRect(rx,ry,rw,rh);
+    rsHandles().forEach(h=>{ ctx.fillStyle='#fff'; ctx.strokeStyle='#0a84ff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(h.x,h.y,7,0,Math.PI*2); ctx.fill(); ctx.stroke(); });
+}
+// 8 handles in screen space; flags say which edges each one moves.
+function rsHandles(){
+    const r=RS.rect, [x0,y0]=rsToScreen(r.x,r.y), [x1,y1]=rsToScreen(r.x+r.w,r.y+r.h), mx=(x0+x1)/2, my=(y0+y1)/2;
+    return [ {x:x0,y:y0,l:1,t:1},{x:mx,y:y0,t:1},{x:x1,y:y0,r:1,t:1},{x:x1,y:my,r:1},
+             {x:x1,y:y1,r:1,b:1},{x:mx,y:y1,b:1},{x:x0,y:y1,l:1,b:1},{x:x0,y:my,l:1} ];
+}
+function rsSnapSize(v){
+    if(!RS.snap) return v;
+    let best=v, bestD=Infinity;
+    for(const c of RS_COMMON_SIZES){ const d=Math.abs(c-v)*RS.view.s; if(d<bestD){ bestD=d; best=c; } }
+    return bestD<=RS_SNAP_PX ? best : v;
+}
+const rsClampSize=v=>Math.max(1,Math.min(2000,Math.round(v)));
+// Edge/corner drag. flags {l,r,t,b}; (gx,gy) = pointer in grid units (unrounded).
+function rsApplyHandleDrag(r0, f, gx, gy){
+    let l=r0.x, t=r0.y, rr=r0.x+r0.w, bb=r0.y+r0.h;
+    if(f.l) l=Math.min(Math.round(gx), rr-1); if(f.r) rr=Math.max(Math.round(gx), l+1);
+    if(f.t) t=Math.min(Math.round(gy), bb-1); if(f.b) bb=Math.max(Math.round(gy), t+1);
+    let w=rsClampSize(rr-l), h=rsClampSize(bb-t);
+    const horiz=f.l||f.r, vert=f.t||f.b;
+    // Snapping goes on the side you're dragging; with the ratio locked the
+    // other side follows the ratio (and may land off a common size).
+    const drivesW = horiz && (!vert || Math.abs(w-r0.w)/r0.w >= Math.abs(h-r0.h)/r0.h);
+    if(horiz && (drivesW || !RS.lock)) w=rsClampSize(rsSnapSize(w));
+    if(vert && (!drivesW || !RS.lock)) h=rsClampSize(rsSnapSize(h));
+    if(RS.lock){ if(drivesW || !vert) h=rsClampSize(w/RS.ratio); else w=rsClampSize(h*RS.ratio); }
+    // Re-place: the dragged edge moves, the opposite one stays. A side that
+    // only changed because of the lock grows from its centre.
+    if(horiz){ if(f.l) l=rr-w; else rr=l+w; } else { const cx=r0.x+r0.w/2; l=Math.round(cx-w/2); }
+    if(vert){ if(f.t) t=bb-h; else bb=t+h; } else { const cy=r0.y+r0.h/2; t=Math.round(cy-h/2); }
+    return {x:l,y:t,w,h};
+}
+function rsApplyDrawDrag(ax, ay, gx, gy){
+    const bx=Math.round(gx), by=Math.round(gy);
+    const dx=bx>=ax?1:-1, dy=by>=ay?1:-1;
+    let w=rsClampSize(Math.max(1,Math.abs(bx-ax))), h=rsClampSize(Math.max(1,Math.abs(by-ay)));
+    w=rsClampSize(rsSnapSize(w)); if(RS.lock) h=rsClampSize(w/RS.ratio); else h=rsClampSize(rsSnapSize(h));
+    return {x: dx>0?ax:ax-w, y: dy>0?ay:ay-h, w, h};
+}
+function rsPointerGrid(cx,cy){ const [lx,ly]=rsClientToLocal(cx,cy); return [(lx-RS.view.ox)/RS.view.s, (ly-RS.view.oy)/RS.view.s]; }
+function rsOnPointerDown(e){
+    const c=e.currentTarget; try{ c.setPointerCapture(e.pointerId); }catch(_){}
+    RS.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(RS.pointers.size===2){
+        // Second finger = zoom/pan. Put back whatever the first finger was
+        // doing so a stray touch never leaves a half-dragged rectangle.
+        if(RS.drag){ RS.rect=RS.drag.r0; RS.drag=null; }
+        const [a,b]=[...RS.pointers.values()], [mx,my]=rsClientToLocal((a.x+b.x)/2,(a.y+b.y)/2);
+        RS.pinch={ d0:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)), s0:RS.view.s, wx:(mx-RS.view.ox)/RS.view.s, wy:(my-RS.view.oy)/RS.view.s };
+        rsAfterRectChange(); return;
+    }
+    if(RS.pointers.size>2 || RS.pinch) return;
+    const [lx,ly]=rsClientToLocal(e.clientX,e.clientY), [gx,gy]=rsPointerGrid(e.clientX,e.clientY), r=RS.rect;
+    let best=null, bestD=RS_HANDLE_HIT;
+    rsHandles().forEach(h=>{ const d=Math.hypot(h.x-lx,h.y-ly); if(d<=bestD){ bestD=d; best=h; } });
+    if(best) RS.drag={mode:'handle', f:best, r0:{...r}};
+    else if(gx>=r.x && gx<=r.x+r.w && gy>=r.y && gy<=r.y+r.h) RS.drag={mode:'move', r0:{...r}, gx0:gx, gy0:gy};
+    else RS.drag={mode:'draw', r0:{...r}, ax:Math.round(gx), ay:Math.round(gy)};
+}
+function rsOnPointerMove(e){
+    if(!RS.pointers.has(e.pointerId)) return;
+    RS.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(RS.pinch && RS.pointers.size>=2){
+        const [a,b]=[...RS.pointers.values()], [mx,my]=rsClientToLocal((a.x+b.x)/2,(a.y+b.y)/2);
+        const s=Math.max(0.05,Math.min(64, RS.pinch.s0*Math.hypot(b.x-a.x,b.y-a.y)/RS.pinch.d0));
+        RS.view={s, ox:mx-RS.pinch.wx*s, oy:my-RS.pinch.wy*s};  // anchored to the grid point under the fingers
+        rsDraw(); return;
+    }
+    const d=RS.drag; if(!d) return;
+    const [gx,gy]=rsPointerGrid(e.clientX,e.clientY);
+    if(d.mode==='handle') RS.rect=rsApplyHandleDrag(d.r0,d.f,gx,gy);
+    else if(d.mode==='move') RS.rect={...d.r0, x:d.r0.x+Math.round(gx-d.gx0), y:d.r0.y+Math.round(gy-d.gy0)};
+    else RS.rect=rsApplyDrawDrag(d.ax,d.ay,gx,gy);
+    rsAfterRectChange();
+}
+function rsOnPointerUp(e){
+    RS.pointers.delete(e.pointerId);
+    if(RS.pinch){ if(RS.pointers.size===0) RS.pinch=null; return; }
+    if(RS.drag){ RS.drag=null; rsAfterRectChange(); }
+}
+function rsOnPointerCancel(e){
+    RS.pointers.delete(e.pointerId);
+    if(RS.drag){ RS.rect=RS.drag.r0; RS.drag=null; rsAfterRectChange(); }
+    if(!RS.pointers.size) RS.pinch=null;
+}
+function rsOnWheel(e){
+    e.preventDefault(); const [lx,ly]=rsClientToLocal(e.clientX,e.clientY), v=RS.view;
+    const wx=(lx-v.ox)/v.s, wy=(ly-v.oy)/v.s, s=Math.max(0.05,Math.min(64, v.s*(e.deltaY<0?1.15:1/1.15)));
+    RS.view={s, ox:lx-wx*s, oy:ly-wy*s}; rsDraw();
+}
+function setupResizeScreen(){
+    const c=document.getElementById('rsCanvas'); if(!c) return;
+    c.addEventListener('pointerdown', rsOnPointerDown);
+    c.addEventListener('pointermove', rsOnPointerMove);
+    c.addEventListener('pointerup', rsOnPointerUp);
+    c.addEventListener('pointercancel', rsOnPointerCancel);
+    c.addEventListener('wheel', rsOnWheel, {passive:false});
+    window.addEventListener('resize', ()=>{ if(RS.open){ rsResizeCanvasEl(); rsDraw(); } });
+    syncResizePrefUI();
 }
 
 /* ============================================================
@@ -10830,7 +11165,10 @@ function openNewCanvasModal() {
 
     const hint = document.createElement('div');
     hint.className = 'sheet-hint';
-    hint.textContent = 'Choose a profile and set your canvas size.';
+    // V2_1: Pixel Art sets its size on the resize screen after Create
+    // Canvas; Portrait and PMD keep the size boxes here.
+    const newCanvasHintText = () => resizeScreenAllowed(selectedProfile) ? 'Choose a profile. You set the size on the next screen.' : 'Choose a profile and set your canvas size.';
+    hint.textContent = newCanvasHintText();
     sheet.appendChild(hint);
 
     // Clone the relevant parts of init-screen into the sheet
@@ -10857,6 +11195,8 @@ function openNewCanvasModal() {
                 wBtn.value = '40'; hBtn.value = '40';
             }
             updateNewCanvasImportButton();
+            sizeBox.style.display = resizeScreenAllowed(selectedProfile) ? 'none' : 'flex';
+            hint.textContent = newCanvasHintText();
         };
         btn.addEventListener('pointerup', chooseProfile);
         profileRow.appendChild(btn);
@@ -10918,12 +11258,22 @@ function openNewCanvasModal() {
     wBtn.onblur=()=>{wBtn.value=String(newCanvasModalWidth);};
     hBtn.onblur=()=>{hBtn.value=String(newCanvasModalHeight);};
     sizeRow.append(wBtn,xSep,hBtn); sizeBox.appendChild(sizeRow); sheet.appendChild(sizeBox);
+    sizeBox.id = 'newCanvasSizeBox';
+    sizeBox.style.display = resizeScreenAllowed(selectedProfile) ? 'none' : 'flex';
 
     const createBtn = document.createElement('button');
     createBtn.className = 'btn-start';
     createBtn.style.cssText = 'width:100%; height:50px; background:#0078d4; border:none; color:white; border-radius:25px; font-weight:bold; text-transform:uppercase; cursor:pointer; font-size:15px;';
     createBtn.textContent = 'Create Canvas';
+    createBtn.id = 'newCanvasCreateBtn';
     createBtn.onclick = () => {
+        if (resizeScreenAllowed(selectedProfile)) {
+            // Pixel Art: blank 32x32, then the resize screen picks the size.
+            closeNewCanvasModal();
+            startNewProjectFromGallery(32, 32);
+            enterResizeScreen('new');
+            return;
+        }
         let w = newCanvasModalWidth;
         let h = newCanvasModalHeight;
         if (selectedProfile === 'portrait' && !portraitDimensionsCompatible(w, h)) {
@@ -11025,6 +11375,11 @@ function startNewProjectFromGallery(w, h) {
 function openGalleryCtxMenu(id, e) {
     galleryCtxTargetId = id;
     const menu = document.getElementById('gallery-ctx-menu');
+    // Principle 17: the screen item looks unavailable for Portrait/Sprite
+    // projects when it is shown as its own item (still tappable: it explains).
+    const ctxProj = projectStore.find(p => p.id === id);
+    const ctxResize = document.getElementById('ctx-resize');
+    if (ctxResize) ctxResize.classList.toggle('ctx-gated', !!(resizePrefs.both && ctxProj && !resizeScreenAllowed(ctxProj.profile)));
     const backdrop = document.getElementById('gallery-ctx-backdrop');
     menu.classList.add('open');
     backdrop.classList.add('open');
@@ -11093,7 +11448,16 @@ document.getElementById('ctx-resize').addEventListener('click', () => {
     const id = galleryCtxTargetId;
     closeGalleryCtxMenu();
     if (!id) return;
-    openProjectFromStore(id, () => openResizeCanvasSheet(true));
+    const proj = projectStore.find(p => p.id === id);
+    // With both items shown, this one is the screen: greyed for Portrait/Sprite (tap explains).
+    if (resizePrefs.both && proj && !resizeScreenAllowed(proj.profile)) { showAppToast('The new resize screen is Pixel Art only for now. Use Resize (numbers).', 4000); return; }
+    openProjectFromStore(id, () => openResizeFor(resizePrefs.both ? 'screen' : 'auto', 'gallery'));
+});
+document.getElementById('ctx-resize-numbers').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    if (!id) return;
+    openProjectFromStore(id, () => openResizeFor('sheet', 'gallery'));
 });
 
 document.getElementById('ctx-export').addEventListener('click', () => {
@@ -11200,6 +11564,12 @@ document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListe
 }));
 document.getElementById('resize-apply-btn').addEventListener('click', () => {
     const m=document.getElementById('resize-canvas-modal');
+    if(m.dataset.target==='rect'){
+        const w=Number(m.dataset.w), h=Number(m.dataset.h);
+        const off=anchorOffset(gridW,gridH,w,h,Number(m.dataset.ax),Number(m.dataset.ay));
+        RS.rect={x:-off.x,y:-off.y,w,h}; m.dataset.target='';
+        closeResizeCanvasSheet(false); rsAfterRectChange(); return;
+    }
     applyCanvasResize(Number(m.dataset.w),Number(m.dataset.h),Number(m.dataset.ax),Number(m.dataset.ay));
     closeResizeCanvasSheet(false);
 });
@@ -11210,6 +11580,7 @@ setupEdgeSwipe('rightEdgeZone', 'debug', 'left');
 renderToolButtons();
 applyAllCheckerProfiles();
 setupDebugDrawerSplitHandle();
+setupResizeScreen();
 renderLogToggleButtons();
 document.getElementById('viewport').addEventListener('scroll', () => { updateRotationFab(); updateUndoRedoFabs(); });
 window.addEventListener('resize', () => { updateRotationFab(); updateUndoRedoFabs(); if (viewport) updateCanvasWrapPadding(); });

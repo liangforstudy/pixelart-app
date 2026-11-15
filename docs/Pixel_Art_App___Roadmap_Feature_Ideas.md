@@ -22,7 +22,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 12 | Transform: selection / layers / masks | Selection resize + rotate done V1_40-V1_41_3; layer/mask open |
 | 13 | Blend modes (group + layer) | Done Sessions 7a-7d |
 | 14 | Raster tool gating on huge canvases | Done; toast + tappable greyed buttons V1_44_1 |
-| 15 | Expand canvas by selecting outside it | Open |
+| 15 | Expand canvas by selecting outside it | Done V2_1 as the resize screen (choosing how it's opened is still being tried out) |
 | 16 | Swatch raw values (hex/RGBA/HSV+A) + copy hex | Done |
 | 17 | Standalone gallery for exported JSON files | Idea only |
 | 18 | Nudge menu (18a) / nudge transformation (18b) | Idea only |
@@ -69,8 +69,13 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 ### 14. Raster gate -- open question
 - Should the area threshold also pick storage (PixelLayer vs ImageLayer), or stay UI-only with storage on the 999px-per-side rule? Undecided. Worth re-measuring now that bulk writes are batched (V1_44).
 
-### 15. Expand canvas by selecting outside it
-- Main canvas only (not Portrait). Needs selection bounds that can exceed the canvas; don't deepen existing clamping.
+### 15. Expand canvas by selecting outside it -- built V2_1 as the resize screen
+- Built as its own screen (`#resizeScreen`) with its own rectangle and its own viewer (flattened current frame + its own pinch/zoom), not with the selection tool, so selection clamping was left alone. "Selection bounds liftable past the canvas" stays open separately.
+- Rectangle: drag edges/corners, drag inside to move, drag outside to draw a new one. Bigger adds space, smaller crops. Lock ratio; snap to common sizes (the dragged side snaps, the locked side follows and the info line says when it's off a common size).
+- Confirm crops with a second tap when opaque pixels would be cut off (counted on the current frame). Discard changes nothing. From the gallery both return to the hub (Confirm saves); from the File panel both return to the editor.
+- Pixel Art only. Portrait and Sprite use the number sheet.
+- New Canvas (V2_1): for Pixel Art the sheet has no size boxes; Create Canvas makes a blank 32x32 and opens the resize screen (`returnTo 'new'`). Confirm rebuilds the blank canvas at the chosen size (right layer type, no undo entry); Discard returns to the hub and creates nothing. Portrait and PMD keep the size boxes.
+- Being tried out (Customise > Resize Canvas), then two get removed: A) NUMBERS button inside the screen (stays either way), B) both items in the long-press menu and File panel, C) setting for what Resize Canvas opens by default.
 
 ### 17. Standalone gallery for exported JSON
 - If built: one HTML page rendering thumbnails with a trimmed copy of `flattenTreeToCanvas`, folder via file picker / drag-drop, or `npx serve`. Rejected: Windows thumbnail provider (native DLL, second renderer to keep in sync). Fallback: Tauri.
