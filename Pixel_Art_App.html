@@ -126,6 +126,19 @@
             .fbtn { flex-basis: 118px; }
         }
         .fbtn.active { background: #0078d4; border-color: #fff; }
+        /* Top-left floating buttons. Above the edge-swipe zones (940) so a
+           tap on the button isn't eaten by the drawer swipe, but below the
+           drawer backdrop (945) and drawers (950). */
+        #topBar {
+            position: fixed; z-index: 942;
+            top: calc(8px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
+            display: flex; gap: 6px; pointer-events: none;
+        }
+        #topBar .fbtn {
+            pointer-events: auto; flex: none; min-height: 44px; min-width: 44px; height: 44px;
+            padding: 0 14px; font-size: 12px; background: rgba(28,28,28,0.92);
+        }
+        #topBar .fbtn.active { background: #0078d4; border-color: #fff; }
 
         #panel-panel { max-width: 390px; }
         .panel-manager-row { display:flex; align-items:center; gap:10px; min-height:42px; }
@@ -914,7 +927,26 @@
                     </div>
                     <div class="row">
                         <button class="btn active" id="bucketScopeBtn" onclick="uiAction(toggleBucketScope)">CONTIGUOUS</button>
+                        <button class="btn" id="bucketConnBtn" onclick="uiAction(toggleBucketConn)">4-WAY</button>
+                        <button class="btn" id="bucketSampleBtn" onclick="uiAction(toggleBucketSample)">THIS LAYER</button>
                     </div>
+                    <div class="panel-subtitle">CLOSE GAPS IN LINES</div>
+                    <div class="row" style="align-items:center;">
+                        <button class="btn" style="flex:0 0 44px;min-height:44px;" onclick="uiAction(() => setBucketGapClose(bucketGapClose-1))" aria-label="Smaller gap">−</button>
+                        <span id="bucketGapLabel" style="flex:1;font-size:12px;color:#ccc;text-align:center;">off</span>
+                        <button class="btn" style="flex:0 0 44px;min-height:44px;" onclick="uiAction(() => setBucketGapClose(bucketGapClose+1))" aria-label="Bigger gap">+</button>
+                    </div>
+                    <div class="panel-subtitle">GROW UNDER LINES</div>
+                    <div class="row" style="align-items:center;">
+                        <button class="btn" style="flex:0 0 44px;min-height:44px;" onclick="uiAction(() => setBucketGrow(bucketGrow-1))" aria-label="Grow less">−</button>
+                        <span id="bucketGrowLabel" style="flex:1;font-size:12px;color:#ccc;text-align:center;">off</span>
+                        <button class="btn" style="flex:0 0 44px;min-height:44px;" onclick="uiAction(() => setBucketGrow(bucketGrow+1))" aria-label="Grow more">+</button>
+                    </div>
+                    <div class="row">
+                        <button class="btn active" id="bucketSwipeBtn" onclick="uiAction(toggleBucketSwipe)">SWIPE FILL: ON</button>
+                        <button class="btn" id="bucketFillSelBtn" onclick="uiAction(fillWholeSelection)">FILL SELECTION</button>
+                    </div>
+                    <div style="font-size:10px;color:#888;line-height:1.4;padding:2px 4px 6px;">Tap to fill. Hold still, then drag left/right to set the threshold live. Drag straight away to fill every area you cross. Fills stay inside any selection.</div>
                 </div>
                 <div id="colorToAlphaControls" style="display:none;">
                     <div class="panel-subtitle">COLOUR TO ALPHA • BACKGROUND REMOVAL</div>
@@ -1175,11 +1207,17 @@
             <button class="fbtn" id="tab-view" data-panel-tab="view" onclick="togglePanel('view')">🔍 VIEW</button>
             <button class="fbtn" id="tab-colors" data-panel-tab="colors" onclick="togglePanel('colors')">🎨 COLOUR</button>
             <button class="fbtn" id="tab-layers" data-panel-tab="layers" onclick="togglePanel('layers')">📚 LAYERS</button>
-            <button class="fbtn" id="tab-file" data-panel-tab="file" onclick="togglePanel('file')">📁 FILE</button>
             <button class="fbtn" id="tab-panel" data-panel-tab="panel" onclick="togglePanel('panel')">▦ PANEL</button>
             <button class="fbtn" id="tab-customisation" data-panel-tab="customisation" onclick="togglePanel('customisation')">🎛️ CUSTOMISE</button>
             <button class="fbtn" id="tab-history" data-panel-tab="history" data-optional-panel="history" onclick="togglePanel('history')">↩️ HISTORY</button>
             <button class="fbtn" id="tab-debug" data-panel-tab="debug" onclick="toggleDrawer('debug')">⚙️ DEBUG</button>
+        </div>
+
+        <!-- Top-left floating bar over the canvas (same placement as the
+             model toggle in the Girafarig/Mawile viewer). Keeps .fbtn so the
+             panel code's active-state handling still works. -->
+        <div id="topBar">
+            <button class="fbtn" id="tab-file" data-panel-tab="file" onclick="togglePanel('file')">📁 FILE</button>
         </div>
 
         <button id="rotationResetFab" onclick="uiAction(resetCanvasRotation)" style="display:none;">↩️ RESET ROTATION</button>
@@ -6503,6 +6541,219 @@ function setBucketTolerance(v){ bucketTolerance=Math.max(0,Math.min(100,parseInt
 function toggleBucketMatch(){ bucketFuzzy=!bucketFuzzy; const b=document.getElementById('bucketMatchBtn'); if(b)b.textContent=bucketFuzzy?'FUZZY':'EXACT'; const r=document.getElementById('bucketTolerance'); if(r)r.disabled=!bucketFuzzy; }
 function toggleBucketScope(){ bucketGlobal=!bucketGlobal; const b=document.getElementById('bucketScopeBtn'); if(b){b.textContent=bucketGlobal?'GLOBAL':'CONTIGUOUS';b.classList.toggle('active',!bucketGlobal);} }
 
+/* ============================================================
+   FILL TOOL v2 -- ideas borrowed from other apps
+   - Sample LAYER / ALL LAYERS (Photoshop "Sample All Layers",
+     CSP "Refer multiple", Procreate reference layer): the region is
+     worked out from the visible composite, but paint still goes on
+     the active layer, so line art can live on its own layer.
+   - 4-WAY / 8-WAY neighbours (pixel-art editors like Aseprite).
+   - CLOSE GAPS (CSP "Close gap", GIMP "Maximum gap length"): pixels
+     within N of a boundary are ignored for the flood itself, then the
+     fill grows back out to the lines. The grow-back is a watershed
+     race against every other enclosed area, so it doesn't leak back
+     out through the gap it just closed.
+   - GROW UNDER LINES (CSP "Area scaling"): dilates the result N px so
+     flats tuck under line art and anti-aliased edges leave no halo.
+   - Respects a wand/lasso/rect selection, and FILL SELECTION fills it
+     whole (Photoshop Alt+Backspace, GIMP "Fill whole selection") --
+     lasso + fill selection = CSP/ibisPaint lasso fill.
+   - Gestures (handled in the canvas gesture code): hold still then
+     drag left/right = live threshold (Procreate ColorDrop); drag
+     straight away = swipe-fill every area crossed (ibisPaint
+     Continuous Filling).
+   ============================================================ */
+let bucketSampleAll = false;
+let bucket8Way = false;
+let bucketGapClose = 0;   // px, 0 = off
+let bucketGrow = 0;       // px, 0 = off
+let bucketSwipe = true;
+function syncBucketV2Buttons(){
+    const s=document.getElementById('bucketSampleBtn'); if(s){s.textContent=bucketSampleAll?'ALL LAYERS':'THIS LAYER';s.classList.toggle('active',bucketSampleAll);}
+    const c=document.getElementById('bucketConnBtn'); if(c){c.textContent=bucket8Way?'8-WAY':'4-WAY';c.classList.toggle('active',bucket8Way);}
+    const w=document.getElementById('bucketSwipeBtn'); if(w){w.textContent=bucketSwipe?'SWIPE FILL: ON':'SWIPE FILL: OFF';w.classList.toggle('active',bucketSwipe);}
+    const gl=document.getElementById('bucketGapLabel'); if(gl) gl.textContent=bucketGapClose?bucketGapClose+'px':'off';
+    const gr=document.getElementById('bucketGrowLabel'); if(gr) gr.textContent=bucketGrow?bucketGrow+'px':'off';
+}
+function toggleBucketSample(){ bucketSampleAll=!bucketSampleAll; syncBucketV2Buttons(); }
+function toggleBucketConn(){ bucket8Way=!bucket8Way; syncBucketV2Buttons(); }
+function toggleBucketSwipe(){ bucketSwipe=!bucketSwipe; syncBucketV2Buttons(); }
+function setBucketGapClose(v){ bucketGapClose=Math.max(0,Math.min(8,parseInt(v,10)||0)); syncBucketV2Buttons(); }
+function setBucketGrow(v){ bucketGrow=Math.max(0,Math.min(4,parseInt(v,10)||0)); syncBucketV2Buttons(); }
+
+// Builds a per-pixel RGBA snapshot (Uint8ClampedArray, gridW*gridH*4)
+// of whatever the fill should "look at": the active layer's own
+// pixelData, or the flattened visible composite. Built once per fill
+// (or once per threshold gesture) and reused.
+function buildBucketSample(layer){
+    const W=gridW, H=gridH, out=new Uint8ClampedArray(W*H*4);
+    if (bucketSampleAll) {
+        try {
+            const comp=flattenToCanvas();
+            const d=comp.getContext('2d').getImageData(0,0,W,H).data;
+            out.set(d.subarray(0,out.length));
+            return out;
+        } catch(err){ console.error('fill: composite sample failed, using layer', err && err.message); }
+    }
+    if (!layer || !layer.pixelData) return out;
+    const cache=new Map();
+    for (let x=0;x<W;x++){
+        const col=layer.pixelData[x]; if(!col) continue;
+        for (let y=0;y<H;y++){
+            const v=col[y]; if(v==null) continue;
+            let p=cache.get(v);
+            if(!p){
+                let m=String(v).match(/^#([0-9a-f]{6})$/i);
+                if(m) p=[parseInt(m[1].slice(0,2),16),parseInt(m[1].slice(2,4),16),parseInt(m[1].slice(4,6),16),255];
+                else { m=String(v).match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)$/i); p=m?[+m[1],+m[2],+m[3],Math.round((m[4]==null?1:+m[4])*255)]:[0,0,0,0]; }
+                cache.set(v,p);
+            }
+            const i=(y*W+x)*4; out[i]=p[0];out[i+1]=p[1];out[i+2]=p[2];out[i+3]=p[3];
+        }
+    }
+    return out;
+}
+
+// Returns {mask:Uint8Array, count} for a fill started at (sx,sy), or
+// null if the point is off-canvas. `tol` overrides bucketTolerance
+// (used by the live threshold gesture); fuzzy matching is on when
+// bucketFuzzy is, or when tol is passed explicitly.
+function computeBucketMask(sample, sx, sy, tol){
+    const W=gridW, H=gridH, N=W*H;
+    if (sx<0||sy<0||sx>=W||sy>=H) return null;
+    const fuzzy = tol!=null || bucketFuzzy;
+    const t = tol!=null ? tol : bucketTolerance;
+    const lim = (t/100)*Math.sqrt(255*255*3);
+    const s0=(sy*W+sx)*4, tr=sample[s0], tg=sample[s0+1], tb=sample[s0+2], ta=sample[s0+3];
+    const sel = (wandSelection && wandSelectionCount>0) ? wandSelection : null;
+    // P = pixels the fill may pass through.
+    const P=new Uint8Array(N);
+    for (let i=0;i<N;i++){
+        if (sel && !sel[i]) continue;
+        const k=i*4, a=sample[k+3];
+        let ok;
+        if (ta===0 || a===0) ok = (ta===0 && a===0) || (fuzzy && t>=100);
+        else if (!fuzzy) ok = sample[k]===tr && sample[k+1]===tg && sample[k+2]===tb && a===ta;
+        else { const dr=sample[k]-tr, dg=sample[k+1]-tg, db=sample[k+2]-tb, da=a-ta; ok = Math.sqrt(dr*dr+dg*dg+db*db+da*da*0.25) <= lim; }
+        if (ok) P[i]=1;
+    }
+    if (!P[sy*W+sx]) return { mask:new Uint8Array(N), count:0 };
+    const D4=[1,0,-1,0, 0,1,0,-1], D8=[1,0,-1,0,0,1,0,-1, 1,1,1,-1,-1,1,-1,-1];
+    const dirs = bucket8Way ? D8 : D4, nd=dirs.length/2;
+    let mask;
+    if (bucketGlobal) {
+        mask=P;
+    } else {
+        const flood=(pass, seed)=>{ // plain flood over pass[], from seed index
+            const m=new Uint8Array(N), stack=[seed]; m[seed]=1;
+            while(stack.length){ const i=stack.pop(), x=i%W, y=(i/W)|0;
+                for(let d=0;d<nd;d++){ const nx=x+dirs[d*2], ny=y+dirs[d*2+1];
+                    if(nx<0||ny<0||nx>=W||ny>=H) continue; const j=ny*W+nx;
+                    if(!m[j] && pass[j]){ m[j]=1; stack.push(j);} } }
+            return m;
+        };
+        const seed=sy*W+sx, r=bucketGapClose;
+        if (r<=0) mask=flood(P,seed);
+        else {
+            // Chebyshev distance to the nearest blocked pixel (capped at r+1),
+            // via repeated 3x3 erosion of P. Canvas edges count as open, so a
+            // shape touching the border still fills.
+            const dist=new Uint8Array(N);
+            for(let i=0;i<N;i++) dist[i]=P[i]?r+1:0;
+            for(let pass=1;pass<=r;pass++){
+                for(let i=0;i<N;i++){ if(dist[i]!==r+1) continue; const x=i%W,y=(i/W)|0;
+                    let near=false;
+                    for(let dy=-1;dy<=1&&!near;dy++)for(let dx=-1;dx<=1;dx++){ const nx=x+dx,ny=y+dy; if(nx<0||ny<0||nx>=W||ny>=H) continue; if(dist[ny*W+nx]===pass-1){near=true;break;} }
+                    if(near) dist[i]=pass+100; } // mark, finalise below so this pass doesn't cascade
+                for(let i=0;i<N;i++) if(dist[i]===pass+100) dist[i]=pass;
+            }
+            if (dist[seed]<=r) mask=flood(P,seed); // tapped right next to a line: no gap logic
+            else {
+                // Label every "core" (dist>r) region; the seed's core is id 1.
+                const core=new Uint8Array(N); for(let i=0;i<N;i++) core[i]=dist[i]>r?1:0;
+                const owner=new Int32Array(N); // 0 unclaimed, 1 seed side, 2 any other area
+                const queue=new Int32Array(N); let qh=0, qt=0;
+                const coreSeed=flood(core,seed);
+                for(let i=0;i<N;i++) if(core[i]){ owner[i]=coreSeed[i]?1:2; }
+                // Multi-source BFS level by level through P. Non-seed owners go
+                // first in each level so ties (pixels equidistant from both
+                // sides of a closed gap) never go to the fill -- that is what
+                // stops the grow-back leaking out through the gap.
+                for(let i=0;i<N;i++) if(owner[i]===2) queue[qt++]=i;
+                for(let i=0;i<N;i++) if(owner[i]===1) queue[qt++]=i;
+                let levelEnd=qt;
+                while(qh<qt){
+                    const i=queue[qh++], o=owner[i], x=i%W, y=(i/W)|0;
+                    for(let d=0;d<nd;d++){ const nx=x+dirs[d*2], ny=y+dirs[d*2+1];
+                        if(nx<0||ny<0||nx>=W||ny>=H) continue; const j=ny*W+nx;
+                        if(P[j] && !owner[j]){ owner[j]=o; queue[qt++]=j; } }
+                    if(qh===levelEnd){ // re-sort next level: non-seed first
+                        const lvl=queue.slice(levelEnd,qt); let k=levelEnd;
+                        for(const j of lvl) if(owner[j]===2) queue[k++]=j;
+                        for(const j of lvl) if(owner[j]===1) queue[k++]=j;
+                        levelEnd=qt; }
+                }
+                mask=new Uint8Array(N); for(let i=0;i<N;i++) if(owner[i]===1) mask[i]=1;
+            }
+        }
+    }
+    // Grow under lines (area scaling): square dilation, clipped to selection.
+    for (let pass=0; pass<bucketGrow; pass++){
+        const next=mask.slice();
+        for(let i=0;i<N;i++){ if(!mask[i]) continue; const x=i%W,y=(i/W)|0;
+            for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const nx=x+dx,ny=y+dy; if(nx<0||ny<0||nx>=W||ny>=H) continue; const j=ny*W+nx; if(!sel||sel[j]) next[j]=1; } }
+        mask=next;
+    }
+    let count=0; for(let i=0;i<N;i++) if(mask[i]) count++;
+    return { mask, count };
+}
+
+// Writes the current colour into every masked pixel of the active
+// layer. Callers own beginEdit()/commitEdit().
+function applyBucketMask(mask){
+    if(!mask) return;
+    const W=gridW, N=W*gridH;
+    bulkPixelWrite(()=>{ for(let i=0;i<N;i++) if(mask[i]) plot(i%W,(i/W)|0); });
+}
+
+// Live preview of a pending fill, drawn on the shape-preview canvas.
+function showBucketPreview(mask){
+    const canvas=document.getElementById('shapePreview'); if(!canvas||!mask) return;
+    if(canvas.width!==gridW||canvas.height!==gridH){ canvas.width=gridW; canvas.height=gridH; }
+    canvas.style.width=(gridW*scale)+'px'; canvas.style.height=(gridH*scale)+'px';
+    const ctx=canvas.getContext('2d'), img=ctx.createImageData(gridW,gridH), d=img.data;
+    let r=255,g=255,b=255,a=150;
+    const m=String(selectedColor||'').match(/^#([0-9a-f]{6})$/i);
+    if(m){ r=parseInt(m[1].slice(0,2),16); g=parseInt(m[1].slice(2,4),16); b=parseInt(m[1].slice(4,6),16); a=230; }
+    for(let i=0;i<mask.length;i++) if(mask[i]){ const k=i*4; d[k]=r; d[k+1]=g; d[k+2]=b; d[k+3]=a; }
+    ctx.putImageData(img,0,0);
+    canvas.style.display='block';
+}
+function showBucketThresholdHud(tol, count){
+    let hud=document.getElementById('bucketThresholdHud');
+    if(!hud){
+        hud=document.createElement('div'); hud.id='bucketThresholdHud';
+        hud.style.cssText='position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:50%;transform:translateX(-50%);z-index:9000;pointer-events:none;background:rgba(20,20,20,.92);border:1px solid #444;border-radius:12px;padding:8px 12px;min-width:220px;color:#eee;font-size:12px;text-align:center;';
+        hud.innerHTML='<div id="bucketThresholdText"></div><div style="height:6px;background:#333;border-radius:3px;margin-top:6px;overflow:hidden;"><div id="bucketThresholdBar" style="height:100%;background:#0a84ff;width:0%"></div></div>';
+        document.body.appendChild(hud);
+    }
+    document.getElementById('bucketThresholdText').textContent='Threshold '+tol+'%  •  '+count.toLocaleString()+' px  •  drag ← →';
+    document.getElementById('bucketThresholdBar').style.width=tol+'%';
+    hud.style.display='block';
+}
+function hideBucketThresholdHud(){ const h=document.getElementById('bucketThresholdHud'); if(h) h.style.display='none'; }
+
+// FILL SELECTION: fill the whole current wand/lasso/rect selection.
+function fillWholeSelection(){
+    const layer=activeLayer();
+    if(!isPixelLike(layer)) return;
+    if(!wandSelection || !wandSelectionCount){ showAppToast('Make a selection first (Wand, Lasso or Select)'); return; }
+    const snap=beginEdit();
+    applyBucketMask(wandSelection);
+    commitEdit(snap);
+    if (openPanelName === 'layers') renderLayersPanel();
+}
+
 function performWandSelection(x,y){
     const layer=activeLayer(); if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
     const target=layer.pixelData[x][y];
@@ -7736,6 +7987,7 @@ function updateUI() {
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
     const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
     const bs = document.getElementById('bucketScopeBtn'); if (bs) { bs.textContent = bucketGlobal ? 'GLOBAL' : 'CONTIGUOUS'; bs.classList.toggle('active', !bucketGlobal); }
+    syncBucketV2Buttons();
     const pt=document.getElementById('pixelToolControls'); if(pt)pt.style.display=['brush','softBrush','softEraser'].includes(currentTool)?'block':'none';
     [['pixel-brush-size','brushSize','px'],['pixel-brush-softness','brushSoftness','%'],['pixel-soft-eraser-size','softEraserSize','px'],['pixel-soft-eraser-softness','softEraserSoftness','%']].forEach(([id,k,s])=>{const e=document.getElementById(id),o=document.getElementById(id+'-value');if(e){e.value=window.pixelToolState[k];if(o)o.textContent=e.value+s;}});
 }
@@ -8081,41 +8333,8 @@ function setupDrawingEvents() {
             return;
         }
         if (currentTool === 'bucket') {
-            const target = layer.pixelData[x] ? layer.pixelData[x][y] : undefined;
-            const matches = c => {
-                if (!bucketFuzzy) return c === target;
-                if (c == null || target == null) return c === target;
-                const maxDist=Math.sqrt(255*255*3);
-                return wandColourDistance(c,target) <= (bucketTolerance/100)*maxDist;
-            };
-            if (target !== undefined && !matches(selectedColor)) {
-                if (bucketGlobal) {
-                    // GLOBAL mode: replace every pixel matching the sampled target,
-                    // regardless of whether it is connected to the tapped pixel.
-                    bulkPixelWrite(() => {
-                        for (let fy = 0; fy < gridH; fy++) {
-                            for (let fx = 0; fx < gridW; fx++) {
-                                if (matches(layer.pixelData[fx][fy])) plot(fx, fy);
-                            }
-                        }
-                    });
-                } else {
-                    // CONTIGUOUS mode: classic flood fill starting at the tapped pixel.
-                    bulkPixelWrite(() => {
-                        const stack = [[x, y]];
-                        const seen = new Uint8Array(gridW * gridH);
-                        while (stack.length) {
-                            const [nx, ny] = stack.pop();
-                            if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
-                            const idx=ny*gridW+nx;
-                            if(seen[idx] || !matches(layer.pixelData[nx][ny])) continue;
-                            seen[idx]=1;
-                            plot(nx, ny);
-                            stack.push([nx+1, ny], [nx-1, ny], [nx, ny+1], [nx, ny-1]);
-                        }
-                    });
-                }
-            }
+            const res = computeBucketMask(buildBucketSample(layer), x, y);
+            if (res && res.count) applyBucketMask(res.mask);
         } else plot(x, y);
     };
 
@@ -8918,6 +9137,101 @@ function setupDrawingEvents() {
         g.vecFreehand = null;
     };
 
+    // -- Fill tool gestures ------------------------------------------
+    // pending  : finger down, nothing written yet. Release = normal tap fill.
+    // threshold: held still ~350ms -> drag left/right sets tolerance live
+    //            with a preview (Procreate ColorDrop). Release = commit.
+    // swipe    : moved before the hold fired -> fill the start area and
+    //            every new area the finger crosses (ibisPaint).
+    const BUCKET_HOLD_MS = 350, BUCKET_MOVE_PX = 8, BUCKET_PX_PER_PCT = 3;
+    const startBucketGesture = (x, y) => {
+        const lc = g.lastClient || { x: 0, y: 0 };
+        const b = g.bucket = { x, y, cx: lc.x, cy: lc.y, mode: 'pending', filled: null, last: null, sample: null, mask: null, raf: 0 };
+        if (selectedProfile !== 'portrait') {
+            b.timer = setTimeout(() => {
+                if (g.bucket !== b || b.mode !== 'pending') return;
+                const layer = activeLayer(); if (!isPixelLike(layer)) return;
+                b.mode = 'threshold';
+                b.sample = buildBucketSample(layer);
+                b.tol0 = bucketFuzzy ? bucketTolerance : 0;
+                b.tol = b.tol0;
+                updateBucketThreshold(b);
+                if (navigator.vibrate) { try { navigator.vibrate(10); } catch (_) {} }
+            }, BUCKET_HOLD_MS);
+        }
+    };
+    const updateBucketThreshold = (b) => {
+        const res = computeBucketMask(b.sample, b.x, b.y, b.tol);
+        b.mask = res ? res.mask : null;
+        showBucketPreview(b.mask);
+        showBucketThresholdHud(b.tol, res ? res.count : 0);
+    };
+    const swipeFillAt = (b, px, py) => {
+        if (px < 0 || py < 0 || px >= gridW || py >= gridH) return;
+        const i = py * gridW + px;
+        if (b.filled[i]) return;
+        // Sample fresh each time so earlier swipe fills count as boundaries.
+        const layer = activeLayer();
+        const sample = buildBucketSample(layer);
+        // Only fill areas that look like the one the swipe started on, so
+        // crossing a line fills the next gap instead of recolouring the line.
+        const k = i * 4;
+        if (!b.startRGBA) b.startRGBA = [sample[k], sample[k+1], sample[k+2], sample[k+3]];
+        const [sr, sg, sb, sa] = b.startRGBA;
+        let same;
+        if (sa === 0 || sample[k+3] === 0) same = sa === 0 && sample[k+3] === 0;
+        else if (!bucketFuzzy) same = sample[k] === sr && sample[k+1] === sg && sample[k+2] === sb && sample[k+3] === sa;
+        else same = Math.hypot(sample[k]-sr, sample[k+1]-sg, sample[k+2]-sb) <= (bucketTolerance/100) * Math.sqrt(255*255*3);
+        if (!same) { b.filled[i] = 1; return; }
+        const res = computeBucketMask(sample, px, py);
+        if (!res || !res.count) { b.filled[i] = 1; return; }
+        applyBucketMask(res.mask);
+        for (let k = 0; k < res.mask.length; k++) if (res.mask[k]) b.filled[k] = 1;
+        b.filled[i] = 1;
+    };
+    const moveBucketGesture = (x, y) => {
+        const b = g.bucket; if (!b) return;
+        const lc = g.lastClient || { x: b.cx, y: b.cy };
+        if (b.mode === 'pending') {
+            if (Math.hypot(lc.x - b.cx, lc.y - b.cy) < BUCKET_MOVE_PX) return;
+            clearTimeout(b.timer);
+            if (!bucketSwipe) { b.mode = 'tapOnly'; return; }
+            b.mode = 'swipe';
+            b.filled = new Uint8Array(gridW * gridH);
+            swipeFillAt(b, b.x, b.y);
+            b.last = { x: b.x, y: b.y };
+        }
+        if (b.mode === 'swipe') {
+            const pts = linePixels(b.last.x, b.last.y, x, y);
+            pts.forEach(([px, py]) => swipeFillAt(b, px, py));
+            b.last = { x, y };
+        } else if (b.mode === 'threshold') {
+            const tol = Math.max(0, Math.min(100, Math.round(b.tol0 + (lc.x - b.cx) / BUCKET_PX_PER_PCT)));
+            if (tol === b.tol) return;
+            b.tol = tol;
+            if (!b.raf) b.raf = requestAnimationFrame(() => { b.raf = 0; if (g.bucket === b) updateBucketThreshold(b); });
+        }
+    };
+    // commit=false cancels (two-finger takeover): nothing pending is written.
+    const endBucketGesture = (commit) => {
+        const b = g.bucket; if (!b) return;
+        g.bucket = null;
+        clearTimeout(b.timer);
+        if (b.raf) cancelAnimationFrame(b.raf);
+        hideBucketThresholdHud();
+        if (b.mode === 'threshold') {
+            hideShapePreview();
+            if (commit && b.mask) {
+                // Keep the chosen threshold, like Procreate remembers it.
+                if (!bucketFuzzy && b.tol > 0) toggleBucketMatch();
+                if (bucketFuzzy) { setBucketTolerance(b.tol); const r = document.getElementById('bucketTolerance'); if (r) { r.value = b.tol; r.dispatchEvent(new Event('input')); } }
+                applyBucketMask(b.mask);
+            }
+        } else if (commit && (b.mode === 'pending' || b.mode === 'tapOnly')) {
+            doToolAt(b.x, b.y);
+        }
+    };
+
     const startStroke = (x, y) => {
         isDrawing = true;
         portraitStrokeColor = selectedColor;
@@ -8961,6 +9275,7 @@ function setupDrawingEvents() {
             return;
         }
         g.currentEditSnapshot = beginEdit();
+        if (currentTool === 'bucket') { startBucketGesture(x, y); return; }
         doToolAt(x, y);
         g.lastBrushPos = ['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool) ? {x,y} : null;
         // Portrait mode: pin the stroke to the tile it started in, so a
@@ -8987,6 +9302,13 @@ function setupDrawingEvents() {
         g.pendingTouch = null;
         g.manualPan = null;
         g.xform = null;
+        if (g.bucket) {
+            // Always commit: beginEdit() armed the layer's history capture,
+            // and commitEdit() is what releases it (a no-change commit
+            // pushes nothing). Keeps a half-done swipe undoable.
+            endBucketGesture(false);
+            if (g.currentEditSnapshot) { commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null; }
+        }
         isDrawing = false;
         hideCursor();
         const fab = document.getElementById('rotationResetFab');
@@ -9120,6 +9442,7 @@ function setupDrawingEvents() {
 
         const layer = activeLayer();
         if (!layer) return;
+        g.lastClient = { x: cx, y: cy };
         const [x, y] = getPosFromClient(cx, cy);
         syncPortraitPaletteForPoint(x,y);
         updateCursor(e);
@@ -9173,9 +9496,11 @@ function setupDrawingEvents() {
         }
 
         updateCursor(e);
+        if (touches ? touches.length === 1 : true) g.lastClient = { x: touches ? touches[0].clientX : e.clientX, y: touches ? touches[0].clientY : e.clientY };
         if (g.pendingTouch && touches && touches.length === 1) commitPendingTouch();
         if (isDrawing && (!g.suppressStroke || currentTool === 'lasso')) {
             const [x, y] = getEventPos(e);
+            if (currentTool === 'bucket' && g.bucket) { moveBucketGesture(x, y); return; }
             if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) {
                 let pts = g.lastBrushPos ? linePixels(g.lastBrushPos.x,g.lastBrushPos.y,x,y) : [[x,y]];
                 // Portrait mode: a drag can't paint past the 40x40 tile it
@@ -9292,10 +9617,12 @@ function setupDrawingEvents() {
                 if (g.currentEditSnapshot) { commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null; }
                 if (openPanelName === 'layers') renderLayersPanel();
             } else if (g.currentEditSnapshot) {
+                if (g.bucket) endBucketGesture(true);
                 commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null;
                 if (openPanelName === 'layers') renderLayersPanel();
             }
         }
+        if (g.bucket) endBucketGesture(false);
         isDrawing = false;
         portraitStrokeColor = null;
         g.lastBrushPos = null;
