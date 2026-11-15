@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>No-JS Easter Egg Test</title>
+<style>
+    body {
+        margin: 0; padding: 40px 20px; min-height: 100vh;
+        background: #0d1117; color: #e6edf3;
+        font-family: -apple-system, sans-serif; text-align: center;
+    }
+    h1 { font-size: 15px; letter-spacing: 1px; color: #58a6ff; margin-bottom: 4px; }
+    p.sub { font-size: 12px; color: #8b949e; margin-top: 0; margin-bottom: 28px; }
+
+    /* --- The reveal grid itself: 6x6, pure CSS, no JS anywhere. --- */
+    .egg-grid {
+        display: inline-grid;
+        grid-template-columns: repeat(6, 40px);
+        grid-template-rows: repeat(6, 40px);
+        gap: 3px;
+        background: #010409;
+        padding: 10px;
+        border: 2px solid #30363d;
+        border-radius: 4px;
+    }
+    .egg-grid input[type="checkbox"] { display: none; }
+    .egg-grid label {
+        display: block; width: 40px; height: 40px;
+        background: #21262d;
+        cursor: pointer;
+        border-radius: 2px;
+        transition: background 0.15s ease;
+    }
+    .egg-grid label:hover { background: #30363d; }
+    .egg-grid input:checked + label {
+        background: #f0c419;
+        clip-path: polygon(
+            50% 0%, 61% 35%, 98% 35%, 68% 57%,
+            79% 91%, 50% 70%, 21% 91%, 32% 57%,
+            2% 35%, 39% 35%
+        );
+    }
+
+    footer { margin-top: 28px; font-size: 11px; color: #484f58; }
+</style>
+</head>
+<body>
+
+<h1>PIXEL ART APP</h1>
+<p class="sub">JavaScript unavailable &mdash; reveal mode</p>
+
+<div class="egg-grid">
+    <input type="checkbox" id="p1"><label for="p1"></label>
+    <input type="checkbox" id="p2"><label for="p2"></label>
+    <input type="checkbox" id="p3"><label for="p3"></label>
+    <input type="checkbox" id="p4"><label for="p4"></label>
+    <input type="checkbox" id="p5"><label for="p5"></label>
+    <input type="checkbox" id="p6"><label for="p6"></label>
+
+    <input type="checkbox" id="p7"><label for="p7"></label>
+    <input type="checkbox" id="p8"><label for="p8"></label>
+    <input type="checkbox" id="p9"><label for="p9"></label>
+    <input type="checkbox" id="p10"><label for="p10"></label>
+    <input type="checkbox" id="p11"><label for="p11"></label>
+    <input type="checkbox" id="p12"><label for="p12"></label>
+
+    <input type="checkbox" id="p13"><label for="p13"></label>
+    <input type="checkbox" id="p14"><label for="p14"></label>
+    <input type="checkbox" id="p15"><label for="p15"></label>
+    <input type="checkbox" id="p16"><label for="p16"></label>
+    <input type="checkbox" id="p17"><label for="p17"></label>
+    <input type="checkbox" id="p18"><label for="p18"></label>
+
+    <input type="checkbox" id="p19"><label for="p19"></label>
+    <input type="checkbox" id="p20"><label for="p20"></label>
+    <input type="checkbox" id="p21"><label for="p21"></label>
+    <input type="checkbox" id="p22"><label for="p22"></label>
+    <input type="checkbox" id="p23"><label for="p23"></label>
+    <input type="checkbox" id="p24"><label for="p24"></label>
+
+    <input type="checkbox" id="p25"><label for="p25"></label>
+    <input type="checkbox" id="p26"><label for="p26"></label>
+    <input type="checkbox" id="p27"><label for="p27"></label>
+    <input type="checkbox" id="p28"><label for="p28"></label>
+    <input type="checkbox" id="p29"><label for="p29"></label>
+    <input type="checkbox" id="p30"><label for="p30"></label>
+
+    <input type="checkbox" id="p31"><label for="p31"></label>
+    <input type="checkbox" id="p32"><label for="p32"></label>
+    <input type="checkbox" id="p33"><label for="p33"></label>
+    <input type="checkbox" id="p34"><label for="p34"></label>
+    <input type="checkbox" id="p35"><label for="p35"></label>
+    <input type="checkbox" id="p36"><label for="p36"></label>
+</div>
+
+<footer>tap a pixel to reveal a star &middot; no script required</footer>
+
+</body>
+</html>
