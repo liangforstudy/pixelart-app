@@ -26,6 +26,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 16 | Swatch raw values (hex/RGBA/HSV+A) + copy hex | Done |
 | 17 | Standalone gallery for exported JSON files | Idea only |
 | 18 | Nudge menu (18a) / nudge transformation (18b) | Idea only |
+| 19 | Feather for Bucket fill edges and Wand selections | Idea only |
 
 ## Open items
 
@@ -77,6 +78,10 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 ### 18. Nudge
 - 18a: 4 arrow buttons + step size (1/10/50). Undecided: move the outline or the pixels (Move Sel mechanism); placement; configurable steps. Check `moveSelectedBlock` first.
 - 18b: +/- steps on an active transform with a choosable anchor incl. centre (centre-anchored resize doesn't exist; `computeTransformPreviewRect`'s anchor table).
+
+### 19. Feather
+- Soft edges for Bucket fills and Wand selections; feathered selections erase proportionally.
+- An earlier attempt exists (`bucket_projectname_colourtool_fix_2`, branch `feather-colourtool-fix-2`: 0-20 px sliders). That algorithm was excluded on purpose in later handoffs; treat it as a reference, not a base. New engine needs the usual research and agreement first.
 
 ## Item 7 (IndexedDB) -- what shipped, what didn't
 - Shipped: `meta`/`data` split (boot reads metadata only; 300 projects / ~120 MB boots in ~0.4s headless); boot and project-open crash guards with sticky safe mode; every open/read/write error-checked with in-memory fallback; Reset Storage (gallery + Debug); quota-aware write errors; `storage.persist()`; two-tab warning + list sync; time-based ids; autosave on page hide; backup reminder in the gallery.
