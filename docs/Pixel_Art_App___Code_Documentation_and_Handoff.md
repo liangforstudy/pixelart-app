@@ -17,7 +17,8 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 
 - Plan in sessions before restructuring or roadmap work: in scope, deferred, systems touched. Get it confirmed before code.
 - Full scope is expected; don't offer reduced-scope versions.
-- After changing the HTML, ask whether to overwrite or bump the version before delivering. Update both the file name and `BUILD_VERSION`. Underscores for minor fixes (`V1_44_1`).
+- After changing the HTML, ask whether to overwrite or bump the version before delivering. The file name never changes: it is always `Pixel_Art_App.html`, and each version is a commit on `main` (see the README, which wins over this doc). Bump `BUILD_VERSION` inside the file and name the commit after it (`V2.0: ...` for `V2_0`). Underscores for minor fixes (`V2_0_1`).
+- Run `tests/run_tests.py` before every commit (see `tests/README.md`). Add a test for each new feature.
 - Ask before removing ambiguous code. Dead-function scan: list top-level names, count occurrences, inspect count <= 1 by hand.
 - Fix List: only explicitly requested items; don't propose additions.
 - Verify every change: `node --check` on the script, function inventory diff, duplicate-id check, every `getElementById` target resolves. Behaviour: Playwright against the real file (below). `_perftest` builds for perf experiments outside the numbered lineage.
