@@ -135,7 +135,9 @@ Pull line art out of a flattened, coloured image (an anime frame, a coloured ske
 - Same approach as #20's tutorial, for the whole app: short guided lessons per system (drawing tools, layers, fill, selection, resize screen, gallery, Portrait, sprite animation, ...), on generated sample artworks where a canvas is needed.
 - Timing: build after the app is polished, so lessons don't have to be rewritten as the UI keeps changing.
 - **Tutorials tab** on the bottom bar (`#floatingBar`), right after Customise and before the optional History tab and Debug. It lists every tutorial (#20's included) and can replay any of them. Bottom bar scrolls rather than shrinking buttons (principle 18), so one more tab is fine.
-- Same rule as #20: tools are usable right away, never blocked by a tutorial; a small out-of-the-way popup points at the Tutorials tab and can be dismissed (per tool or for all at once: undecided).
+- Same rule as #20: tools are usable right away, never blocked by a tutorial; a small out-of-the-way popup points at the Tutorials tab.
+- **Dismissing the popup hides it for that one tool only** (decided 2026-11-15).
+- **Tutorial settings** (inside the Tutorials tab): turn tutorial popups off for one tool or for all tools, and bring them back (one tool or all). Saved in localStorage (try/catch); if storage is unavailable, popups just show again next session.
 - Undecided: lesson list and order, a one-time app welcome on first launch, whether tutorials need tests in their own group (likely yes: each lesson's steps must still match the UI).
 
 ## Item 7 (IndexedDB) -- what shipped, what didn't
