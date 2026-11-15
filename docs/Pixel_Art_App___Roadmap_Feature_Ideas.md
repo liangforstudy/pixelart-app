@@ -27,7 +27,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 17 | Standalone gallery for exported JSON files | Idea only |
 | 18 | Nudge menu (18a) / nudge transformation (18b) | Idea only |
 | 19 | Feather for Bucket fill edges and Wand selections | Idea only |
-| 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven on 8 images in a Python test bench); passes, presets and cockpit decided; not built |
+| 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven on 8 images in a Python test bench); passes, presets, Advanced and cockpit mode decided; not built |
 | 21 | Vector tracing of extracted lines into VectorLayer splines | Idea only; prototype in `experiments/` first |
 | 22 | App-wide onboarding (tutorials for the whole app, like #20's) | Idea only; after the app is polished |
 
@@ -123,15 +123,15 @@ Pull line art out of a flattened, coloured image (an anime frame, a coloured ske
 - Order and merging: passes run in that order, from most to least trustworthy, and each later pass only fills gaps -- it skips places where a strong line already exists, so edges never double up.
 - Clean-up + smoothing run after all passes.
 
-**Controls: presets plus a "cockpit" (decided 2026-11-15)**
-- **Presets** for the common cases, e.g. *Clean line art* (passes 1+2), *Anime frame* (1+2+3), *Sketch* (1, gentler strength), *Colouring book* (1+2+4). One tap, then adjust.
-- **Advanced = an aeroplane-cockpit dashboard:** every pass and every slider visible at once, grouped by pass. Each slider has:
-  - a plain-language name and a one-line explanation of what it does and which problem it fixes (e.g. "Darkness levels: which darknesses count as a shape. Add a lower level if black eyes on dark fur go missing.");
-  - a small live example: a tiny generated sample (from the tutorial's sample generator) showing the effect of that slider as you drag it, next to the real preview;
-  - its current value and a per-slider reset to the preset's value;
-  - long-press for the longer explanation (existing long-press tooltip system).
-- Apple HIG touch targets (44 pt) for every slider, toggle and reset; the panel scrolls rather than shrinking controls.
-- Changing a slider after picking a preset shows the preset as "modified", with a reset-all button.
+**Controls: three levels (decided 2026-11-15)**
+1. **Presets (simple users):** e.g. *Clean line art* (passes 1+2), *Anime frame* (1+2+3), *Sketch* (1, gentler strength), *Colouring book* (1+2+4). One tap; this is all most people need.
+2. **Advanced section:** the sliders for every pass, compact (name, value, per-slider reset), grouped by pass. Changing a slider after picking a preset shows the preset as "modified", with a reset-all button.
+3. **Cockpit mode (a toggle inside Advanced):** an aeroplane-cockpit dashboard that expands every pass and slider with:
+   - a plain-language explanation of what it does and which problem it fixes (e.g. "Darkness levels: which darknesses count as a shape. Add a lower level if black eyes on dark fur go missing.");
+   - a small live example: a tiny generated sample (from the tutorial's sample generator) showing that slider's effect as you drag, next to the real preview;
+   - long-press for the longer explanation (existing long-press tooltip system).
+   Cockpit mode on/off is remembered (localStorage, try/catch).
+- Apple HIG touch targets (44 pt) for every slider, toggle and reset; panels scroll rather than shrinking controls.
 
 **Timings (Python test bench, not the app)**: Levels ~2-4 ms; Ink pass ~0.3-0.7 s at 703x656 / 1152x918; smoothing ~0.46 s at 703x656. Canvas JS should allow a live preview.
 
