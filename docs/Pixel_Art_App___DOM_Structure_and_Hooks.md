@@ -61,6 +61,9 @@ Container overlays 100-200 < FABs 780 < panel backdrop 800 < swatch-edit backdro
 | backdrops | touchstart/mousedown | close panel / drawer |
 | `#leftEdgeZone`/`#rightEdgeZone` | touch | edge-swipe drawers |
 
+## Mapart (V2_2)
+`#panel-colors` > `#mapartPaletteRow` (above `#palette`): `#mapartStaircaseBtn`, `#mapartPaletteHint`, `#mapartStaircaseOffBox` (`#mapartStaircaseOffCount` + convert/keep/cancel). `#palette.mapart-locked` hides delete badges. Hub `#profileRow` and the New Canvas sheet have a `mapart` profile button.
+
 ## Gallery
 - Cards: long-press opens the context menu; tap opens (`openProjectFromStore`, guarded against double taps). New Canvas card: long-press imports an image, tap opens the modal.
 - Context menu: rename (pointerup > native modal, persists meta), duplicate (deep copy of save data), resize (opens the project, then `openResizeFor()`: the resize screen or the sheet, per `resizePrefs`; a second `#ctx-resize-numbers` item when `resizePrefs.both`), export PNG (builds frames off-screen), save file (downloads stored save data), delete (removes from memory and IndexedDB).

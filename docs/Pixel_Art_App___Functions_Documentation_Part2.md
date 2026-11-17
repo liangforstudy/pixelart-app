@@ -350,3 +350,13 @@
 - `parseAnimDataXml(xmlText)` Parses `AnimData.xml` via the browser's native `DOMParser`.
 - `async readZip(arrayBuffer)` Parses a zip central directory -> {name: Uint8Array}; handles STORE and DEFLATE. Throws on invalid zips.
 - `async writeZip(entries)` Builds a DEFLATE zip from {name: Uint8Array}, entries in insertion order.
+
+## Mapart (V2_2)
+- `syncMapartPalette(force)` Enters/leaves the locked map palette (stash and restore the previous one); `force` rebuilds after a staircase change.
+- `updateMapartPaletteUI()` Shows the staircase row, hint and live off-shade count; hides picker-related rows.
+- `mapartAllowedHexes()` The 61 or 183 allowed hexes (cached with their Lab values). `mapartResetPaletteCache()` clears that and `mapartSnapCache`.
+- `mapartLab(r,g,b)` mapartcraft's default colour space. `mapartSnapRGB(r,g,b)` nearest allowed colour, cached. `mapartSnapColor(c)` any stored colour -> allowed hex or null.
+- `mapartSnapLayerInPlace(layer)` Snaps a whole PixelLayer (materialises lazy image layers first); no history.
+- `mapartCountOffShade()` / `mapartConvertToFlat()` Count / convert light and dark shades on every pixel layer; the convert pushes one `pixelsMulti` entry.
+- `toggleMapartStaircase()` / `resolveMapartStaircaseOff(choice)` The toggle and the convert / keep / cancel choice.
+- `mapartDimensionsCompatible(w,h)`, `mapartClampToMaps(px)` Whole-map size rules. `profileToolFallback()` Portrait or Mapart tool redirects.

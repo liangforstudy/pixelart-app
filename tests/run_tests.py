@@ -58,6 +58,10 @@ GROUPS = {
                  ['test_resize_prefs']),
     'new-canvas': ('New Canvas sheet (openNewCanvasModal, #newCanvasSizeBox, #newCanvasCreateBtn), startNewProjectFromGallery, the resize screen in "new" mode.',
                    ['test_new_canvas_size_on_screen', 'test_new_canvas_discard', 'test_new_canvas_portrait_keeps_fields']),
+    'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load.',
+               ['test_mapart_new_canvas_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
+                'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
+                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
                 ['test_resize_from_gallery']),
 }
@@ -404,6 +408,114 @@ async def test_new_canvas_portrait_keeps_fields(pg):
     check('new canvas: Portrait shows the size boxes', await pg.locator('#newCanvasSizeBox').is_visible())
     await pg.locator('#newCanvasCreateBtn').click(); await pg.wait_for_timeout(800)
     check('new canvas: Portrait creates directly (no resize screen), 40 x 40', not await pg.evaluate(SCREEN_OPEN) and await pg.evaluate("() => gridW === 40 && gridH === 40"))
+
+
+async def mapart_canvas(pg, w=1, h=1):
+    await open_new_canvas_sheet(pg)
+    await pg.locator('#new-canvas-sheet .new-canvas-modal-profile-btn[data-profile="mapart"]').dispatch_event('pointerup')
+    await pg.wait_for_timeout(150)
+    await pg.locator('#newCanvasSizeBox input').nth(0).fill(str(w))
+    await pg.locator('#newCanvasSizeBox input').nth(1).fill(str(h))
+    await pg.locator('#newCanvasCreateBtn').click(); await pg.wait_for_timeout(800)
+
+SWATCHES = "() => [...document.querySelectorAll('#palette .swatch-wrapper:not(#transparencyWrapper):not(#pickerContainer) .swatch')].map(e => rgbToHex(e.style.backgroundColor).toUpperCase())"
+
+async def test_mapart_new_canvas_in_maps(pg):
+    await open_new_canvas_sheet(pg)
+    await pg.locator('#new-canvas-sheet .new-canvas-modal-profile-btn[data-profile="mapart"]').dispatch_event('pointerup')
+    await pg.wait_for_timeout(150)
+    check('mapart new canvas: size boxes shown, in maps', await pg.locator('#newCanvasSizeBox').is_visible() and 'maps' in (await pg.locator('#newCanvasSizeBox').inner_text()).lower())
+    await pg.locator('#newCanvasSizeBox input').nth(0).fill('2')
+    await pg.locator('#newCanvasSizeBox input').nth(1).fill('9')
+    await pg.locator('#newCanvasCreateBtn').click(); await pg.wait_for_timeout(800)
+    check('mapart new canvas: 2 x 9 maps clamps to 256 x 896 px, no resize screen', not await pg.evaluate(SCREEN_OPEN) and await pg.evaluate("() => gridW === 256 && gridH === 896 && selectedProfile === 'mapart'"), await pg.evaluate("() => [gridW, gridH]"))
+    check('mapart new canvas: pixel layer (not image layer)', await pg.evaluate("() => activeLayer().type === 'pixel'"))
+
+async def test_mapart_palette_locked(pg):
+    await mapart_canvas(pg)
+    sw = await pg.evaluate(SWATCHES)
+    check('mapart palette: 61 flat map colours', len(sw) == 61 and len(set(sw)) == 61, len(sw))
+    check('mapart palette: free colour picker hidden', await pg.evaluate("() => document.getElementById('pickerContainer').style.display === 'none'"))
+    check('mapart palette: manage / swatch array hidden, staircase row shown', await pg.evaluate("() => document.getElementById('manageBtn').parentElement.style.display === 'none' && document.getElementById('mapartPaletteRow').style.display === ''"))
+    await pg.evaluate("() => createSwatch('#123456')")
+    check('mapart palette: adding an off-palette colour adds nothing', len(await pg.evaluate(SWATCHES)) == 61)
+    await pg.evaluate("() => replaceVisiblePalette(['#000000'])")
+    check('mapart palette: replacing the palette is refused', len(await pg.evaluate(SWATCHES)) == 61)
+    await pg.evaluate(DRAW, [[[3, 3]], '#FF0001'])
+    check('mapart palette: drawing an off-palette colour stores the nearest map colour', await px(pg, 3, 3) == '#DC0000', await px(pg, 3, 3))
+    await pg.evaluate(DRAW, [[[4, 4]], 'rgba(10,10,10,0.3)'])
+    check('mapart palette: mostly transparent paint becomes no block', await px(pg, 4, 4) is None)
+    check('mapart palette: soft brush / colour to alpha hidden', await pg.evaluate("() => ['softBrushToolBtn','softEraserToolBtn','colorToAlphaToolBtn'].every(id => { const e = document.getElementById(id); return !e || e.style.display === 'none'; })"))
+
+async def test_mapart_snap_matches_mapartcraft(pg):
+    await mapart_canvas(pg)
+    ref = [[[255,0,0],"#DC0000","#FF0000"],[[0,255,0],"#00BB32","#00D93A"],[[0,0,255],"#3737DC","#4040FF"],[[255,255,255],"#DCDCDC","#FFFFFF"],[[0,0,0],"#151515","#111111"],[[128,64,200],"#9941BA","#7F3FB2"],[[250,200,30],"#D7CD42","#D7CD42"],[[17,34,51],"#151515","#191919"]]
+    got = await pg.evaluate("""(ref) => { const out = []; ref.forEach(([c]) => out.push(mapartSnapRGB(c[0], c[1], c[2])));
+        mapartStaircase = true; mapartResetPaletteCache(); ref.forEach(([c]) => out.push(mapartSnapRGB(c[0], c[1], c[2])));
+        mapartStaircase = false; mapartResetPaletteCache(); return out; }""", ref)
+    want = [r[1] for r in ref] + [r[2] for r in ref]
+    check('mapart snap: same picks as mapartcraft default (flat and staircase)', got == want, [got, want])
+
+async def test_mapart_staircase_toggle(pg):
+    await mapart_canvas(pg)
+    await pg.evaluate("() => toggleMapartStaircase()")
+    sw = await pg.evaluate(SWATCHES)
+    check('mapart staircase: on shows 183 colours', len(sw) == 183, len(sw))
+    check('mapart staircase: button and hint say so', await pg.evaluate("() => document.getElementById('mapartStaircaseBtn').textContent === 'STAIRCASE: ON' && document.getElementById('mapartPaletteHint').textContent.startsWith('183')"))
+    await pg.evaluate(DRAW, [[[2, 2]], '#FF0000'])
+    check('mapart staircase: light shade can be drawn', await px(pg, 2, 2) == '#FF0000')
+    await pg.evaluate("() => toggleMapartStaircase()")
+    check('mapart staircase: turning off with shaded pixels asks first', await pg.evaluate("() => document.getElementById('mapartStaircaseOffBox').style.display === '' && mapartStaircase === true"))
+    await pg.evaluate("() => resolveMapartStaircaseOff('cancel')")
+    check('mapart staircase: cancel keeps staircase on', await pg.evaluate("() => mapartStaircase === true") and len(await pg.evaluate(SWATCHES)) == 183)
+    await pg.evaluate("() => { toggleMapartStaircase(); resolveMapartStaircaseOff('keep'); }")
+    check('mapart staircase: keep leaves the pixel and flags it', await px(pg, 2, 2) == '#FF0000' and len(await pg.evaluate(SWATCHES)) == 61 and 'staircase shades' in await pg.locator('#mapartPaletteHint').text_content())
+
+async def test_mapart_staircase_off_convert_undo(pg):
+    await mapart_canvas(pg)
+    await pg.evaluate("() => toggleMapartStaircase()")
+    await pg.evaluate(DRAW, [[[1, 1]], '#FF0000'])
+    await pg.evaluate(DRAW, [[[2, 1]], '#B40000'])
+    await pg.evaluate(DRAW, [[[3, 1]], '#DC0000'])
+    await pg.evaluate("() => { toggleMapartStaircase(); resolveMapartStaircaseOff('convert'); }")
+    check('mapart staircase convert: light and dark become the normal shade', [await px(pg, 1, 1), await px(pg, 2, 1), await px(pg, 3, 1)] == ['#DC0000'] * 3, [await px(pg, 1, 1), await px(pg, 2, 1)])
+    await pg.evaluate("() => undo()")
+    check('mapart staircase convert: one undo restores both shades', await px(pg, 1, 1) == '#FF0000' and await px(pg, 2, 1) == '#B40000' and await px(pg, 3, 1) == '#DC0000')
+    await pg.evaluate("() => redo()")
+    check('mapart staircase convert: redo converts again', await px(pg, 1, 1) == '#DC0000' and await px(pg, 2, 1) == '#DC0000')
+
+async def test_mapart_save_load_and_leave(pg):
+    await mapart_canvas(pg, 2, 1)
+    await pg.evaluate("() => toggleMapartStaircase()")
+    await pg.evaluate(DRAW, [[[5, 5]], '#FF0000'])
+    data = await pg.evaluate("() => JSON.parse(JSON.stringify(currentProjectSaveData('m')))")
+    check('mapart save: profile and staircase saved', data['profile'] == 'mapart' and data['mapartStaircase'] is True)
+    await pg.evaluate("() => { mapartStaircase = false; selectProfile('pixelArt'); }")
+    check('mapart leave: Pixel Art gets its own palette back and the picker returns', await pg.evaluate("() => document.getElementById('pickerContainer').style.display === '' && !document.getElementById('palette').classList.contains('mapart-locked')") and len(await pg.evaluate(SWATCHES)) != 61)
+    await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data)
+    await pg.wait_for_timeout(300)
+    check('mapart load: reopens as mapart 256 x 128 with staircase on', await pg.evaluate("() => selectedProfile === 'mapart' && gridW === 256 && gridH === 128 && mapartStaircase === true") and len(await pg.evaluate(SWATCHES)) == 183)
+    check('mapart load: pixel kept', await px(pg, 5, 5) == '#FF0000')
+
+async def test_mapart_import_snaps(pg):
+    await mapart_canvas(pg)
+    ok = await pg.evaluate("""() => { const l = new PixelLayer('t', 128, 128); l.pixelData[0][0] = '#FF0001'; l.pixelData[1][0] = 'rgba(0,0,255,0.2)'; l.pixelData[2][0] = '#123456';
+        mapartSnapLayerInPlace(l); return [l.pixelData[0][0], l.pixelData[1][0], l.pixelData[2][0]]; }""")
+    check('mapart import: layer pixels snap to map colours, faint pixels become empty', ok[0] == '#DC0000' and ok[1] is None and ok[2] in await pg.evaluate("() => mapartAllowedHexes()"), ok)
+    IMPORT = """([w, h]) => new Promise(res => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+        x.fillStyle = '#FF0102'; x.fillRect(0, 0, w, h); x.fillStyle = '#00FF00'; x.fillRect(0, 0, 1, 1);
+        const img = new Image(); img.onload = () => { selectProfile('mapart'); importAsNewProjectFromImage(img, { name: 'pic.png' }); res(); }; img.src = c.toDataURL(); })"""
+    await pg.evaluate(IMPORT, [256, 128]); await pg.wait_for_timeout(300)
+    check('mapart import: 256 x 128 image opens as a 2 x 1 mapart, pixels snapped', await pg.evaluate("() => selectedProfile === 'mapart' && gridW === 256 && gridH === 128") and await px(pg, 0, 0) == '#00BB32' and await px(pg, 100, 100) == '#DC0000', [await px(pg, 0, 0), await px(pg, 100, 100)])
+    await pg.evaluate(IMPORT, [200, 128]); await pg.wait_for_timeout(300)
+    check('mapart import: 200 x 128 image falls back to Pixel Art, unsnapped', await pg.evaluate("() => selectedProfile === 'pixelArt' && gridW === 200") and await px(pg, 100, 100) == '#FF0102', await px(pg, 100, 100))
+    check('mapart import: whole-map sizes accepted, others refused', await pg.evaluate("() => mapartDimensionsCompatible(256,128) && !mapartDimensionsCompatible(200,128) && !mapartDimensionsCompatible(1024,128)"))
+
+async def test_mapart_resize_whole_maps(pg):
+    await mapart_canvas(pg)
+    await pg.evaluate("() => applyCanvasResizeOffset(300, 140, 0, 0)")
+    check('mapart resize: snapped to whole maps (2 x 1)', await pg.evaluate("() => gridW === 256 && gridH === 128"), await pg.evaluate("() => [gridW, gridH]"))
+    check('mapart resize: resize screen not offered', await pg.evaluate("() => !resizeScreenAllowed('mapart')"))
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''
