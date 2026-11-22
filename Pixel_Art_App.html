@@ -462,6 +462,7 @@
             border:1px solid #333; background:#2a2a2a; color:#fff; font-size:22px; cursor:pointer;
         }
         .resize-anchor-btn.active { background:#0078d4; }
+        .resize-anchor-btn:disabled { opacity:0.25; pointer-events:none; }
         .resize-anchor-btn:active { filter:brightness(1.25); }
 
         #panelBackdrop {
@@ -4591,6 +4592,7 @@ function openResizeCanvasSheet(returnToGalleryOnCancel, target){
     document.getElementById('resize-apply-btn').textContent = target==='rect' ? 'Set Rectangle' : 'Resize Canvas';
     modal.dataset.returnToGallery = (returnToGalleryOnCancel && target!=='rect') ? '1' : '';
     document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.toggle('active',b.dataset.anchor==='.5,.5'));
+    updateResizeAnchorAvailability();
     modal.classList.add('open');
 }
 function closeResizeCanvasSheet(returnToGallery){
@@ -4602,11 +4604,30 @@ function closeResizeCanvasSheet(returnToGallery){
     if(shouldReturn){ showGallery(); }
 }
 function resizeSheetDisplayValue(px){ return selectedProfile==='mapart' ? Math.round(px/MAPART_MAP_SIZE) : px; }
+function updateResizeAnchorAvailability(){
+    const m=document.getElementById('resize-canvas-modal');
+    const baseW = gridW, baseH = gridH;
+    const sameW = Number(m.dataset.w)===baseW, sameH = Number(m.dataset.h)===baseH;
+    if(sameW) m.dataset.ax='.5';
+    if(sameH) m.dataset.ay='.5';
+    document.querySelectorAll('.resize-anchor-btn').forEach(b=>{
+        const [ax,ay]=b.dataset.anchor.split(',');
+        b.disabled = (sameW && ax!=='.5') || (sameH && ay!=='.5');
+        b.classList.toggle('active', ax===m.dataset.ax && ay===m.dataset.ay);
+    });
+}
+function resizeFieldTypedValue(el){
+    let t=String(el.value).replace(/[^0-9]/g,'');
+    if(selectedProfile==='mapart' && t.length>1) t=t.slice(-1);
+    return parseInt(t,10)||1;
+}
 function setResizeDimension(which,v){
     const modal=document.getElementById('resize-canvas-modal');
     const px = selectedProfile==='mapart' ? Math.max(1,Math.min(MAPART_MAX_MAPS,v))*MAPART_MAP_SIZE : Math.max(1,Math.min(2000,v));
     modal.dataset[which]=String(px);
-    document.getElementById(which==='w'?'resize-new-w':'resize-new-h').value=resizeSheetDisplayValue(px);
+    const field=document.getElementById(which==='w'?'resize-new-w':'resize-new-h');
+    if(String(field.value)!==String(resizeSheetDisplayValue(px))) field.value=resizeSheetDisplayValue(px);
+    updateResizeAnchorAvailability();
 }
 
 /* ============================================================
@@ -11819,8 +11840,9 @@ panelBackdrop.addEventListener('mousedown', () => closePanel());
 const drawerBackdrop = document.getElementById('drawerBackdrop');
 document.getElementById('resize-cancel-btn').addEventListener('click', () => closeResizeCanvasSheet());
 document.getElementById('resize-canvas-modal').addEventListener('click', e => { if(e.target.id==='resize-canvas-modal') closeResizeCanvasSheet(); });
-document.getElementById('resize-new-w').addEventListener('input', function(){ setResizeDimension('w', parseInt(this.value,10)||1); });
-document.getElementById('resize-new-h').addEventListener('input', function(){ setResizeDimension('h', parseInt(this.value,10)||1); });
+document.getElementById('resize-new-w').addEventListener('input', function(){ if(this.value==='') return; setResizeDimension('w', resizeFieldTypedValue(this)); });
+document.getElementById('resize-new-h').addEventListener('input', function(){ if(this.value==='') return; setResizeDimension('h', resizeFieldTypedValue(this)); });
+['resize-new-w','resize-new-h'].forEach(id=>document.getElementById(id).addEventListener('focus', function(){ const el=this; setTimeout(()=>{ try{ el.select(); }catch(e){} },0); }));
 document.getElementById('resize-new-w').addEventListener('blur', function(){ this.value=resizeSheetDisplayValue(Number(document.getElementById('resize-canvas-modal').dataset.w)); });
 document.getElementById('resize-new-h').addEventListener('blur', function(){ this.value=resizeSheetDisplayValue(Number(document.getElementById('resize-canvas-modal').dataset.h)); });
 document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListener('click', () => {

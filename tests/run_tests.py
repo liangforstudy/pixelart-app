@@ -453,6 +453,10 @@ async def test_mapart_resize_sheet_in_maps(pg):
     check('mapart resize sheet: current size in maps', 'maps' in await pg.locator('#resize-current-size').inner_text())
     await w.fill('3'); await h.fill('9'); await h.blur()
     check('mapart resize sheet: 9 maps clamps to 7', await h.input_value() == '7')
+    await h.focus(); await pg.keyboard.type('4')
+    check('mapart resize sheet: typing a digit replaces the number', await h.input_value() == '4', await h.input_value())
+    await h.fill('7')
+    check('mapart resize sheet: unchanged height greys out top and bottom anchors', await pg.evaluate("() => [...document.querySelectorAll('.resize-anchor-btn')].filter(b => b.disabled).map(b => b.dataset.anchor).sort().join(' ') === '.5,0 .5,1 0,0 0,1 1,0 1,1'"))
     await pg.locator('#resize-apply-btn').click(); await pg.wait_for_timeout(400)
     check('mapart resize sheet: 3 x 7 maps = 384 x 896 px', await pg.evaluate("() => gridW === 384 && gridH === 896"), await pg.evaluate("() => [gridW, gridH]"))
 
