@@ -61,7 +61,7 @@ GROUPS = {
     'new-canvas': ('New Canvas sheet (openNewCanvasModal, #newCanvasSizeBox, #newCanvasCreateBtn), startNewProjectFromGallery, the resize screen in "new" mode.',
                    ['test_new_canvas_size_on_screen', 'test_new_canvas_discard', 'test_new_canvas_portrait_keeps_fields']),
     'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load.',
-               ['test_mapart_new_canvas_in_maps', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
+               ['test_mapart_new_canvas_in_maps', 'test_resize_sheet_no_autoselect_outside_mapart', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
                 'test_mapart_import_snaps', 'test_mapart_resize_whole_maps']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
@@ -459,6 +459,12 @@ async def test_mapart_resize_sheet_in_maps(pg):
     check('mapart resize sheet: unchanged height greys out top and bottom anchors', await pg.evaluate("() => [...document.querySelectorAll('.resize-anchor-btn')].filter(b => b.disabled).map(b => b.dataset.anchor).sort().join(' ') === '.5,0 .5,1 0,0 0,1 1,0 1,1'"))
     await pg.locator('#resize-apply-btn').click(); await pg.wait_for_timeout(400)
     check('mapart resize sheet: 3 x 7 maps = 384 x 896 px', await pg.evaluate("() => gridW === 384 && gridH === 896"), await pg.evaluate("() => [gridW, gridH]"))
+
+async def test_resize_sheet_no_autoselect_outside_mapart(pg):
+    await pg.evaluate("() => openResizeCanvasSheet()")
+    w = pg.locator('#resize-new-w')
+    await w.focus(); await pg.wait_for_timeout(50); await pg.keyboard.type('4')
+    check('resize sheet: outside Mapart, typing adds to the number (no auto-highlight)', await w.input_value() == '324', await w.input_value())
 
 async def test_mapart_palette_locked(pg):
     await mapart_canvas(pg)

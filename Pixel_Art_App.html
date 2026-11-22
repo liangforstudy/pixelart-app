@@ -11842,7 +11842,7 @@ document.getElementById('resize-cancel-btn').addEventListener('click', () => clo
 document.getElementById('resize-canvas-modal').addEventListener('click', e => { if(e.target.id==='resize-canvas-modal') closeResizeCanvasSheet(); });
 document.getElementById('resize-new-w').addEventListener('input', function(){ if(this.value==='') return; setResizeDimension('w', resizeFieldTypedValue(this)); });
 document.getElementById('resize-new-h').addEventListener('input', function(){ if(this.value==='') return; setResizeDimension('h', resizeFieldTypedValue(this)); });
-['resize-new-w','resize-new-h'].forEach(id=>document.getElementById(id).addEventListener('focus', function(){ const el=this; setTimeout(()=>{ try{ el.select(); }catch(e){} },0); }));
+['resize-new-w','resize-new-h'].forEach(id=>document.getElementById(id).addEventListener('focus', function(){ if(selectedProfile!=='mapart') return; const el=this; setTimeout(()=>{ try{ el.select(); }catch(e){} },0); }));
 document.getElementById('resize-new-w').addEventListener('blur', function(){ this.value=resizeSheetDisplayValue(Number(document.getElementById('resize-canvas-modal').dataset.w)); });
 document.getElementById('resize-new-h').addEventListener('blur', function(){ this.value=resizeSheetDisplayValue(Number(document.getElementById('resize-canvas-modal').dataset.h)); });
 document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListener('click', () => {
