@@ -501,8 +501,9 @@
             padding: 10px; padding-top: max(16px, env(safe-area-inset-top));
             padding-bottom: max(16px, env(safe-area-inset-bottom));
             box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
-            transition: transform 0.22s ease-out;
+            transition: transform .42s cubic-bezier(.1,.9,.2,1);
         }
+        .side-drawer.open { transition: transform .25s cubic-bezier(.32,.72,0,1); }
         .side-drawer.left { left: 0; border-right: 1px solid #333; transform: translateX(-100%); }
         .side-drawer.right { right: 0; border-left: 1px solid #333; transform: translateX(100%); }
         .side-drawer.open { transform: translateX(0); }
@@ -529,12 +530,7 @@
         */
         #debugDrawer { overflow-y: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
         #debugDrawerControls { flex: 0 0 auto; max-height: 60%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; margin: 0 -10px; padding: 0 10px 4px; }
-        #debugDrawerSplitHandle {
-            flex: none; height: 22px; margin: 4px -10px 0; display: flex; align-items: center; justify-content: center;
-            cursor: row-resize; touch-action: none; background: #232323; border-top: 1px solid #333; border-bottom: 1px solid #333;
-        }
-        #debugDrawerSplitHandle::before { content: ''; width: 36px; height: 4px; border-radius: 2px; background: #555; }
-        #debugDrawerSplitHandle.dragging::before { background: #0078d4; }
+        #debugDrawerSplitHandle { margin: 4px -10px 0; background: #232323; border-top: 1px solid #333; border-bottom: 1px solid #333; }
         #debugLogPane { flex: 1 1 auto; min-height: 60px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; margin: 4px -10px 0; padding: 0 10px max(16px, env(safe-area-inset-bottom)); }
 
         #rotationResetFab {
@@ -640,8 +636,10 @@
             border: 1px solid rgba(255,255,255,0.10); border-radius: 18px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.45);
             padding: 0; gap: 0; overflow: hidden; display: flex; flex-direction: column;
-            transition: transform 0.22s ease-out, opacity 0.22s ease-out, width 0.22s ease-out;
+            transition: transform .42s cubic-bezier(.1,.9,.2,1), opacity .42s cubic-bezier(.1,.9,.2,1), width .42s cubic-bezier(.1,.9,.2,1);
         }
+        #panel-layers.layers-drawer.open:not(.stroke-hidden) { transition: transform .25s cubic-bezier(.32,.72,0,1), opacity .25s cubic-bezier(.32,.72,0,1), width .25s cubic-bezier(.32,.72,0,1); }
+        #panel-layers.layers-drawer.open.strip:not(.stroke-hidden) { transition: transform .25s cubic-bezier(.32,.72,0,1), opacity .25s cubic-bezier(.32,.72,0,1), width .42s cubic-bezier(.1,.9,.2,1); }
         #panel-layers.layers-drawer:not(.open), #panel-layers.layers-drawer.stroke-hidden {
             transform: translateX(calc(100% + 16px)); opacity: 0; pointer-events: none;
         }
@@ -655,9 +653,16 @@
         #layersSplit { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
         #layersTopPane { flex: 0 0 auto; max-height: 45%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; }
         #layersListPane { flex: 1 1 auto; min-height: 80px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px; box-sizing: border-box; position: relative; }
-        .layers-split-handle { flex: none; height: 44px; background: rgba(0,0,0,0.25); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); cursor: row-resize; touch-action: none; position: relative; }
-        .layers-split-handle::before { content: ''; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px; margin: -2px 0 0 -18px; border-radius: 2px; background: #888; }
-        .layers-split-handle.dragging::before { background: #4da3ff; }
+        .layers-split-handle { background: rgba(0,0,0,0.25); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); }
+        .cdsplit { flex: none; height: 44px; box-sizing: border-box; position: relative; cursor: row-resize; touch-action: none; transition: height .25s cubic-bezier(.32,.72,0,1); }
+        .cdsplit::before { content: ''; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px; margin: -2px 0 0 -18px; border-radius: 2px; background: #888; transition: width .25s cubic-bezier(.32,.72,0,1), height .25s cubic-bezier(.32,.72,0,1), margin .25s cubic-bezier(.32,.72,0,1); }
+        .cdsplit.dragging::before { background: #4da3ff; }
+        .cdsplit.mini { height: 12px; transition-duration: .42s; transition-timing-function: cubic-bezier(.1,.9,.2,1); }
+        .cdsplit.mini::before { width: 28px; height: 3px; margin: -1.5px 0 0 -14px; transition-duration: .42s; transition-timing-function: cubic-bezier(.1,.9,.2,1); }
+        .cdsplit.mini::after { content: ''; position: absolute; left: 0; right: 0; top: -16px; bottom: -16px; }
+        .cdsplit-top { transition: max-height .25s cubic-bezier(.32,.72,0,1); }
+        .cdsplit-top.mini { transition: max-height .42s cubic-bezier(.1,.9,.2,1); }
+        html.splitDrag .cdsplit, html.splitDrag .cdsplit::before, html.splitDrag .cdsplit-top { transition: none !important; }
         #panel-layers.strip #layersTopPane, #panel-layers.strip .layers-split-handle { display: none; }
         #panel-layers.strip #layersListPane { padding: 6px; }
         .layers-icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -668,6 +673,10 @@
         .layers-icon-btn:active { background: rgba(255,255,255,0.16); }
         #layerSelectionActions { flex-wrap: wrap; }
         .layer-search-shell.collapsed { display: none; }
+        .layers-done-btn { flex: 1 0 100%; height: 48px; border: none; border-radius: 12px; background: #0a84ff; color: #fff; font-size: 15px; font-weight: 800; letter-spacing: .5px; cursor: pointer; box-shadow: 0 0 0 2px rgba(10,132,255,.35); }
+        .layers-done-btn:active { filter: brightness(1.15); }
+        .layers-hdr-btn.done { background: #0a84ff; font-size: 13px; font-weight: 800; }
+        #panel-layers.selecting { border-color: #0a84ff; box-shadow: 0 0 0 2px rgba(10,132,255,.5), 0 10px 30px rgba(0,0,0,0.45); }
         .layers-prefs { display: flex; flex-direction: column; gap: 6px; }
         .layers-pref-caption { flex: none; font-size: 9px; color: #888; width: 34px; }
         #layerSettingsPane { display: flex; flex-direction: column; gap: 6px; }
@@ -1201,10 +1210,10 @@
             <div class="layers-drawer-header" id="layersDrawerHeader">
                 <button class="layers-hdr-btn" id="layersWidthBtn" onclick="uiAction(toggleLayersDrawerWidth)" aria-label="Show the full layers panel">⟨</button>
                 <div class="layers-drawer-title">Layers</div>
-                <button class="layers-hdr-btn" id="layersQuickAddBtn" onclick="uiAction(addPixelLayer)" aria-label="New pixel layer">＋</button>
+                <button class="layers-hdr-btn" id="layersQuickAddBtn" onclick="uiAction(layersHeaderAction)" aria-label="New pixel layer">＋</button>
             </div>
             <div id="layersSplit">
-                <div id="layersTopPane">
+                <div id="layersTopPane" class="cdsplit-top">
             <div id="framesSection" style="display:none;">
                 <div class="panel-title">Frames</div>
                 <div id="framesList"></div>
@@ -1236,7 +1245,7 @@
                     <button class="layers-icon-btn" onclick="uiAction(addClipLayer)"><span>✂️</span>Clip</button>
                     <button class="layers-icon-btn" id="thumbSizeToggleBtn" onclick="uiAction(toggleLayerThumbSize)"><span>🔎</span>Big thumbs</button>
                 </div>
-                <div class="row" id="layerSelectionActions" style="display:none; flex-wrap:wrap;"><div id="selectionCount" class="selection-count">0 selected</div>
+                <div class="row" id="layerSelectionActions" style="display:none; flex-wrap:wrap;"><button class="layers-done-btn" id="layerSelectionDoneBtn" onclick="uiAction(toggleLayerSelectionMode)">✓ DONE</button><div id="selectionCount" class="selection-count">0 selected</div>
                 <button class="btn" onclick="uiAction(selectAllTreeNodes)">SELECT ALL</button>
                 <button class="btn" onclick="uiAction(clearTreeSelection)">CLEAR</button><button class="btn" onclick="uiAction(toggleSelectedVisibility)">👁 VISIBILITY</button>
                 <button class="btn" id="groupSelectedActionBtn" onclick="uiAction(createGroupFromSelected)">🗂️ ADD SELECTED LAYERS TO A NEW GROUP</button>
@@ -1246,7 +1255,7 @@
                 <button class="btn" id="deleteSelectedItemsBtn" onclick="uiAction(confirmDeleteSelectedItems)">🗑️ DELETE</button>
                 <button class="btn" onclick="uiAction(ungroupSelected)">↪️ UNGROUP</button>
                 <button class="btn" onclick="uiAction(mergeSelectedGroups)">🗂️ MERGE GROUPS</button>
-                <button class="btn" onclick="uiAction(toggleLayerSelectionMode)">DONE</button>
+
             </div>
                 <div id="layerSearchShell" class="layer-search-shell collapsed">
                     <input id="layerSearchInput" class="num-input" style="height:42px; text-align:left; padding:0 12px;" placeholder="Search layers, groups, tools…" autocomplete="off" onclick="uiAction(focusLayerSearch)">
@@ -1259,7 +1268,7 @@
                 <div style="font-size:9px; color:#888; text-align:center;">Mask/Clip attach to the pixel layer directly below them when created -- select a pixel layer first.</div>
                 <input type="file" id="refInput" accept="image/*" style="display:none">
                 </div>
-                <div id="layersSplitHandle" class="layers-split-handle" aria-label="Drag to resize"></div>
+                <div id="layersSplitHandle" class="layers-split-handle cdsplit" role="separator" aria-label="Drag to resize"></div>
                 <div id="layersListPane"><div id="layersList"></div></div>
             </div>
         </div>
@@ -1409,7 +1418,7 @@
         </div>
     <!-- Debug drawer: kept outside #pixel-canvas-screen so it remains reachable from the Hub (see the DEBUG button added to gallery-header). -->
         <div class="side-drawer right" id="debugDrawer">
-            <div id="debugDrawerControls" style="display:flex; flex-direction:column; gap:8px;">
+            <div id="debugDrawerControls" class="cdsplit-top" style="display:flex; flex-direction:column; gap:8px;">
                 <div class="panel-title">JS Logs</div>
                 <div id="buildVersionLabel" style="font-size:11px;color:#0af;text-align:center;font-weight:bold;letter-spacing:0.5px;"></div>
                 <div id="debugStats"></div>
@@ -1448,7 +1457,7 @@
                     <button class="btn" onclick="uiAction(clearDebugLog)">🧹 CLEAR LOG</button>
                 </div>
             </div>
-            <div id="debugDrawerSplitHandle" title="Drag to resize"></div>
+            <div id="debugDrawerSplitHandle" class="cdsplit" role="separator" aria-label="Drag to resize"></div>
             <div id="debugLogPane"><div id="debugLog"></div></div>
         </div>
 
@@ -3632,36 +3641,38 @@ function toggleDrawer(which) {
 // chosen split survives reloads, same pattern as pixelAppPanelVisibility.
 let debugDrawerSplitPct = 45; // % of available height given to the controls pane
 try { const saved = parseFloat(localStorage.getItem('pixelAppDebugDrawerSplitPct')); if (!isNaN(saved) && saved >= 15 && saved <= 85) debugDrawerSplitPct = saved; } catch(e) {}
+function makeCollapsingSplit(opts) {
+    const handle = document.getElementById(opts.handleId), box = document.getElementById(opts.boxId), top = document.getElementById(opts.topId);
+    if (!handle || !box || !top) return null;
+    const root = document.documentElement;
+    const phone = () => matchMedia('(max-width: 760px)').matches;
+    const applyPct = () => { const mini = handle.classList.contains('mini'); top.style.maxHeight = mini ? 'calc(' + opts.getPct() + '% + 16px)' : opts.getPct() + '%'; };
+    const setMini = on => { if (on && !phone()) on = false; handle.classList.toggle('mini', on); top.classList.toggle('mini', on); applyPct(); };
+    setMini(true);
+    let drag = false, moved = false;
+    document.addEventListener('pointerdown', e => { if (!handle.contains(e.target)) setMini(true); }, true);
+    handle.addEventListener('pointerdown', e => { setMini(false); drag = true; moved = false; handle.classList.add('dragging'); try { handle.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
+    handle.addEventListener('pointermove', e => {
+        if (!drag) return;
+        if (!moved) { moved = true; root.classList.add('splitDrag'); }
+        const r = box.getBoundingClientRect();
+        opts.setPct(Math.max(15, Math.min(85, (e.clientY - r.top) / r.height * 100)));
+        applyPct();
+    });
+    const end = () => { if (!drag) return; drag = false; handle.classList.remove('dragging'); root.classList.remove('splitDrag'); opts.save(); };
+    handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+    return { applyPct, setMini };
+}
+let debugDrawerSplit = null;
 function applyDebugDrawerSplit() {
+    if (debugDrawerSplit) { debugDrawerSplit.applyPct(); return; }
     const controls = document.getElementById('debugDrawerControls');
     if (controls) controls.style.maxHeight = debugDrawerSplitPct + '%';
 }
 function setupDebugDrawerSplitHandle() {
-    const handle = document.getElementById('debugDrawerSplitHandle');
-    const drawer = document.getElementById('debugDrawer');
-    if (!handle || !drawer) return;
-    applyDebugDrawerSplit();
-    let dragging = false;
-    handle.addEventListener('pointerdown', e => {
-        dragging = true;
-        handle.classList.add('dragging');
-        handle.setPointerCapture(e.pointerId);
-    });
-    handle.addEventListener('pointermove', e => {
-        if (!dragging) return;
-        const rect = drawer.getBoundingClientRect();
-        const pct = ((e.clientY - rect.top) / rect.height) * 100;
-        debugDrawerSplitPct = Math.max(15, Math.min(85, pct));
-        applyDebugDrawerSplit();
-    });
-    const endDrag = () => {
-        if (!dragging) return;
-        dragging = false;
-        handle.classList.remove('dragging');
-        try { localStorage.setItem('pixelAppDebugDrawerSplitPct', String(debugDrawerSplitPct)); } catch(e) {}
-    };
-    handle.addEventListener('pointerup', endDrag);
-    handle.addEventListener('pointercancel', endDrag);
+    debugDrawerSplit = makeCollapsingSplit({ handleId:'debugDrawerSplitHandle', boxId:'debugDrawer', topId:'debugDrawerControls',
+        getPct: () => debugDrawerSplitPct, setPct: v => { debugDrawerSplitPct = v; },
+        save: () => { try { localStorage.setItem('pixelAppDebugDrawerSplitPct', String(debugDrawerSplitPct)); } catch(e) {} } });
 }
 // Watches a 20px screen-edge strip for a horizontal swipe and opens the
 // given drawer once the finger has moved far enough in from the edge.
@@ -6417,7 +6428,9 @@ function renderLayersPanel() {
     updatePortraitTileOverlay();
     const searchInput=document.getElementById('layerSearchInput'); if(searchInput && searchInput.value) renderLayerSearchResults(searchInput.value);
     const sb=document.getElementById('layerSelectionToolbar'); const sa=document.getElementById('layerSelectionActions'); const gb=document.getElementById('groupSelectedBtn'); const ga=document.getElementById('groupSelectedActionBtn');
-    if(sb) sb.style.display=layerSelectionMode?'none':'contents'; if(sa) sa.style.display=layerSelectionMode?'flex':'none'; const sc=document.getElementById('selectionCount'); if(sc) sc.innerText=selectedNodeIds.size+' selected'; if(gb) gb.disabled=selectedNodeIds.size===0; if(ga) ga.disabled=selectedNodeIds.size===0;
+    if(sb) sb.style.display=layerSelectionMode?'none':'contents';
+    const qa=document.getElementById('layersQuickAddBtn'); if(qa){ qa.classList.toggle('done', !!layerSelectionMode); qa.textContent=layerSelectionMode?'Done':'＋'; qa.setAttribute('aria-label', layerSelectionMode?'Done selecting':'New pixel layer'); }
+    const lpn=document.getElementById('panel-layers'); if(lpn) lpn.classList.toggle('selecting', !!layerSelectionMode); if(sa) sa.style.display=layerSelectionMode?'flex':'none'; const sc=document.getElementById('selectionCount'); if(sc) sc.innerText=selectedNodeIds.size+' selected'; if(gb) gb.disabled=selectedNodeIds.size===0; if(ga) ga.disabled=selectedNodeIds.size===0;
 }
 const LAYERS_DRAWER_PREFS_KEY = 'pixelArtLayersDrawerPrefs';
 let layersDrawerPrefs = { mode:'strip', returnAfterStroke:true, glass:82, split:45 };
@@ -6425,15 +6438,17 @@ try { const v=JSON.parse(localStorage.getItem(LAYERS_DRAWER_PREFS_KEY)||'null');
 function saveLayersDrawerPrefs(){ try { localStorage.setItem(LAYERS_DRAWER_PREFS_KEY, JSON.stringify(layersDrawerPrefs)); } catch(_) {} }
 function isLayersStrip(){ const p=document.getElementById('panel-layers'); return !!(p && p.classList.contains('strip')); }
 let layersGlassSliderBuilt = false;
+let layersSplit = null;
 function applyLayersDrawerPrefs(){
     const p=document.getElementById('panel-layers'); if(!p) return;
     p.classList.toggle('strip', layersDrawerPrefs.mode==='strip');
     p.style.setProperty('--layers-glass', String(layersDrawerPrefs.glass/100));
     const wb=document.getElementById('layersWidthBtn'); if(wb){ wb.textContent = layersDrawerPrefs.mode==='strip' ? '⟨' : '⟩'; wb.setAttribute('aria-label', layersDrawerPrefs.mode==='strip' ? 'Show the full layers panel' : 'Show the thumbnail strip'); }
     const rb=document.getElementById('layersReturnPrefBtn'); if(rb){ rb.textContent = 'COMES BACK AFTER A STROKE: ' + (layersDrawerPrefs.returnAfterStroke ? 'ON' : 'OFF'); rb.classList.toggle('active', layersDrawerPrefs.returnAfterStroke); }
-    const tp=document.getElementById('layersTopPane'); if(tp) tp.style.maxHeight=layersDrawerPrefs.split+'%';
+    if(layersSplit) layersSplit.applyPct(); else { const tp=document.getElementById('layersTopPane'); if(tp) tp.style.maxHeight=layersDrawerPrefs.split+'%'; }
     if(!layersGlassSliderBuilt){ const slot=document.getElementById('layersGlassSliderSlot'); if(slot){ const ctl=mkIosSlider(layersDrawerPrefs.glass, v=>{ layersDrawerPrefs.glass=Math.max(40,Math.min(100,Math.round(v))); p.style.setProperty('--layers-glass', String(layersDrawerPrefs.glass/100)); saveLayersDrawerPrefs(); }); slot.appendChild(ctl.el); layersGlassSliderBuilt=true; } }
 }
+function layersHeaderAction(){ if(layerSelectionMode) toggleLayerSelectionMode(); else addPixelLayer(); }
 function setLayersDrawerMode(mode){ layersDrawerPrefs.mode = mode==='full' ? 'full' : 'strip'; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); }
 function toggleLayersDrawerWidth(){ setLayersDrawerMode(isLayersStrip() ? 'full' : 'strip'); }
 function toggleLayersReturnPref(){ layersDrawerPrefs.returnAfterStroke = !layersDrawerPrefs.returnAfterStroke; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); }
@@ -6443,20 +6458,14 @@ function toggleLayersReturnPref(){ layersDrawerPrefs.returnAfterStroke = !layers
         applyLayersDrawerPrefs();
         const strokePointers=new Set(); let hiddenForStroke=false;
         vp.addEventListener('pointerdown', e=>{ strokePointers.add(e.pointerId); if(openPanelName==='layers' && !hiddenForStroke){ hiddenForStroke=true; panel.classList.add('stroke-hidden'); } }, true);
-        const end=e=>{ strokePointers.delete(e.pointerId); if(!hiddenForStroke || strokePointers.size) return; hiddenForStroke=false; if(openPanelName!=='layers'){ panel.classList.remove('stroke-hidden'); return; } if(layersDrawerPrefs.returnAfterStroke){ panel.classList.remove('stroke-hidden'); try{ renderLayersPanel(); }catch(_){} } else closePanel(); };
+        const end=e=>{ strokePointers.delete(e.pointerId); if(!hiddenForStroke || strokePointers.size) return; hiddenForStroke=false; if(layersDrawerPrefs.mode!=='strip') setLayersDrawerMode('strip'); if(openPanelName!=='layers'){ panel.classList.remove('stroke-hidden'); return; } if(layersDrawerPrefs.returnAfterStroke){ panel.classList.remove('stroke-hidden'); try{ renderLayersPanel(); }catch(_){} } else closePanel(); };
         window.addEventListener('pointerup', end, true); window.addEventListener('pointercancel', end, true);
         let sw=null;
         panel.addEventListener('pointerdown', e=>{ if(treeDragState) return; sw={id:e.pointerId,x:e.clientX,y:e.clientY,done:false}; });
         panel.addEventListener('pointermove', e=>{ if(!sw||sw.done||e.pointerId!==sw.id||treeDragState) return; const dx=e.clientX-sw.x, dy=e.clientY-sw.y; if(Math.abs(dy)>30){ sw.done=true; return; } if(isLayersStrip() && dx<-40){ sw.done=true; setLayersDrawerMode('full'); } else if(!isLayersStrip() && dx>70 && e.target.closest && e.target.closest('#layersDrawerHeader')){ sw.done=true; setLayersDrawerMode('strip'); } });
         panel.addEventListener('pointerup', ()=>{ sw=null; });
-        const handle=document.getElementById('layersSplitHandle'), split=document.getElementById('layersSplit'), top=document.getElementById('layersTopPane');
-        if(handle&&split&&top){
-            let dragging=false;
-            handle.addEventListener('pointerdown', e=>{ dragging=true; handle.classList.add('dragging'); try{handle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
-            handle.addEventListener('pointermove', e=>{ if(!dragging) return; const r=split.getBoundingClientRect(); let pct=(e.clientY-r.top)/r.height*100; pct=Math.max(15,Math.min(85,pct)); layersDrawerPrefs.split=Math.round(pct); top.style.maxHeight=layersDrawerPrefs.split+'%'; });
-            const stop=()=>{ if(!dragging) return; dragging=false; handle.classList.remove('dragging'); saveLayersDrawerPrefs(); };
-            handle.addEventListener('pointerup', stop); handle.addEventListener('pointercancel', stop);
-        }
+        layersSplit = makeCollapsingSplit({ handleId:'layersSplitHandle', boxId:'layersSplit', topId:'layersTopPane',
+            getPct: () => layersDrawerPrefs.split, setPct: v => { layersDrawerPrefs.split = Math.round(v); }, save: saveLayersDrawerPrefs });
     };
     if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

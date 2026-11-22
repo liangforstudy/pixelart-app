@@ -44,7 +44,7 @@ GROUPS = {
     'zoom-indicator': ('On-screen zoom readout: #zoomIndicator, formatZoom, updateZoomIndicator, live during pinch (applyCameraTransform).',
                        ['test_zoom_indicator']),
     'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
-                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top']),
+                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
     'layout': ('Floating bars, top-left #topBar, bottom #floatingBar, panels/drawers opening (togglePanel, closePanel).',
@@ -199,6 +199,7 @@ async def test_layers_drawer_hides_while_drawing(pg):
     await pg.mouse.move(x2, y2); await pg.mouse.up(); await pg.wait_for_timeout(50)
     check('layers drawer: comes back after the stroke', await pg.evaluate("() => openPanelName === 'layers' && !document.getElementById('panel-layers').classList.contains('stroke-hidden')"))
     check('layers drawer: the stroke was drawn', await px(pg, 5, 5) is not None)
+    await pg.evaluate("() => setLayersDrawerMode('full')"); await pg.wait_for_timeout(300)
     await pg.locator('#layersReturnPrefBtn').click(); await pg.wait_for_timeout(100)
     await pg.mouse.move(x3, y3); await pg.mouse.down(); await pg.mouse.up(); await pg.wait_for_timeout(50)
     check('layers drawer: with the setting off it stays closed', await pg.evaluate("() => openPanelName === null"))
@@ -272,6 +273,36 @@ async def test_layers_debug_on_top(pg):
     b = await pg.locator('#debugFab').bounding_box()
     hit = await pg.evaluate("([x, y]) => document.elementFromPoint(x, y) && document.elementFromPoint(x, y).id", [b['x'] + 20, b['y'] + 20])
     check('debug: debug button still tappable with the tools drawer open', hit == 'debugFab', hit)
+
+async def test_layers_back_to_strip_and_done(pg):
+    await open_layers_full(pg, 0)
+    x1, y1 = await grid_point(pg, 4, 4)
+    await pg.mouse.move(x1, y1); await pg.mouse.down(); await pg.mouse.up(); await pg.wait_for_timeout(100)
+    check('layers drawer: after a stroke it comes back as the strip', await pg.evaluate("() => isLayersStrip() && openPanelName === 'layers'"))
+    await pg.evaluate("() => { setLayersDrawerMode('full'); toggleLayerSelectionMode(); }"); await pg.wait_for_timeout(200)
+    hdr = pg.locator('#layersQuickAddBtn')
+    check('selection mode: header button becomes a blue Done', await hdr.inner_text() == 'Done' and await pg.evaluate("() => document.getElementById('layersQuickAddBtn').classList.contains('done')"))
+    done = pg.locator('#layerSelectionDoneBtn')
+    db = await done.bounding_box()
+    check('selection mode: big Done button at the top of the actions', db and db['height'] >= 44 and await done.is_visible(), db)
+    await hdr.click(); await pg.wait_for_timeout(200)
+    check('selection mode: header Done leaves selection mode', await pg.evaluate("() => !layerSelectionMode") and await hdr.inner_text() == '＋')
+
+async def test_drawer_splits_collapse_on_phone(pg):
+    await pg.set_viewport_size({'width': 390, 'height': 844}); await pg.wait_for_timeout(200)
+    await open_layers_full(pg, 0)
+    h = pg.locator('#layersSplitHandle')
+    await pg.locator('#layersDrawerHeader .layers-drawer-title').click(); await pg.wait_for_timeout(500)
+    hb = await h.bounding_box()
+    check('split: collapses to a 12px strip after tapping elsewhere', hb and abs(hb['height'] - 12) < 1.5, hb)
+    await pg.mouse.move(hb['x'] + hb['width'] / 2, hb['y'] + 6); await pg.mouse.down(); await pg.mouse.up(); await pg.wait_for_timeout(400)
+    hb2 = await h.bounding_box()
+    check('split: tapping the strip opens it to 44px', hb2 and abs(hb2['height'] - 44) < 1.5, hb2)
+    await pg.evaluate("() => { closePanel(); openDrawer('debug'); }"); await pg.wait_for_timeout(500)
+    check('split: debug drawer divider uses the same collapsing split', await pg.evaluate("() => document.getElementById('debugDrawerSplitHandle').classList.contains('cdsplit')"))
+    db = await pg.locator('#debugDrawerSplitHandle').bounding_box()
+    check('split: debug divider is 44px or a 12px strip', db and (abs(db['height'] - 12) < 1.5 or abs(db['height'] - 44) < 1.5), db)
+    await pg.set_viewport_size({'width': 1000, 'height': 800})
 
 async def test_file_button_top(pg):
     box = await pg.locator('#tab-file').bounding_box()
