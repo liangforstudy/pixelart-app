@@ -49,6 +49,13 @@
             display: flex; background: #121212; touch-action: none;
         }
         #canvasWrap { margin: auto; box-sizing: border-box; }
+        #zoomIndicator {
+            position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 8px); transform: translateX(-50%);
+            z-index: 50; pointer-events: none; padding: 4px 10px; border-radius: 12px;
+            background: rgba(0,0,0,0.55); color: #ddd; font-size: 13px; font-weight: bold;
+            font-variant-numeric: tabular-nums; opacity: 0.6; transition: opacity 0.4s;
+        }
+        #zoomIndicator.active { opacity: 1; transition: none; }
 
         .canvas-container {
             position: relative; border: 2px solid #333; flex-shrink: 0;
@@ -923,6 +930,7 @@
     </div>
 
     <div id="pixel-canvas-screen">
+        <div id="zoomIndicator">10x</div>
         <div id="viewport">
             <div id="canvasWrap">
                 <div class="canvas-container checkerboard-bg" id="container">
@@ -4905,6 +4913,7 @@ function applyCameraTransform() {
     if (!container) return;
     container.style.transformOrigin = 'center center';
     container.style.transform = 'translate(' + cameraPanX + 'px,' + cameraPanY + 'px) rotate(' + cameraRotation + 'deg) scale(' + cameraScale + ')';
+    updateZoomIndicator(scale * cameraScale);
 }
 // Resets pan and zoom but deliberately NOT rotation. cameraRotation is
 // now the persistent home of the canvas's rotation (see its declaration
@@ -5469,9 +5478,25 @@ function zoomIn() { if (zoomIndex < ZOOM_STEPS.length - 1) { zoomIndex++; scale 
 // Steps zoom down to the previous value in ZOOM_STEPS.
 function zoomOut() { if (zoomIndex > 0) { zoomIndex--; scale = ZOOM_STEPS[zoomIndex]; resetCameraPanZoom(); layoutAll(); } }
 // Updates the "Nx" readout in the View panel to match the current scale.
+function formatZoom(z) {
+    if (z < 1) return Math.round(z * 100) + '%';
+    return (Math.abs(z - Math.round(z)) < 0.05 ? Math.round(z) : z.toFixed(1)) + 'x';
+}
+let zoomIndicatorFadeTimer = null;
+function updateZoomIndicator(z) {
+    const el = document.getElementById('zoomIndicator');
+    if (!el) return;
+    const text = formatZoom(z);
+    if (el.textContent === text) return;
+    el.textContent = text;
+    el.classList.add('active');
+    clearTimeout(zoomIndicatorFadeTimer);
+    zoomIndicatorFadeTimer = setTimeout(() => el.classList.remove('active'), 900);
+}
 function updateZoomLabel() {
     const el = document.getElementById('zoomLabel');
-    if (el) el.innerText = scale < 1 ? Math.round(scale * 100) + '%' : scale + 'x';
+    if (el) el.innerText = formatZoom(scale);
+    updateZoomIndicator(scale * cameraScale);
 }
 
 /* ============================================================

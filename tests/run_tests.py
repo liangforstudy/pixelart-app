@@ -41,6 +41,8 @@ def check(name, ok, detail=''):
 # ---------------------------------------------------------------- groups
 # group -> (what it covers in Pixel_Art_App.html, [test names])
 GROUPS = {
+    'zoom-indicator': ('On-screen zoom readout: #zoomIndicator, formatZoom, updateZoomIndicator, live during pinch (applyCameraTransform).',
+                       ['test_zoom_indicator']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
     'layout': ('Floating bars, top-left #topBar, bottom #floatingBar, panels/drawers opening (togglePanel, closePanel).',
@@ -125,6 +127,18 @@ async def px(pg, x, y):
 DRAW = "([pts, col]) => { selectedColor = col; pts.forEach(([x,y]) => plot(x,y)); }"
 
 # ---------------------------------------------------------------- tests
+async def test_zoom_indicator(pg):
+    txt = lambda: pg.evaluate("() => document.getElementById('zoomIndicator').textContent")
+    vis = await pg.evaluate("() => { const r = document.getElementById('zoomIndicator').getBoundingClientRect(); return r.width > 0 && r.height > 0; }")
+    check('zoom-indicator: visible on the canvas screen', vis)
+    check('zoom-indicator: shows current zoom', await txt() == await pg.evaluate("() => formatZoom(scale)"))
+    await pg.evaluate("() => zoomIn()")
+    check('zoom-indicator: updates on zoom in', await txt() == await pg.evaluate("() => formatZoom(scale)"))
+    await pg.evaluate("() => { cameraScale = 1.5; applyCameraTransform(); }")
+    check('zoom-indicator: live during pinch', await txt() == await pg.evaluate("() => formatZoom(scale * 1.5)"))
+    await pg.evaluate("() => { cameraScale = 1; applyCameraTransform(); }")
+    check('zoom-indicator: below 1x shows percent', await pg.evaluate("() => formatZoom(0.25) === '25%'"))
+
 async def test_boot_and_canvas(pg):
     check('boot: 32x32 pixel canvas created', await pg.evaluate("() => gridW === 32 && gridH === 32 && activeLayer().type === 'pixel'"))
 
