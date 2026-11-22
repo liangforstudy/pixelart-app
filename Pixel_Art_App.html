@@ -4579,10 +4579,14 @@ function openResizeCanvasSheet(returnToGalleryOnCancel, target){
     if(!frames.length)return;
     const modal=document.getElementById('resize-canvas-modal');
     const startW = target==='rect' ? RS.rect.w : gridW, startH = target==='rect' ? RS.rect.h : gridH;
-    document.getElementById('resize-current-size').textContent=`Current: ${gridW} × ${gridH}`;
-    document.getElementById('resize-new-w').value=startW;
-    document.getElementById('resize-new-h').value=startH;
-    modal.dataset.w=startW; modal.dataset.h=startH; modal.dataset.ax='.5'; modal.dataset.ay='.5';
+    const maps = selectedProfile==='mapart';
+    document.getElementById('resize-current-size').textContent = maps
+        ? `Current: ${gridW/MAPART_MAP_SIZE} × ${gridH/MAPART_MAP_SIZE} maps (${gridW} × ${gridH} px)`
+        : `Current: ${gridW} × ${gridH}`;
+    ['resize-new-w','resize-new-h'].forEach(id=>document.getElementById(id).max = maps ? MAPART_MAX_MAPS : 2000);
+    modal.dataset.w=startW; modal.dataset.h=startH;
+    document.getElementById('resize-new-w').value=resizeSheetDisplayValue(startW);
+    document.getElementById('resize-new-h').value=resizeSheetDisplayValue(startH); modal.dataset.ax='.5'; modal.dataset.ay='.5';
     modal.dataset.target = target==='rect' ? 'rect' : '';
     document.getElementById('resize-apply-btn').textContent = target==='rect' ? 'Set Rectangle' : 'Resize Canvas';
     modal.dataset.returnToGallery = (returnToGalleryOnCancel && target!=='rect') ? '1' : '';
@@ -4597,9 +4601,12 @@ function closeResizeCanvasSheet(returnToGallery){
     modal.dataset.target = '';
     if(shouldReturn){ showGallery(); }
 }
+function resizeSheetDisplayValue(px){ return selectedProfile==='mapart' ? Math.round(px/MAPART_MAP_SIZE) : px; }
 function setResizeDimension(which,v){
-    const modal=document.getElementById('resize-canvas-modal'); modal.dataset[which]=String(Math.max(1,Math.min(2000,v)));
-    document.getElementById(which==='w'?'resize-new-w':'resize-new-h').value=modal.dataset[which];
+    const modal=document.getElementById('resize-canvas-modal');
+    const px = selectedProfile==='mapart' ? Math.max(1,Math.min(MAPART_MAX_MAPS,v))*MAPART_MAP_SIZE : Math.max(1,Math.min(2000,v));
+    modal.dataset[which]=String(px);
+    document.getElementById(which==='w'?'resize-new-w':'resize-new-h').value=resizeSheetDisplayValue(px);
 }
 
 /* ============================================================
@@ -11814,8 +11821,8 @@ document.getElementById('resize-cancel-btn').addEventListener('click', () => clo
 document.getElementById('resize-canvas-modal').addEventListener('click', e => { if(e.target.id==='resize-canvas-modal') closeResizeCanvasSheet(); });
 document.getElementById('resize-new-w').addEventListener('input', function(){ setResizeDimension('w', parseInt(this.value,10)||1); });
 document.getElementById('resize-new-h').addEventListener('input', function(){ setResizeDimension('h', parseInt(this.value,10)||1); });
-document.getElementById('resize-new-w').addEventListener('blur', function(){ this.value=document.getElementById('resize-canvas-modal').dataset.w; });
-document.getElementById('resize-new-h').addEventListener('blur', function(){ this.value=document.getElementById('resize-canvas-modal').dataset.h; });
+document.getElementById('resize-new-w').addEventListener('blur', function(){ this.value=resizeSheetDisplayValue(Number(document.getElementById('resize-canvas-modal').dataset.w)); });
+document.getElementById('resize-new-h').addEventListener('blur', function(){ this.value=resizeSheetDisplayValue(Number(document.getElementById('resize-canvas-modal').dataset.h)); });
 document.querySelectorAll('.resize-anchor-btn').forEach(btn => btn.addEventListener('click', () => {
     const [ax,ay]=btn.dataset.anchor.split(','); const m=document.getElementById('resize-canvas-modal'); m.dataset.ax=ax; m.dataset.ay=ay;
     document.querySelectorAll('.resize-anchor-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');

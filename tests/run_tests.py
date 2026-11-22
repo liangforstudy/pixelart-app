@@ -61,7 +61,7 @@ GROUPS = {
     'new-canvas': ('New Canvas sheet (openNewCanvasModal, #newCanvasSizeBox, #newCanvasCreateBtn), startNewProjectFromGallery, the resize screen in "new" mode.',
                    ['test_new_canvas_size_on_screen', 'test_new_canvas_discard', 'test_new_canvas_portrait_keeps_fields']),
     'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load.',
-               ['test_mapart_new_canvas_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
+               ['test_mapart_new_canvas_in_maps', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
                 'test_mapart_import_snaps', 'test_mapart_resize_whole_maps']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
@@ -444,6 +444,17 @@ async def test_mapart_new_canvas_in_maps(pg):
     await pg.locator('#newCanvasCreateBtn').click(); await pg.wait_for_timeout(800)
     check('mapart new canvas: 2 x 9 maps clamps to 256 x 896 px, no resize screen', not await pg.evaluate(SCREEN_OPEN) and await pg.evaluate("() => gridW === 256 && gridH === 896 && selectedProfile === 'mapart'"), await pg.evaluate("() => [gridW, gridH]"))
     check('mapart new canvas: pixel layer (not image layer)', await pg.evaluate("() => activeLayer().type === 'pixel'"))
+
+async def test_mapart_resize_sheet_in_maps(pg):
+    await test_mapart_new_canvas_in_maps(pg)
+    await pg.evaluate("() => openResizeCanvasSheet()")
+    w = pg.locator('#resize-new-w'); h = pg.locator('#resize-new-h')
+    check('mapart resize sheet: fields show maps', await w.input_value() == '2' and await h.input_value() == '7', [await w.input_value(), await h.input_value()])
+    check('mapart resize sheet: current size in maps', 'maps' in await pg.locator('#resize-current-size').inner_text())
+    await w.fill('3'); await h.fill('9'); await h.blur()
+    check('mapart resize sheet: 9 maps clamps to 7', await h.input_value() == '7')
+    await pg.locator('#resize-apply-btn').click(); await pg.wait_for_timeout(400)
+    check('mapart resize sheet: 3 x 7 maps = 384 x 896 px', await pg.evaluate("() => gridW === 384 && gridH === 896"), await pg.evaluate("() => [gridW, gridH]"))
 
 async def test_mapart_palette_locked(pg):
     await mapart_canvas(pg)
