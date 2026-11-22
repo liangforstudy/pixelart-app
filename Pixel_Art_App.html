@@ -660,9 +660,9 @@
         .cdsplit { flex: none; height: 44px; box-sizing: border-box; position: relative; cursor: row-resize; touch-action: none; transition: height .25s cubic-bezier(.32,.72,0,1); }
         .cdsplit::before { content: ''; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px; margin: -2px 0 0 -18px; border-radius: 2px; background: #888; transition: width .25s cubic-bezier(.32,.72,0,1), height .25s cubic-bezier(.32,.72,0,1), margin .25s cubic-bezier(.32,.72,0,1); }
         .cdsplit.dragging::before { background: #4da3ff; }
-        .cdsplit.mini { height: 12px; transition-duration: .42s; transition-timing-function: cubic-bezier(.1,.9,.2,1); }
-        .cdsplit.mini::before { width: 28px; height: 3px; margin: -1.5px 0 0 -14px; transition-duration: .42s; transition-timing-function: cubic-bezier(.1,.9,.2,1); }
-        .cdsplit.mini::after { content: ''; position: absolute; left: 0; right: 0; top: -16px; bottom: -16px; }
+        .cdsplit.mini { height: 20px; transition-duration: .42s; transition-timing-function: cubic-bezier(.1,.9,.2,1); }
+        .cdsplit.mini::before { width: 32px; height: 4px; margin: -2px 0 0 -16px; background: #aaa; transition-duration: .42s; transition-timing-function: cubic-bezier(.1,.9,.2,1); }
+        .cdsplit.mini::after { content: ''; position: absolute; left: 0; right: 0; top: -12px; bottom: -12px; }
         .cdsplit-top { transition: max-height .25s cubic-bezier(.32,.72,0,1); }
         .cdsplit-top.mini { transition: max-height .42s cubic-bezier(.1,.9,.2,1); }
         html.splitDrag .cdsplit, html.splitDrag .cdsplit::before, html.splitDrag .cdsplit-top { transition: none !important; }
@@ -1185,6 +1185,7 @@
                     <div class="row"><button class="btn" onclick="uiAction(()=>resolveMapartStaircaseOff('cancel'))">CANCEL</button></div>
                 </div>
             </div>
+            <button id="paletteDoneBtn" class="layers-done-btn" style="display:none;" onclick="uiAction(exitSwatchEditMode)">✓ DONE REARRANGING</button>
             <div id="palette">
                 <div class="swatch-wrapper" id="transparencyWrapper">
                     <div id="transparencyBtn" class="swatch transparent-swatch" onclick="uiAction(() => handleSwatchClick(null, true))"></div>
@@ -3649,7 +3650,7 @@ function makeCollapsingSplit(opts) {
     if (!handle || !box || !top) return null;
     const root = document.documentElement;
     const phone = () => matchMedia('(max-width: 760px)').matches;
-    const applyPct = () => { const mini = handle.classList.contains('mini'); top.style.maxHeight = mini ? 'calc(' + opts.getPct() + '% + 16px)' : opts.getPct() + '%'; };
+    const applyPct = () => { const mini = handle.classList.contains('mini'); top.style.maxHeight = mini ? 'calc(' + opts.getPct() + '% + 12px)' : opts.getPct() + '%'; };
     const setMini = on => { if (on && !phone()) on = false; handle.classList.toggle('mini', on); top.classList.toggle('mini', on); applyPct(); };
     setMini(true);
     let drag = false, moved = false;
@@ -8540,6 +8541,7 @@ function handleManageClick() {
     document.getElementById('palette').classList.toggle('editing', isEditing);
     document.getElementById('manageBtn').innerText = isEditing ? "\u2705 DONE" : "\u{1F3A8} MANAGE COLOURS";
     document.getElementById('swatchEditBackdrop').classList.toggle('open', isEditing);
+    document.getElementById('paletteDoneBtn').style.display = isEditing ? '' : 'none';
 }
 
 // Exits swatch edit mode (used by the edit backdrop's own tap-outside handler).
@@ -8549,6 +8551,7 @@ function exitSwatchEditMode() {
     document.getElementById('palette').classList.remove('editing');
     document.getElementById('manageBtn').innerText = "\u{1F3A8} MANAGE COLOURS";
     document.getElementById('swatchEditBackdrop').classList.remove('open');
+    document.getElementById('paletteDoneBtn').style.display = 'none';
 }
 document.getElementById('swatchEditBackdrop').addEventListener('click', exitSwatchEditMode);
 
