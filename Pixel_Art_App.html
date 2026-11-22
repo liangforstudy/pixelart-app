@@ -631,6 +631,67 @@
         .layer-row.drop-before { box-shadow: inset 0 3px 0 #4da3ff; }
         .layer-row.drop-after { box-shadow: inset 0 -3px 0 #4da3ff; }
         .layer-row.drop-inside { box-shadow: inset 0 0 0 3px #4da3ff; }
+        #panel-layers.layers-drawer {
+            position: fixed; left: auto; right: 8px; margin: 0;
+            top: calc(env(safe-area-inset-top, 0px) + 62px); bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+            width: min(340px, calc(100vw - 16px)); max-width: none; max-height: none;
+            background: rgba(30,30,34,var(--layers-glass, 0.82));
+            -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+            border: 1px solid rgba(255,255,255,0.10); border-radius: 18px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+            padding: 0; gap: 0; overflow: hidden; display: flex; flex-direction: column;
+            transition: transform 0.22s ease-out, opacity 0.22s ease-out, width 0.22s ease-out;
+        }
+        #panel-layers.layers-drawer:not(.open), #panel-layers.layers-drawer.stroke-hidden {
+            transform: translateX(calc(100% + 16px)); opacity: 0; pointer-events: none;
+        }
+        #panel-layers.layers-drawer.strip { width: 96px; }
+        .layers-drawer-header { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        .layers-drawer-title { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: #eee; }
+        .layers-hdr-btn { flex: none; width: 44px; height: 44px; border-radius: 12px; border: none; background: rgba(255,255,255,0.08); color: #fff; font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .layers-hdr-btn:active { background: rgba(255,255,255,0.18); }
+        #panel-layers.strip .layers-drawer-header { flex-direction: column; }
+        #panel-layers.strip .layers-drawer-title { display: none; }
+        #layersSplit { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+        #layersTopPane { flex: 0 0 auto; max-height: 45%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; }
+        #layersListPane { flex: 1 1 auto; min-height: 80px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px; box-sizing: border-box; position: relative; }
+        .layers-split-handle { flex: none; height: 44px; background: rgba(0,0,0,0.25); border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); cursor: row-resize; touch-action: none; position: relative; }
+        .layers-split-handle::before { content: ''; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px; margin: -2px 0 0 -18px; border-radius: 2px; background: #888; }
+        .layers-split-handle.dragging::before { background: #4da3ff; }
+        #panel-layers.strip #layersTopPane, #panel-layers.strip .layers-split-handle { display: none; }
+        #panel-layers.strip #layersListPane { padding: 6px; }
+        .layers-icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        .layers-icon-btn { min-height: 52px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.06); color: #ddd; font-size: 10px; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 2px; cursor: pointer; line-height: 1.1; text-align: center; }
+        .layers-icon-btn span { font-size: 18px; }
+        .layers-icon-btn.active { background: #0078d4; color: #fff; }
+        .layers-icon-btn:disabled { opacity: 0.35; }
+        .layers-icon-btn:active { background: rgba(255,255,255,0.16); }
+        #layerSelectionActions { flex-wrap: wrap; }
+        .layer-search-shell.collapsed { display: none; }
+        .layers-prefs { display: flex; flex-direction: column; gap: 6px; }
+        .layers-pref-caption { flex: none; font-size: 9px; color: #888; width: 34px; }
+        #layerSettingsPane { display: flex; flex-direction: column; gap: 6px; }
+        #layerSettingsPane:empty { display: none; }
+        .layer-settings-title { font-size: 12px; font-weight: 700; color: #eee; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .layer-settings-title small { color: #888; font-weight: 600; text-transform: uppercase; font-size: 9px; margin-left: 6px; }
+        #layerSettingsPane .layer-opacity-row { margin-top: 0; border-radius: 10px; background: rgba(0,120,212,0.12); border: 1px solid rgba(0,120,212,0.5); }
+        .layer-settings-actions { display: flex; gap: 6px; }
+        .layer-settings-actions .layer-icon-btn { flex: 1; width: auto; height: 44px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); font-size: 18px; }
+        #panel-layers .layer-row { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; min-height: 52px; box-sizing: border-box; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; transition: transform 0.15s ease-out; }
+        #panel-layers .layer-row.active-layer { border-color: #2f8cff; background: rgba(47,140,255,0.18); }
+        #panel-layers .layer-row img { border-radius: 8px !important; }
+        #panel-layers.strip .layer-row { flex-direction: column; padding: 4px !important; gap: 2px; min-height: 0; justify-content: center; }
+        #panel-layers.strip .layer-row > :not(img):not(.layer-vis):not(.layer-type-badge) { display: none; }
+        #panel-layers.strip .layer-row img { width: 72px !important; height: 72px !important; }
+        #panel-layers.strip .layer-row .layer-vis { position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; background: rgba(0,0,0,0.45); border-radius: 8px; font-size: 12px; }
+        #panel-layers.strip .layer-row .layer-type-badge { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.55); color: #ccc; border: none; }
+        #panel-layers.strip .group-row::after { content: '🗂️'; font-size: 30px; padding: 16px 0; }
+        #layersList.drag-active .layer-row.drag-source { visibility: hidden; }
+        #layersList .layer-row.drag-hidden { display: none; }
+        #layersList .layer-row.drop-inside { box-shadow: inset 0 0 0 3px #4da3ff; }
+        .layer-drag-ghost { position: fixed; z-index: 9800; pointer-events: none; margin: 0; box-shadow: 0 12px 28px rgba(0,0,0,0.55); transform: scale(1.04); opacity: 0.95; background: rgba(40,60,90,0.95) !important; border-color: #4da3ff !important; transition: none !important; }
+        .layer-drag-ghost .drag-count { position: absolute; top: -6px; right: -6px; background: #ff3b30; color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 6px; }
+        #debugFab { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 8px; z-index: 9500; width: 44px; height: 44px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(30,30,34,0.7); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .layer-search-results { display:flex; flex-direction:column; gap:4px; margin-top:4px; max-height:260px; overflow:auto; }
         /* Search is intentionally collapsed by default; revealing it focuses the native keyboard. */
         .layer-search-shell { display:flex; align-items:center; gap:6px; }
@@ -1136,7 +1197,14 @@
             </div>
         </div>
 
-        <div class="floating-panel" id="panel-layers">
+        <div class="floating-panel layers-drawer" id="panel-layers">
+            <div class="layers-drawer-header" id="layersDrawerHeader">
+                <button class="layers-hdr-btn" id="layersWidthBtn" onclick="uiAction(toggleLayersDrawerWidth)" aria-label="Show the full layers panel">⟨</button>
+                <div class="layers-drawer-title">Layers</div>
+                <button class="layers-hdr-btn" id="layersQuickAddBtn" onclick="uiAction(addPixelLayer)" aria-label="New pixel layer">＋</button>
+            </div>
+            <div id="layersSplit">
+                <div id="layersTopPane">
             <div id="framesSection" style="display:none;">
                 <div class="panel-title">Frames</div>
                 <div id="framesList"></div>
@@ -1151,15 +1219,24 @@
                     <button class="btn" onclick="uiAction(exportSpritesheet)">🖼️ SPRITESHEET</button>
                 </div>
             </div>
-            <div class="panel-title">Layers</div>
-            <div class="row">
-                <button class="btn" id="thumbSizeToggleBtn" onclick="uiAction(toggleLayerThumbSize)">🔍 LARGER THUMBNAILS</button>
-            </div>
-            <div class="row" id="layerSelectionToolbar">
-                <button class="btn" id="layerSelectBtn" onclick="uiAction(toggleLayerSelectionMode)">☑️ SELECT</button>
-                <button class="btn" id="groupSelectedBtn" onclick="uiAction(createGroupFromSelected)">🗂️ ADD SELECTED LAYERS TO A NEW GROUP</button>
-            </div>
-            <div class="row" id="layerSelectionActions" style="display:none; flex-wrap:wrap;"><div id="selectionCount" class="selection-count">0 selected</div>
+                <div id="layerSettingsPane"></div>
+                <div class="layers-icon-grid">
+                    <div id="layerSelectionToolbar" style="display:contents;">
+                        <button class="layers-icon-btn" id="layerSelectBtn" onclick="uiAction(toggleLayerSelectionMode)"><span>☑️</span>Select</button>
+                        <button class="layers-icon-btn" id="groupSelectedBtn" onclick="uiAction(createGroupFromSelected)"><span>📥</span>Group selected</button>
+                    </div>
+                    <button class="layers-icon-btn" id="layerSearchOpenBtn" onclick="uiAction(toggleLayerSearch)"><span>🔍</span>Search</button>
+                    <button class="layers-icon-btn" id="globalSearchBtn" onclick="uiAction(openGlobalCommandPalette)"><span>⌘</span>Command</button>
+                    <button class="layers-icon-btn" onclick="uiAction(addPixelLayer)"><span>➕</span>Pixel</button>
+                    <button class="layers-icon-btn" onclick="uiAction(addVectorLayer)"><span>🖊️</span>Vector</button>
+                    <button class="layers-icon-btn" onclick="uiAction(addEmptyGroup)"><span>🗂️</span>Group</button>
+                    <button class="layers-icon-btn" onclick="uiAction(openPixelLayerImport)"><span>🖼️</span>Import</button>
+                    <button class="layers-icon-btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })"><span>🌄</span>Reference</button>
+                    <button class="layers-icon-btn" onclick="uiAction(addMaskLayer)"><span>🎭</span>Mask</button>
+                    <button class="layers-icon-btn" onclick="uiAction(addClipLayer)"><span>✂️</span>Clip</button>
+                    <button class="layers-icon-btn" id="thumbSizeToggleBtn" onclick="uiAction(toggleLayerThumbSize)"><span>🔎</span>Big thumbs</button>
+                </div>
+                <div class="row" id="layerSelectionActions" style="display:none; flex-wrap:wrap;"><div id="selectionCount" class="selection-count">0 selected</div>
                 <button class="btn" onclick="uiAction(selectAllTreeNodes)">SELECT ALL</button>
                 <button class="btn" onclick="uiAction(clearTreeSelection)">CLEAR</button><button class="btn" onclick="uiAction(toggleSelectedVisibility)">👁 VISIBILITY</button>
                 <button class="btn" id="groupSelectedActionBtn" onclick="uiAction(createGroupFromSelected)">🗂️ ADD SELECTED LAYERS TO A NEW GROUP</button>
@@ -1171,30 +1248,20 @@
                 <button class="btn" onclick="uiAction(mergeSelectedGroups)">🗂️ MERGE GROUPS</button>
                 <button class="btn" onclick="uiAction(toggleLayerSelectionMode)">DONE</button>
             </div>
-            <div id="layerSearchShell" class="layer-search-shell collapsed">
-                <button id="layerSearchOpenBtn" class="btn layer-search-open-btn" onclick="uiAction(toggleLayerSearch)">🔍 SEARCH</button>
-                <input id="layerSearchInput" class="num-input" style="height:42px; text-align:left; padding:0 12px;" placeholder="Search layers, groups, tools…" autocomplete="off" onclick="uiAction(focusLayerSearch)">
-                <button id="globalSearchBtn" class="btn" style="min-width:70px;" onclick="uiAction(openGlobalCommandPalette)">⌘ SEARCH</button>
+                <div id="layerSearchShell" class="layer-search-shell collapsed">
+                    <input id="layerSearchInput" class="num-input" style="height:42px; text-align:left; padding:0 12px;" placeholder="Search layers, groups, tools…" autocomplete="off" onclick="uiAction(focusLayerSearch)">
+                </div>
+                <div id="layerSearchResults" class="layer-search-results"></div>
+                <div class="layers-prefs">
+                    <button class="btn" id="layersReturnPrefBtn" onclick="uiAction(toggleLayersReturnPref)">COMES BACK AFTER A STROKE: ON</button>
+                    <div class="row" style="align-items:center;"><span class="layers-pref-caption">glass</span><div id="layersGlassSliderSlot" style="flex:1;display:flex;"></div></div>
+                </div>
+                <div style="font-size:9px; color:#888; text-align:center;">Mask/Clip attach to the pixel layer directly below them when created -- select a pixel layer first.</div>
+                <input type="file" id="refInput" accept="image/*" style="display:none">
+                </div>
+                <div id="layersSplitHandle" class="layers-split-handle" aria-label="Drag to resize"></div>
+                <div id="layersListPane"><div id="layersList"></div></div>
             </div>
-            <div id="layerSearchResults" class="layer-search-results"></div>
-            <div id="layersList"></div>
-            <div class="row">
-                <button class="btn" onclick="uiAction(addPixelLayer)">➕ PIXEL LAYER</button>
-                <button class="btn" onclick="uiAction(addVectorLayer)">➕ 🖊️ VECTOR</button>
-                <button class="btn" onclick="uiAction(addEmptyGroup)">➕ 🗂️ GROUP</button>
-            </div>
-            <div class="row">
-                <button class="btn" onclick="uiAction(openPixelLayerImport)">🖼️ IMPORT IMAGE AS NEW PIXEL LAYER</button>
-            </div>
-            <div class="row">
-                <button class="btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })">🌄 REFERENCE</button>
-            </div>
-            <div class="row">
-                <button class="btn" onclick="uiAction(addMaskLayer)">➕ 🎭 MASK</button>
-                <button class="btn" onclick="uiAction(addClipLayer)">➕ ✂️ CLIP</button>
-            </div>
-            <div style="font-size:9px; color:#666; text-align:center;">Mask/Clip attach to the pixel layer directly below them when created -- select a pixel layer first. Their effect is applied live to the canvas; the mask/clip pixels themselves are not drawn as visible artwork.</div>
-            <input type="file" id="refInput" accept="image/*" style="display:none">
         </div>
 
         <div class="floating-panel" id="panel-panel">
@@ -1293,6 +1360,7 @@
         <!-- Top-left floating bar over the canvas (same placement as the
              model toggle in the Girafarig/Mawile viewer). Keeps .fbtn so the
              panel code's active-state handling still works. -->
+        <button id="debugFab" onclick="toggleDrawer('debug')" aria-label="Debug">🐞</button>
         <div id="topBar">
             <button class="fbtn" id="tab-file" data-panel-tab="file" onclick="togglePanel('file')">📁 FILE</button>
         </div>
@@ -3469,12 +3537,13 @@ function togglePanel(name) {
 // Shows one floating panel and hides the others. Sets openPanelName BEFORE running any panel-specific setup, so an error building panel contents can't strand the panel-switching state.
 function openPanel(name) {
     if (isConfirmingClear) cancelClear();
-    closeDrawer();
+    if (drawerOpenName !== 'debug') closeDrawer();
     document.querySelectorAll('.floating-panel').forEach(p => p.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
     document.getElementById('panel-' + name).classList.add('open');
     document.getElementById('tab-' + name).classList.add('active');
-    document.getElementById('panelBackdrop').classList.add('open');
+    if (name !== 'layers') document.getElementById('panelBackdrop').classList.add('open');
+    else applyLayersDrawerPrefs();
     openPanelName = name;
     try {
         if (name === 'layers') { renderLayersPanel(); renderFramesPanel(); }
@@ -3488,6 +3557,7 @@ function openPanel(name) {
 // Hides whichever floating panel is open and clears the backdrop.
 function closePanel() {
     document.querySelectorAll('.floating-panel').forEach(p => p.classList.remove('open'));
+    const lp = document.getElementById('panel-layers'); if (lp) lp.classList.remove('stroke-hidden');
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
     document.getElementById('panelBackdrop').classList.remove('open');
     openPanelName = null;
@@ -3504,7 +3574,7 @@ let drawerOpenName = null; // 'tools' | 'debug' | null
 // Opens the Tools or Debug side drawer, closing any open bottom-sheet panel first (they're mutually exclusive).
 function openDrawer(which) {
     if (isConfirmingClear) cancelClear();
-    closePanel();
+    if (which !== 'debug') closePanel();
     document.querySelectorAll('.side-drawer').forEach(d => d.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
     document.getElementById(which + 'Drawer').classList.add('open');
@@ -6159,19 +6229,116 @@ function performTreeDrop(nodes,target,mode){
     }
     syncActiveLayersFromTree();reindexDom();refreshHookedComposites();pushTreeOperation('Drag and drop',before);renderLayersPanel();
 }
+const TREE_DRAG_HOLD_MS = 280;
+const TREE_DRAG_INSIDE_DWELL_MS = 380;
 function beginTreeDrag(node,row,event){
+    if(treeDragState) return;
     if(layerSelectionMode && !isNodeSelected(node))return;
     if(event.button!=null && event.button!==0)return;
-    const startX=event.clientX,startY=event.clientY; const nodes=layerSelectionMode?collectSelectedRootsSorted().map(e=>e.node):[node];
-    let timer=setTimeout(()=>{treeDragState={node,nodes,startX,startY,row,moved:false};row.classList.add('dragging');row.style.touchAction='none';row.setPointerCapture?.(event.pointerId);},260);
-    const move=e=>{if(!treeDragState){if(Math.hypot(e.clientX-startX,e.clientY-startY)>10){clearTimeout(timer);}return;} if(Math.hypot(e.clientX-treeDragState.startX,e.clientY-treeDragState.startY)>8)treeDragState.moved=true;clearDragIndicators();const target=getDropTargetAt(e.clientX,e.clientY);if(target&&!canDropNodes(treeDragState.nodes,target,'inside'))return;if(target){const tid=nodeId(target).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); const rect=document.querySelector('[data-node-id="'+tid+'"]')?.getBoundingClientRect();let mode='inside';if(target.kind!=='group'){mode=(e.clientY-(rect?.top||0))<(rect?.height||40)/2?'before':'after';}else if(e.clientX>(rect?.left||0)+36 && e.clientY-(rect?.top||0)>(rect?.height||40)*.25 && e.clientY-(rect?.top||0)<(rect?.height||40)*.75){mode='inside';}else mode=(e.clientY-(rect?.top||0))<(rect?.height||40)/2?'before':'after';if(canDropNodes(treeDragState.nodes,target,mode)){const tid2=nodeId(target).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); const el=document.querySelector('[data-node-id="'+tid2+'"]');if(el)el.classList.add('drop-'+mode);treeDragState.target=target;treeDragState.mode=mode;}}};
-    const up=e=>{clearTimeout(timer);document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);if(treeDragState){const st=treeDragState;clearDragIndicators();treeDragState=null;st.row.classList.remove('dragging');st.row.style.touchAction='';if(st.moved&&st.target){suppressNextTreeClick=true;performTreeDrop(st.nodes,st.target,st.mode);}}};
-    document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up,{once:false});
+    if(event.isPrimary===false) return;
+    const pointerId=event.pointerId, startX=event.clientX, startY=event.clientY;
+    const list=document.getElementById('layersList'), pane=document.getElementById('layersListPane');
+    let lastX=startX, lastY=startY, timer=null, st=null, raf=0;
+    const blockTouch=e=>{ if(st && e.cancelable) e.preventDefault(); };
+    const cleanupListeners=()=>{ clearTimeout(timer); document.removeEventListener('pointermove',move,true); document.removeEventListener('pointerup',up,true); document.removeEventListener('pointercancel',cancel,true); document.removeEventListener('touchmove',blockTouch,{capture:true}); };
+    const finish=drop=>{
+        cleanupListeners(); cancelAnimationFrame(raf);
+        if(!st){ return; }
+        const s0=st; st=null; treeDragState=null;
+        s0.ghost.remove(); list.classList.remove('drag-active');
+        s0.slots.forEach(sl=>{ sl.row.style.transform=''; sl.row.classList.remove('drop-inside','drag-source'); });
+        list.querySelectorAll('.drag-hidden').forEach(r=>r.classList.remove('drag-hidden'));
+        suppressNextTreeClick=true; setTimeout(()=>{suppressNextTreeClick=false;},400);
+        if(drop && s0.target && canDropNodes(s0.nodes,s0.target,s0.mode)) performTreeDrop(s0.nodes,s0.target,s0.mode);
+    };
+    const start=()=>{
+        const nodes=layerSelectionMode?collectSelectedRootsSorted().map(e=>e.node):[node];
+        const hideIds=new Set(); nodes.forEach(n=>{ if(n.kind==='group') collectNodeIds(n).forEach(id=>{ if(id!==nodeId(n)) hideIds.add(id); }); });
+        if(layerSelectionMode) nodes.forEach(n=>{ if(n!==node) hideIds.add(nodeId(n)); });
+        [...list.children].forEach(r=>{ if(r.dataset&&hideIds.has(r.dataset.nodeId)) r.classList.add('drag-hidden'); });
+        const rows=[...list.querySelectorAll('.layer-row')].filter(r=>!r.classList.contains('drag-hidden'));
+        const listTop=list.getBoundingClientRect().top;
+        const slots=rows.map(r=>{ const rc=r.getBoundingClientRect(); return { row:r, node:getNodeById(r.dataset.nodeId), top:rc.top-listTop, h:rc.height }; });
+        const srcIdx=slots.findIndex(sl=>sl.row===row); if(srcIdx<0) return finish(false);
+        const rr=row.getBoundingClientRect();
+        const ghost=row.cloneNode(true); ghost.classList.add('layer-drag-ghost'); ghost.style.left=rr.left+'px'; ghost.style.top=rr.top+'px'; ghost.style.width=rr.width+'px'; ghost.style.height=rr.height+'px';
+        if(nodes.length>1){ const c=document.createElement('span'); c.className='drag-count'; c.textContent=nodes.length; ghost.append(c); }
+        document.body.appendChild(ghost);
+        row.classList.add('drag-source'); list.classList.add('drag-active');
+        const gap=parseFloat(getComputedStyle(list).rowGap)||4;
+        st={ node, nodes, slots, srcIdx, ghost, grabDy:startY-rr.top, gapH:rr.height+gap, target:null, mode:null, ins:srcIdx, dwellRow:null, dwellSince:0, moved:false };
+        treeDragState=st;
+        try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_){}
+        try{ row.setPointerCapture&&row.setPointerCapture(pointerId); }catch(_){}
+        update();
+        const tick=()=>{ if(!st) return; autoScroll(); update(); raf=requestAnimationFrame(tick); };
+        raf=requestAnimationFrame(tick);
+    };
+    const autoScroll=()=>{
+        const pr=pane.getBoundingClientRect(), edge=48;
+        let d=0; if(lastY<pr.top+edge) d=-Math.ceil((pr.top+edge-lastY)/6); else if(lastY>pr.bottom-edge) d=Math.ceil((lastY-(pr.bottom-edge))/6);
+        if(d) pane.scrollTop+=Math.max(-18,Math.min(18,d));
+    };
+    const update=()=>{
+        if(!st) return;
+        st.ghost.style.top=(lastY-st.grabDy)+'px';
+        const listTop=list.getBoundingClientRect().top;
+        const y=lastY-listTop;
+        const others=st.slots.filter((_,j)=>j!==st.srcIdx);
+        let groupHit=null;
+        for(const sl of others){
+            if(sl.node && sl.node.kind==='group' && y>sl.top+sl.h*0.25 && y<sl.top+sl.h*0.75 && canDropNodes(st.nodes,sl.node,'inside')){ groupHit=sl; break; }
+        }
+        const now=performance.now();
+        if(groupHit){ if(st.dwellRow!==groupHit.row){ st.dwellRow=groupHit.row; st.dwellSince=now; } }
+        else st.dwellRow=null;
+        st.slots.forEach(sl=>sl.row.classList.remove('drop-inside'));
+        if(groupHit){
+            if(st.ins!==-1){ st.ins=-1; st.slots.forEach(sl=>{ sl.row.style.transform=''; }); }
+            if(now-st.dwellSince>=TREE_DRAG_INSIDE_DWELL_MS){ groupHit.row.classList.add('drop-inside'); st.target=groupHit.node; st.mode='inside'; }
+            else { st.target=null; st.mode=null; }
+            return;
+        }
+        let ins=0; for(const sl of others){ if(sl.top+sl.h/2<y) ins++; }
+        if(ins!==st.ins){
+            st.ins=ins;
+            st.slots.forEach((sl,j)=>{
+                if(j===st.srcIdx) return;
+                const ns=j<st.srcIdx?j:j-1;
+                let dy=0; if(j>st.srcIdx && ns<ins) dy=-st.gapH; else if(j<st.srcIdx && ns>=ins) dy=st.gapH;
+                sl.row.style.transform=dy?'translateY('+dy+'px)':'';
+            });
+        }
+        const above=others[ins-1], below=others[ins];
+        let target=null, mode=null;
+        if(above && above.node){
+            if(above.node.kind==='group' && !above.node.collapsed && above.node.children.length){ target=above.node; mode='inside'; }
+            else { target=above.node; mode='before'; }
+        } else if(below && below.node){ target=below.node; mode='after'; }
+        if(target && st.nodes.includes(target)) target=null;
+        if(target && !canDropNodes(st.nodes,target,mode)) target=null;
+        st.target=target; st.mode=mode;
+        if(Math.abs(lastY-startY)>4) st.moved=true;
+    };
+    const move=e=>{
+        if(e.pointerId!==pointerId) return;
+        lastX=e.clientX; lastY=e.clientY;
+        if(!st){ if(Math.hypot(lastX-startX,lastY-startY)>10){ cleanupListeners(); } return; }
+        if(e.cancelable) e.preventDefault();
+    };
+    const up=e=>{ if(e.pointerId!==pointerId) return; finish(!!st); };
+    const cancel=e=>{ if(e.pointerId!==pointerId) return; finish(false); };
+    timer=setTimeout(start,TREE_DRAG_HOLD_MS);
+    document.addEventListener('pointermove',move,true);
+    document.addEventListener('pointerup',up,true);
+    document.addEventListener('pointercancel',cancel,true);
+    document.addEventListener('touchmove',blockTouch,{capture:true,passive:false});
 }
 
 function renderLayersPanel() {
     const list = document.getElementById('layersList');
     list.innerHTML = '';
+    const settingsPane = document.getElementById('layerSettingsPane'); if (settingsPane) settingsPane.innerHTML = '';
     const f=frames[activeFrameIndex]; if(!f) return;
     ensureFrameLayerTree(f);
     const renderNodes=(nodes, depth)=>{
@@ -6215,9 +6382,9 @@ function renderLayersPanel() {
         else down.disabled=pos<=0;
         const clr=mkLayerIconBtn('\u{1F9F9}',e=>{e.stopPropagation();clearLayerAt(i);}); clr.style.display=layer.type!=='reference'?'flex':'none';
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i,e.currentTarget);});
-        row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
-        row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge,up,down,clr,del); if(!layerSelectionMode && i===activeLayerIndex)row.classList.add('has-controls-strip'); list.appendChild(row);
-        if(!layerSelectionMode && i===activeLayerIndex){const opRow=document.createElement('div');opRow.className='layer-opacity-row';const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';opRow.append(opCaption);const sliderCtl=mkIosSlider(Math.round(layer.opacity*100),v=>{layer.opacity=v/100;layer.applyVisualState();refreshHookedComposites();});opRow.append(sliderCtl.el);
+        row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState)return;if(isLayersStrip() && i===activeLayerIndex){setLayersDrawerMode('full');return;}if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
+        row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge); list.appendChild(row);
+        if(!layerSelectionMode && i===activeLayerIndex){const settings=document.getElementById('layerSettingsPane');const title=document.createElement('div');title.className='layer-settings-title';title.textContent=layer.name;const tsm=document.createElement('small');tsm.textContent=layer.type;title.append(tsm);settings.append(title);const acts=document.createElement('div');acts.className='layer-settings-actions';if(isMaskOrClip){acts.append(up,down);}if(layer.type!=='reference')acts.append(clr);acts.append(del);settings.append(acts);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';opRow.append(opCaption);const sliderCtl=mkIosSlider(Math.round(layer.opacity*100),v=>{layer.opacity=v/100;layer.applyVisualState();refreshHookedComposites();});opRow.append(sliderCtl.el);
             // Session 7d: per-layer blend mode, only for layer types that
             // are real visible artwork painted into the normal stack --
             // mask/clip are control data (already display:none, see
@@ -6226,7 +6393,7 @@ function renderLayersPanel() {
             // (flattenLayersToCanvas, flattenGroupSubtreeToCanvas), so a
             // blend mode on either wouldn't have a coherent meaning.
             if(layer.type==='pixel'||layer.type==='image'||layer.type==='vector'){const lbm=document.createElement('select');lbm.className='num-input';BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((layer.blendMode||'source-over')===v)o.selected=true;lbm.appendChild(o);});lbm.onchange=()=>{layer.blendMode=lbm.value;layer.applyVisualState();refreshHookedComposites();};opRow.append(lbm);}
-            list.appendChild(opRow);if(layer.type==='reference')list.appendChild(buildReferenceTransformUI(layer));}
+            settings.appendChild(opRow);if(layer.type==='reference')settings.appendChild(buildReferenceTransformUI(layer));}
     };
     const renderGroupRow=(node,depth)=>{
         const row=document.createElement('div'); row.className='layer-row group-row'+(activeGroupId===node.id?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.paddingLeft=(depth*18)+'px';
@@ -6240,9 +6407,9 @@ function renderLayersPanel() {
         const up=mkLayerIconBtn('\u2B06\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,1);});up.disabled=pos>=arr.length-1;
         const down=mkLayerIconBtn('\u2B07\uFE0F',e=>{e.stopPropagation();reorderLayerTreeNode(node,-1);});down.disabled=pos<=0;
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteGroup(node,e.currentTarget);});
-        row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=e=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState?.moved)return;if(e.target===exp||e.target===sel||e.target===vis||e.target===name)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();}};
-        row.append(colorTag,exp,sel,vis,icon,name,up,down,del); if(!layerSelectionMode && activeGroupId===node.id)row.classList.add('has-controls-strip'); list.appendChild(row);
-        if(!layerSelectionMode && activeGroupId===node.id){ const op=document.createElement('div'); op.className='layer-opacity-row'; const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';op.append(opCaption); const sliderCtl=mkIosSlider(Math.round(node.opacity*100),v=>{node.opacity=v/100;applyGroupVisualState(node);}); op.append(sliderCtl.el); const bm=document.createElement('select'); bm.className='num-input'; BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); list.appendChild(op); }
+        row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=e=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState)return;if(isLayersStrip() && activeGroupId===node.id){setLayersDrawerMode('full');return;}if(e.target===exp||e.target===sel||e.target===vis||e.target===name)return;if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else{activeGroupId=node.id;activeLayerId=null;activeLayerIndex=-1;renderLayersPanel();}};
+        row.append(colorTag,exp,sel,vis,icon,name); list.appendChild(row);
+        if(!layerSelectionMode && activeGroupId===node.id){ const settings=document.getElementById('layerSettingsPane'); const title=document.createElement('div'); title.className='layer-settings-title'; title.textContent=node.name; const tsm=document.createElement('small'); tsm.textContent='group'; title.append(tsm); settings.append(title); const acts=document.createElement('div'); acts.className='layer-settings-actions'; acts.append(del); settings.append(acts); const op=document.createElement('div'); op.className='layer-opacity-row'; const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';op.append(opCaption); const sliderCtl=mkIosSlider(Math.round(node.opacity*100),v=>{node.opacity=v/100;applyGroupVisualState(node);}); op.append(sliderCtl.el); const bm=document.createElement('select'); bm.className='num-input'; BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((node.blendMode||'source-over')===v)o.selected=true;bm.appendChild(o);}); bm.onchange=()=>{node.blendMode=bm.value;applyGroupBlendMode(node);}; op.append(bm); settings.appendChild(op); }
         if(!node.collapsed)renderNodes(node.children,depth+1);
     };
     renderNodes(f.layerTree,0);
@@ -6250,8 +6417,49 @@ function renderLayersPanel() {
     updatePortraitTileOverlay();
     const searchInput=document.getElementById('layerSearchInput'); if(searchInput && searchInput.value) renderLayerSearchResults(searchInput.value);
     const sb=document.getElementById('layerSelectionToolbar'); const sa=document.getElementById('layerSelectionActions'); const gb=document.getElementById('groupSelectedBtn'); const ga=document.getElementById('groupSelectedActionBtn');
-    if(sb) sb.style.display=layerSelectionMode?'none':'flex'; if(sa) sa.style.display=layerSelectionMode?'flex':'none'; const sc=document.getElementById('selectionCount'); if(sc) sc.innerText=selectedNodeIds.size+' selected'; if(gb) gb.disabled=selectedNodeIds.size===0; if(ga) ga.disabled=selectedNodeIds.size===0;
+    if(sb) sb.style.display=layerSelectionMode?'none':'contents'; if(sa) sa.style.display=layerSelectionMode?'flex':'none'; const sc=document.getElementById('selectionCount'); if(sc) sc.innerText=selectedNodeIds.size+' selected'; if(gb) gb.disabled=selectedNodeIds.size===0; if(ga) ga.disabled=selectedNodeIds.size===0;
 }
+const LAYERS_DRAWER_PREFS_KEY = 'pixelArtLayersDrawerPrefs';
+let layersDrawerPrefs = { mode:'strip', returnAfterStroke:true, glass:82, split:45 };
+try { const v=JSON.parse(localStorage.getItem(LAYERS_DRAWER_PREFS_KEY)||'null'); if(v&&typeof v==='object'){ if(v.mode==='strip'||v.mode==='full') layersDrawerPrefs.mode=v.mode; if(typeof v.returnAfterStroke==='boolean') layersDrawerPrefs.returnAfterStroke=v.returnAfterStroke; if(Number.isFinite(v.glass)&&v.glass>=40&&v.glass<=100) layersDrawerPrefs.glass=v.glass; if(Number.isFinite(v.split)&&v.split>=15&&v.split<=85) layersDrawerPrefs.split=v.split; } } catch(_) {}
+function saveLayersDrawerPrefs(){ try { localStorage.setItem(LAYERS_DRAWER_PREFS_KEY, JSON.stringify(layersDrawerPrefs)); } catch(_) {} }
+function isLayersStrip(){ const p=document.getElementById('panel-layers'); return !!(p && p.classList.contains('strip')); }
+let layersGlassSliderBuilt = false;
+function applyLayersDrawerPrefs(){
+    const p=document.getElementById('panel-layers'); if(!p) return;
+    p.classList.toggle('strip', layersDrawerPrefs.mode==='strip');
+    p.style.setProperty('--layers-glass', String(layersDrawerPrefs.glass/100));
+    const wb=document.getElementById('layersWidthBtn'); if(wb){ wb.textContent = layersDrawerPrefs.mode==='strip' ? '⟨' : '⟩'; wb.setAttribute('aria-label', layersDrawerPrefs.mode==='strip' ? 'Show the full layers panel' : 'Show the thumbnail strip'); }
+    const rb=document.getElementById('layersReturnPrefBtn'); if(rb){ rb.textContent = 'COMES BACK AFTER A STROKE: ' + (layersDrawerPrefs.returnAfterStroke ? 'ON' : 'OFF'); rb.classList.toggle('active', layersDrawerPrefs.returnAfterStroke); }
+    const tp=document.getElementById('layersTopPane'); if(tp) tp.style.maxHeight=layersDrawerPrefs.split+'%';
+    if(!layersGlassSliderBuilt){ const slot=document.getElementById('layersGlassSliderSlot'); if(slot){ const ctl=mkIosSlider(layersDrawerPrefs.glass, v=>{ layersDrawerPrefs.glass=Math.max(40,Math.min(100,Math.round(v))); p.style.setProperty('--layers-glass', String(layersDrawerPrefs.glass/100)); saveLayersDrawerPrefs(); }); slot.appendChild(ctl.el); layersGlassSliderBuilt=true; } }
+}
+function setLayersDrawerMode(mode){ layersDrawerPrefs.mode = mode==='full' ? 'full' : 'strip'; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); }
+function toggleLayersDrawerWidth(){ setLayersDrawerMode(isLayersStrip() ? 'full' : 'strip'); }
+function toggleLayersReturnPref(){ layersDrawerPrefs.returnAfterStroke = !layersDrawerPrefs.returnAfterStroke; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); }
+(function setupLayersDrawerBehaviour(){
+    const init=()=>{
+        const panel=document.getElementById('panel-layers'), vp=document.getElementById('viewport'); if(!panel||!vp) return;
+        applyLayersDrawerPrefs();
+        const strokePointers=new Set(); let hiddenForStroke=false;
+        vp.addEventListener('pointerdown', e=>{ strokePointers.add(e.pointerId); if(openPanelName==='layers' && !hiddenForStroke){ hiddenForStroke=true; panel.classList.add('stroke-hidden'); } }, true);
+        const end=e=>{ strokePointers.delete(e.pointerId); if(!hiddenForStroke || strokePointers.size) return; hiddenForStroke=false; if(openPanelName!=='layers'){ panel.classList.remove('stroke-hidden'); return; } if(layersDrawerPrefs.returnAfterStroke){ panel.classList.remove('stroke-hidden'); try{ renderLayersPanel(); }catch(_){} } else closePanel(); };
+        window.addEventListener('pointerup', end, true); window.addEventListener('pointercancel', end, true);
+        let sw=null;
+        panel.addEventListener('pointerdown', e=>{ if(treeDragState) return; sw={id:e.pointerId,x:e.clientX,y:e.clientY,done:false}; });
+        panel.addEventListener('pointermove', e=>{ if(!sw||sw.done||e.pointerId!==sw.id||treeDragState) return; const dx=e.clientX-sw.x, dy=e.clientY-sw.y; if(Math.abs(dy)>30){ sw.done=true; return; } if(isLayersStrip() && dx<-40){ sw.done=true; setLayersDrawerMode('full'); } else if(!isLayersStrip() && dx>70 && e.target.closest && e.target.closest('#layersDrawerHeader')){ sw.done=true; setLayersDrawerMode('strip'); } });
+        panel.addEventListener('pointerup', ()=>{ sw=null; });
+        const handle=document.getElementById('layersSplitHandle'), split=document.getElementById('layersSplit'), top=document.getElementById('layersTopPane');
+        if(handle&&split&&top){
+            let dragging=false;
+            handle.addEventListener('pointerdown', e=>{ dragging=true; handle.classList.add('dragging'); try{handle.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+            handle.addEventListener('pointermove', e=>{ if(!dragging) return; const r=split.getBoundingClientRect(); let pct=(e.clientY-r.top)/r.height*100; pct=Math.max(15,Math.min(85,pct)); layersDrawerPrefs.split=Math.round(pct); top.style.maxHeight=layersDrawerPrefs.split+'%'; });
+            const stop=()=>{ if(!dragging) return; dragging=false; handle.classList.remove('dragging'); saveLayersDrawerPrefs(); };
+            handle.addEventListener('pointerup', stop); handle.addEventListener('pointercancel', stop);
+        }
+    };
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
 function applyGroupVisualState(group){
     const walk=(nodes,parentVisible,parentOpacity)=>{(nodes||[]).forEach(n=>{if(n.kind==='group'){walk(n.children,parentVisible&&n.visible,parentOpacity*n.opacity);}else if(n.layer){n.layer._groupVisible=parentVisible;n.layer._groupOpacity=parentOpacity;n.layer.applyVisualState();}})};
     walk([group],true,1);

@@ -43,6 +43,8 @@ def check(name, ok, detail=''):
 GROUPS = {
     'zoom-indicator': ('On-screen zoom readout: #zoomIndicator, formatZoom, updateZoomIndicator, live during pinch (applyCameraTransform).',
                        ['test_zoom_indicator']),
+    'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
+                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
     'layout': ('Floating bars, top-left #topBar, bottom #floatingBar, panels/drawers opening (togglePanel, closePanel).',
@@ -148,6 +150,128 @@ async def test_pencil_and_undo(pg):
     check('pencil: tap draws a pixel', await px(pg, 5, 5) == '#112233', await px(pg, 5, 5))
     await pg.evaluate("() => undo()")
     check('pencil: undo removes it', await px(pg, 5, 5) is None)
+
+LAYER_ORDER = "() => [...document.querySelectorAll('#layersList .layer-row')].map(r => r.querySelector('.layer-name') ? r.querySelector('.layer-name').innerText : '?')"
+
+async def open_layers_full(pg, n_extra=2):
+    for _ in range(n_extra):
+        await pg.evaluate("() => addPixelLayer()")
+    await pg.evaluate("() => { layers.forEach((l, i) => l.name = 'L' + i); openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }")
+    await pg.wait_for_timeout(350)
+
+async def drag_row(pg, from_idx, to_y_fn, hold=True, cancel=False):
+    rows = pg.locator('#layersList .layer-row')
+    b = await rows.nth(from_idx).bounding_box()
+    x, y = b['x'] + b['width'] * 0.75, b['y'] + b['height'] / 2
+    await pg.mouse.move(x, y); await pg.mouse.down()
+    if hold: await pg.wait_for_timeout(380)
+    ty = await to_y_fn()
+    steps = 8
+    for k in range(1, steps + 1):
+        await pg.mouse.move(x, y + (ty - y) * k / steps); await pg.wait_for_timeout(30)
+    return x, ty
+
+async def test_layers_drawer_modes(pg):
+    await open_layers_full(pg, 1)
+    box = await pg.locator('#panel-layers').bounding_box()
+    check('layers drawer: sits on the right side', box and box['x'] + box['width'] > 990 and box['x'] > 500, box)
+    check('layers drawer: no backdrop covering the canvas', not await pg.evaluate("() => document.getElementById('panelBackdrop').classList.contains('open')"))
+    check('layers drawer: full mode shows settings for the selected layer', await pg.locator('#layerSettingsPane .layer-settings-title').count() == 1)
+    check('layers drawer: rows have no up/down arrows any more', await pg.evaluate("() => [...document.querySelectorAll('#layersList .layer-row')].every(r => !/\\u2B06|\\u2B07/.test(r.innerText))"))
+    check('layers drawer: bin and broom live in the settings', await pg.evaluate("() => /\\u{1F5D1}/u.test(document.getElementById('layerSettingsPane').innerText) && /\\u{1F9F9}/u.test(document.getElementById('layerSettingsPane').innerText)"))
+    check('layers drawer: no sideways scrolling', await pg.evaluate("() => { const p = document.getElementById('layersTopPane'); return p.scrollWidth <= p.clientWidth + 1; }"))
+    small = await pg.evaluate("() => [...document.querySelectorAll('#panel-layers .layers-icon-btn, #panel-layers .layers-hdr-btn')].filter(b => b.offsetParent && (b.getBoundingClientRect().height < 44)).length")
+    check('layers drawer: icon buttons at least 44px tall', small == 0, small)
+    await pg.locator('#layersWidthBtn').click(); await pg.wait_for_timeout(300)
+    w = (await pg.locator('#panel-layers').bounding_box())['width']
+    check('layers drawer: collapses to a thin strip', w < 120, w)
+    check('layers drawer: strip hides the settings pane', not await pg.locator('#layersTopPane').is_visible())
+    act = pg.locator('#layersList .layer-row.active-layer')
+    await act.click(); await pg.wait_for_timeout(300)
+    check('layers drawer: tapping the selected thumbnail widens it', not await pg.evaluate("() => isLayersStrip()"))
+    check('layers drawer: mode is remembered', await pg.evaluate("() => JSON.parse(localStorage.getItem(LAYERS_DRAWER_PREFS_KEY)).mode === 'full'"))
+
+async def test_layers_drawer_hides_while_drawing(pg):
+    await open_layers_full(pg, 0)
+    x1, y1 = await grid_point(pg, 5, 5); x2, y2 = await grid_point(pg, 8, 8); x3, y3 = await grid_point(pg, 12, 12)
+    await pg.mouse.move(x1, y1); await pg.mouse.down(); await pg.wait_for_timeout(50)
+    check('layers drawer: hides while a stroke is down', await pg.evaluate("() => document.getElementById('panel-layers').classList.contains('stroke-hidden')"))
+    await pg.mouse.move(x2, y2); await pg.mouse.up(); await pg.wait_for_timeout(50)
+    check('layers drawer: comes back after the stroke', await pg.evaluate("() => openPanelName === 'layers' && !document.getElementById('panel-layers').classList.contains('stroke-hidden')"))
+    check('layers drawer: the stroke was drawn', await px(pg, 5, 5) is not None)
+    await pg.locator('#layersReturnPrefBtn').click(); await pg.wait_for_timeout(100)
+    await pg.mouse.move(x3, y3); await pg.mouse.down(); await pg.mouse.up(); await pg.wait_for_timeout(50)
+    check('layers drawer: with the setting off it stays closed', await pg.evaluate("() => openPanelName === null"))
+
+async def test_layers_drag_reorder(pg):
+    await open_layers_full(pg, 2)
+    before = await pg.evaluate(LAYER_ORDER)
+    check('drag: starts as L2, L1, L0 from the top', before == ['L2', 'L1', 'L0'], before)
+    async def above_top():
+        b = await pg.locator('#layersList .layer-row').nth(0).bounding_box(); return b['y'] + 4
+    x, _ = await drag_row(pg, 2, above_top)
+    check('drag: a floating copy follows the finger', await pg.locator('.layer-drag-ghost').count() == 1)
+    await pg.mouse.up(); await pg.wait_for_timeout(300)
+    after = await pg.evaluate(LAYER_ORDER)
+    check('drag: bottom layer dropped on top', after == ['L0', 'L2', 'L1'], after)
+    check('drag: ghost removed after drop', await pg.locator('.layer-drag-ghost').count() == 0)
+    check('drag: one undo step', await pg.evaluate("() => { undo(); renderLayersPanel(); return true; }") and await pg.evaluate(LAYER_ORDER) == ['L2', 'L1', 'L0'], await pg.evaluate(LAYER_ORDER))
+    async def below_bottom():
+        b = await pg.locator('#layersList .layer-row').nth(2).bounding_box(); return b['y'] + b['height'] - 4
+    await drag_row(pg, 0, below_bottom); await pg.mouse.up(); await pg.wait_for_timeout(300)
+    after2 = await pg.evaluate(LAYER_ORDER)
+    check('drag: top layer dropped at the bottom', after2 == ['L1', 'L0', 'L2'], after2)
+    async def far_below():
+        b = await pg.locator('#layersListPane').bounding_box(); return b['y'] + b['height'] + 120
+    await drag_row(pg, 1, far_below); await pg.mouse.up(); await pg.wait_for_timeout(300)
+    after3 = await pg.evaluate(LAYER_ORDER)
+    check('drag: dragging past the end of the list lands at the bottom', after3 == ['L1', 'L2', 'L0'], after3)
+    b0 = await pg.locator('#layersList .layer-row').nth(0).bounding_box()
+    await pg.mouse.move(b0['x'] + b0['width'] * 0.75, b0['y'] + 10); await pg.mouse.down(); await pg.mouse.move(b0['x'] + b0['width'] * 0.75, b0['y'] + 60, steps=4); await pg.mouse.up(); await pg.wait_for_timeout(300)
+    check('drag: a quick swipe without holding does not reorder', await pg.evaluate(LAYER_ORDER) == after3)
+
+async def test_layers_drag_into_group_and_cancel(pg):
+    await open_layers_full(pg, 1)
+    await pg.evaluate("() => { addEmptyGroup(); const f = frames[activeFrameIndex]; const g = f.layerTree.find(n => n.kind === 'group'); g.name = 'G'; renderLayersPanel(); }")
+    await pg.wait_for_timeout(200)
+    names = await pg.evaluate(LAYER_ORDER)
+    gi = names.index('G')
+    li = len(names) - 1
+    async def on_group():
+        b = await pg.locator('#layersList .layer-row').nth(gi).bounding_box(); return b['y'] + b['height'] / 2
+    await drag_row(pg, li, on_group); await pg.wait_for_timeout(500)
+    check('drag: hovering over a group highlights it', await pg.locator('#layersList .layer-row.drop-inside').count() == 1)
+    await pg.mouse.up(); await pg.wait_for_timeout(300)
+    inside = await pg.evaluate("() => { const g = frames[activeFrameIndex].layerTree.find(n => n.kind === 'group'); return g ? g.children.map(n => n.layer && n.layer.name) : null; }")
+    check('drag: layer dropped inside the group', inside == ['L0'], inside)
+    order0 = await pg.evaluate(LAYER_ORDER)
+    async def top():
+        b = await pg.locator('#layersList .layer-row').nth(0).bounding_box(); return b['y'] + 4
+    await drag_row(pg, len(order0) - 1, top)
+    await pg.evaluate("() => document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))")
+    await pg.wait_for_timeout(100)
+    await pg.mouse.up(); await pg.wait_for_timeout(200)
+    check('drag: a cancelled drag changes nothing', await pg.evaluate(LAYER_ORDER) == order0, await pg.evaluate(LAYER_ORDER))
+    check('drag: a cancelled drag leaves no ghost or shifted rows', await pg.evaluate("() => !document.querySelector('.layer-drag-ghost') && [...document.querySelectorAll('#layersList .layer-row')].every(r => !r.style.transform) && treeDragState === null"))
+    async def top2():
+        b = await pg.locator('#layersList .layer-row').nth(0).bounding_box(); return b['y'] + 4
+    cur = await pg.evaluate(LAYER_ORDER)
+    await drag_row(pg, cur.index('L0'), top2); await pg.mouse.up(); await pg.wait_for_timeout(300)
+    out = await pg.evaluate("() => frames[activeFrameIndex].layerTree.find(n => n.kind === 'group').children.length")
+    check('drag: layer dragged back out of the group', out == 0, [out, await pg.evaluate(LAYER_ORDER), order0])
+
+async def test_layers_debug_on_top(pg):
+    await open_layers_full(pg, 0)
+    await pg.locator('#debugFab').click(); await pg.wait_for_timeout(300)
+    check('debug: opening Debug keeps the layers drawer open', await pg.evaluate("() => openPanelName === 'layers' && drawerOpenName === 'debug'"))
+    z = await pg.evaluate("() => [getComputedStyle(document.getElementById('debugDrawer')).zIndex, getComputedStyle(document.getElementById('panel-layers')).zIndex].map(Number)")
+    check('debug: drawer sits above the layers drawer', z[0] > z[1], z)
+    fz = await pg.evaluate("() => Number(getComputedStyle(document.getElementById('debugFab')).zIndex)")
+    check('debug: debug button sits above every drawer', fz > z[0], fz)
+    await pg.evaluate("() => { closeDrawer(); openDrawer('tools'); }")
+    b = await pg.locator('#debugFab').bounding_box()
+    hit = await pg.evaluate("([x, y]) => document.elementFromPoint(x, y) && document.elementFromPoint(x, y).id", [b['x'] + 20, b['y'] + 20])
+    check('debug: debug button still tappable with the tools drawer open', hit == 'debugFab', hit)
 
 async def test_file_button_top(pg):
     box = await pg.locator('#tab-file').bounding_box()

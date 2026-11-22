@@ -149,6 +149,14 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 - Soft brush, soft eraser and colour to alpha are hidden (`MAPART_TOOL_FALLBACK`). Vector layers are not snapped yet.
 - Saved: `mapartStaircase` in the project data.
 
+### 3.12 Layers drawer
+- `#panel-layers` is still panel `'layers'` (openPanel/closePanel), restyled as a frosted right-side drawer. No `#panelBackdrop` for it, so the canvas stays usable.
+- Modes: `strip` (thumbnails only) and `full` (`#layersTopPane` settings + icon row, `#layersSplitHandle`, `#layersListPane`). Prefs in `layersDrawerPrefs` (`pixelArtLayersDrawerPrefs`): mode, returnAfterStroke, glass (40-100), split (15-85).
+- A pointerdown on `#viewport` adds `.stroke-hidden`; when the last pointer lifts it comes back (and re-renders thumbnails) or closes, per returnAfterStroke.
+- Selected layer/group settings (title, bin, broom, mask/clip move buttons, opacity, blend, reference transform) render into `#layerSettingsPane`, not into the list. Rows hold only colour tag, thumbnail, eye, name, badge.
+- Drag to reorder (`beginTreeDrag`): 280 ms hold, floating `.layer-drag-ghost`, slot rects cached at drag start, rows slide with transforms, non-passive `touchmove` blocks iOS scroll, `pointercancel` restores everything, auto-scroll near the pane edges, 380 ms hover over a group's middle drops inside. Nothing re-renders until the drop; one undo step via `performTreeDrop`. Visual order is the reverse of array order: "above row X" = mode `after`, "below row X" = mode `before`.
+- Debug: `openDrawer('debug')` no longer closes panels and `openPanel` keeps Debug open. `#debugFab` (z 9500) is always reachable.
+
 ### 3.10 Text input
 - Native keyboard only (V1_46). Fields are 16px to stop iOS focus-zoom. Number fields use `inputmode="numeric"`.
 
