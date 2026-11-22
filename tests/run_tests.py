@@ -45,6 +45,8 @@ GROUPS = {
                        ['test_zoom_indicator']),
     'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
                       ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone']),
+    'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
+                ['test_palette_drag_swaps']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
     'layout': ('Floating bars, top-left #topBar, bottom #floatingBar, panels/drawers opening (togglePanel, closePanel).',
@@ -303,6 +305,24 @@ async def test_drawer_splits_collapse_on_phone(pg):
     db = await pg.locator('#debugDrawerSplitHandle').bounding_box()
     check('split: debug divider is 44px or a 12px strip', db and (abs(db['height'] - 12) < 1.5 or abs(db['height'] - 44) < 1.5), db)
     await pg.set_viewport_size({'width': 1000, 'height': 800})
+
+async def test_palette_drag_swaps(pg):
+    await pg.evaluate("() => { openPanel('colors'); ['#111111','#222222','#333333','#444444','#555555'].forEach(c => createSwatch(c)); }")
+    await pg.wait_for_timeout(200)
+    before = await pg.evaluate(SWATCHES)
+    i1, i2 = before.index('#111111'), before.index('#444444')
+    await pg.evaluate("() => handleManageClick()"); await pg.wait_for_timeout(100)
+    check('palette: edit mode shows delete badges', await pg.locator('#palette .swatch-wrapper .delete-badge').first.is_visible())
+    w = pg.locator('#palette .swatch-wrapper')
+    a = await w.nth(i1).bounding_box(); b = await w.nth(i2).bounding_box()
+    await pg.mouse.move(a['x'] + a['width'] / 2, a['y'] + a['height'] / 2); await pg.mouse.down()
+    await pg.mouse.move(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2, steps=8); await pg.wait_for_timeout(50)
+    check('palette: target swatch is highlighted', await pg.locator('#palette .swatch-wrapper.swap-target').count() == 1)
+    await pg.mouse.up(); await pg.wait_for_timeout(100)
+    after = await pg.evaluate(SWATCHES)
+    expect = list(before); expect[i1], expect[i2] = expect[i2], expect[i1]
+    check('palette: the two colours swap and nothing else moves', after == expect, [before, after])
+    check('palette: drag ghost removed', await pg.locator('.swatch-drag-ghost').count() == 0)
 
 async def test_file_button_top(pg):
     box = await pg.locator('#tab-file').bounding_box()

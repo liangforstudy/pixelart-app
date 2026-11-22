@@ -613,7 +613,10 @@
             100% { transform: rotate(-3deg); }
         }
         .editing .swatch-wrapper { animation: wiggle 0.2s infinite; }
-        .swatch-wrapper.dragging { opacity: 0.5; transform: scale(0.9); z-index: 300; animation: none; }
+        .swatch-wrapper.dragging { opacity: 0.35; transform: scale(0.9); z-index: 300; animation: none; }
+        .swatch-wrapper.swap-target { animation: none; transform: scale(1.12); box-shadow: 0 0 0 3px #0a84ff; }
+        .swatch-drag-ghost { position: fixed; z-index: 9700; pointer-events: none; animation: none !important; transform: scale(1.15); box-shadow: 0 8px 20px rgba(0,0,0,.5); }
+        .swatch-drag-ghost .delete-badge { display: none !important; }
 
         .swatch.selected { transform: scale(1.1); outline: 2px solid #0078d4; outline-offset: 2px; z-index: 2; }
         .delete-badge { display: none; position: absolute; top: -2px; right: -2px; background: #FF3B30; color: white; width: 18px; height: 18px; border-radius: 50%; font-size: 13px; text-align: center; line-height: 16px; font-weight: bold; z-index: 10; border: 1.5px solid #121212; }
@@ -8619,30 +8622,49 @@ function createSwatch(color) {
     updateColorPickerAvailability();
 }
 
-// Wires up drag-to-reorder for palette swatches while in edit mode.
+// Wires up drag-to-swap for palette swatches while in edit mode: the
+// dragged colour trades places with the one it is dropped on, and every
+// other swatch stays where it was.
+let swatchSwapTarget = null, swatchDragGhost = null;
 function setupPaletteDragEvents() {
     const pal = document.getElementById('palette');
+    const clearSwapTarget = () => { if (swatchSwapTarget) swatchSwapTarget.classList.remove('swap-target'); swatchSwapTarget = null; };
     const onMove = (e) => {
         if (!dragTarget) return;
         e.preventDefault();
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
         const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        if (!swatchDragGhost) {
+            const r = dragTarget.getBoundingClientRect();
+            swatchDragGhost = dragTarget.cloneNode(true);
+            swatchDragGhost.classList.remove('dragging');
+            swatchDragGhost.classList.add('swatch-drag-ghost');
+            swatchDragGhost.style.width = r.width + 'px'; swatchDragGhost.style.height = r.height + 'px';
+            document.body.appendChild(swatchDragGhost);
+        }
+        const gw = swatchDragGhost.offsetWidth, gh = swatchDragGhost.offsetHeight;
+        swatchDragGhost.style.left = (cx - gw / 2) + 'px'; swatchDragGhost.style.top = (cy - gh / 2) + 'px';
         const target = document.elementFromPoint(cx, cy);
-        const overWrapper = target?.closest('.swatch-wrapper');
+        const overWrapper = target?.closest ? target.closest('#palette .swatch-wrapper') : null;
         // Transparency and the colour-picker are fixed palette controls, not
-        // swatches. They can neither be dragged nor used as swap/reorder targets.
+        // swatches. They can neither be dragged nor used as swap targets.
         const isFixedWrapper = overWrapper === document.getElementById('transparencyWrapper') ||
                                overWrapper === document.getElementById('pickerContainer');
-        if (overWrapper && overWrapper !== dragTarget && !isFixedWrapper) {
-            const children = [...pal.children];
-            if (children.indexOf(dragTarget) < children.indexOf(overWrapper)) pal.insertBefore(dragTarget, overWrapper.nextSibling);
-            else pal.insertBefore(dragTarget, overWrapper);
-        }
+        const next = (overWrapper && overWrapper !== dragTarget && !isFixedWrapper) ? overWrapper : null;
+        if (next !== swatchSwapTarget) { clearSwapTarget(); swatchSwapTarget = next; if (next) next.classList.add('swap-target'); }
     };
     const onEnd = () => {
         clearHold();
+        if (swatchDragGhost) { swatchDragGhost.remove(); swatchDragGhost = null; }
         if (dragTarget) {
             dragTarget.classList.remove('dragging');
+            if (swatchSwapTarget && swatchSwapTarget.parentElement === pal) {
+                const mark = document.createComment('swap');
+                pal.replaceChild(mark, swatchSwapTarget);
+                pal.replaceChild(swatchSwapTarget, dragTarget);
+                pal.replaceChild(dragTarget, mark);
+            }
+            clearSwapTarget();
             // Persist the new visual order back into the underlying palette
             // array. Without this, replaceVisiblePalette() (called on every
             // tile switch and on project load) rebuilds the DOM from the
