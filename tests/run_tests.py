@@ -296,14 +296,14 @@ async def test_drawer_splits_collapse_on_phone(pg):
     h = pg.locator('#layersSplitHandle')
     await pg.locator('#layersDrawerHeader .layers-drawer-title').click(); await pg.wait_for_timeout(500)
     hb = await h.bounding_box()
-    check('split: collapses to a 12px strip after tapping elsewhere', hb and abs(hb['height'] - 12) < 1.5, hb)
+    check('split: collapses to a 20px strip after tapping elsewhere', hb and abs(hb['height'] - 20) < 1.5, hb)
     await pg.mouse.move(hb['x'] + hb['width'] / 2, hb['y'] + 6); await pg.mouse.down(); await pg.mouse.up(); await pg.wait_for_timeout(400)
     hb2 = await h.bounding_box()
     check('split: tapping the strip opens it to 44px', hb2 and abs(hb2['height'] - 44) < 1.5, hb2)
     await pg.evaluate("() => { closePanel(); openDrawer('debug'); }"); await pg.wait_for_timeout(500)
     check('split: debug drawer divider uses the same collapsing split', await pg.evaluate("() => document.getElementById('debugDrawerSplitHandle').classList.contains('cdsplit')"))
     db = await pg.locator('#debugDrawerSplitHandle').bounding_box()
-    check('split: debug divider is 44px or a 12px strip', db and (abs(db['height'] - 12) < 1.5 or abs(db['height'] - 44) < 1.5), db)
+    check('split: debug divider is 44px or a 20px strip', db and (abs(db['height'] - 20) < 1.5 or abs(db['height'] - 44) < 1.5), db)
     await pg.set_viewport_size({'width': 1000, 'height': 800})
 
 async def test_palette_drag_swaps(pg):
@@ -323,6 +323,9 @@ async def test_palette_drag_swaps(pg):
     expect = list(before); expect[i1], expect[i2] = expect[i2], expect[i1]
     check('palette: the two colours swap and nothing else moves', after == expect, [before, after])
     check('palette: drag ghost removed', await pg.locator('.swatch-drag-ghost').count() == 0)
+    check('palette: a big Done button shows while rearranging', await pg.locator('#paletteDoneBtn').is_visible())
+    await pg.locator('#paletteDoneBtn').click(); await pg.wait_for_timeout(100)
+    check('palette: Done leaves rearrange mode', await pg.evaluate("() => !isEditing") and not await pg.locator('#paletteDoneBtn').is_visible())
 
 async def test_file_button_top(pg):
     box = await pg.locator('#tab-file').bounding_box()
@@ -652,6 +655,9 @@ async def test_mapart_palette_locked(pg):
     await pg.evaluate("() => replaceVisiblePalette(['#000000'])")
     check('mapart palette: replacing the palette is refused', len(await pg.evaluate(SWATCHES)) == 61)
     await pg.evaluate(DRAW, [[[3, 3]], '#FF0001'])
+    await pg.evaluate("() => { openPanel('colors'); handleManageClick(); }")
+    check('mapart palette: Done button shows in rearrange mode', await pg.locator('#paletteDoneBtn').is_visible())
+    await pg.evaluate("() => exitSwatchEditMode()")
     check('mapart palette: drawing an off-palette colour stores the nearest map colour', await px(pg, 3, 3) == '#DC0000', await px(pg, 3, 3))
     await pg.evaluate(DRAW, [[[4, 4]], 'rgba(10,10,10,0.3)'])
     check('mapart palette: mostly transparent paint becomes no block', await px(pg, 4, 4) is None)
