@@ -361,6 +361,14 @@
 - `drawImageFitted(ctx, src, sw, sh, dx, dy, dw, dh)` Aspect-fit draw: halving downscale with high-quality smoothing, nearest-neighbour when enlarging.
 - `makeThumbnail(layer, cssSize)` Layer thumbnail at cssSize x DPR over a checker.
 
+## Mapart colour methods and eyedropper sampling (V2_5)
+- `setMapartColourMethod(id)` / `toggleMapartSnapToasts()` / `syncMapartPrefsUI()` App-wide prefs; method change clears the snap caches.
+- `mapartMetric(r, g, b)` A colour in the chosen method's space; `mapartSnapRGB` compares palette values from it.
+- `colourLab(r, g, b, d50)` sRGB to CIE L*a*b* (D65 or D50). `colourDeltaE2000(p, q)` CIEDE2000.
+- `colourHctPoint(r, g, b)` [L*, a', b'] (CAM16-UCS M' at hue h) for HCT distance; `colourHct` gives Material hue/chroma/tone.
+- `mapartColourName(hex)` "normal White Wool"-style name for toasts.
+- `setEyedropSampleSize(n)` / `renderEyedropSampleRow()` Sample size pref and its button row. `averageCanvasColour(canvas, x, y, n)` Alpha-weighted N x N average or null.
+
 ## Background fill (V2_3)
 - `setBackgroundColor(c, record)` Sets `backgroundColor` (Mapart-validated), optional undo step, ends pick mode, refreshes fill and UI.
 - `updateBackgroundFill()` Shows/sizes `#backgroundFill` as `#container`'s first child.

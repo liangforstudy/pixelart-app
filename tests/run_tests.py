@@ -47,6 +47,8 @@ GROUPS = {
                       ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
+    'eyedrop': ('Eyedropper sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
+                ['test_eyedrop_sample_size']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
                   ['test_space_pan']),
     'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load.',
@@ -71,7 +73,7 @@ GROUPS = {
     'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load.',
                ['test_mapart_new_canvas_in_maps', 'test_resize_sheet_no_autoselect_outside_mapart', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
-                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines']),
+                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods']),
     'background': ('Background fill (roadmap 9): backgroundColor, setBackgroundColor, updateBackgroundFill/UI, background pick mode (Colours + Layers), flattenTreeToCanvas bg argument, saveImage, save/load, mapart default and snapping.',
                    ['test_background_fill', 'test_background_mapart']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
@@ -885,6 +887,63 @@ async def test_reference_layer(pg):
     data = await pg.evaluate("() => { layers.find(l => l.type === 'reference').sampling = 'pixel'; return JSON.parse(JSON.stringify(currentProjectSaveData('r'))); }")
     await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(500)
     check('ref: display mode and 1:1 placement saved with the project', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l && l.sampling === 'pixel' && l.gw === 64 && l.gx === -16; }"))
+
+async def test_mapart_colour_methods(pg):
+    await mapart_canvas(pg)
+    r = await pg.evaluate("""() => ({ red65: colourLab(255,0,0,false), red50: colourLab(255,0,0,true),
+        de: [colourDeltaE2000([50,2.6772,-79.7751],[50,0,-82.7485]), colourDeltaE2000([50,0,0],[50,-1,2]), colourDeltaE2000([50,2.5,0],[73,25,-18]), colourDeltaE2000([60.2574,-34.0099,36.2677],[60.4626,-34.1751,39.4387])],
+        hct: colourHct(255,0,0) })""")
+    close = lambda a, b, t: all(abs(x - y) <= t for x, y in zip(a, b))
+    check('colour: sRGB red in CIE Lab D65 / D50 matches published values', close(r['red65'], [53.2408, 80.0925, 67.2032], 0.01) and close(r['red50'], [54.2917, 80.8125, 69.8851], 0.01), r)
+    check('colour: CIEDE2000 matches Sharma et al. 2005 test pairs 1, 7, 17, 25', close(r['de'], [2.0425, 2.3669, 27.1492, 1.2644], 0.0001), r['de'])
+    check('colour: HCT of #FF0000 matches Material (hue 27.41, chroma 113.36, tone 53.24)', close(r['hct'], [27.408, 113.357, 53.24], 0.02), r['hct'])
+    check('colour: Customise lists the 7 methods, default selected', await pg.evaluate("() => document.getElementById('mapartColourMethodSelect').options.length === 7 && mapartColourMethod === 'mapartcraft'"))
+    # each method's snap must equal an independent brute-force nearest search in that method's space
+    res = await pg.evaluate("""() => { const pal = mapartAllowedHexes().slice(); const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+        const sq = (p, q) => (p[0]-q[0])**2 + (p[1]-q[1])**2 + (p[2]-q[2])**2;
+        const spaces = { euclidean: c => c, 'cie76-d65': c => colourLab(...c, false), 'cie76-d50': c => colourLab(...c, true), 'ciede2000-d65': c => colourLab(...c, false), 'ciede2000-d50': c => colourLab(...c, true), hct: c => colourHctPoint(...c) };
+        const tests = [[74,144,217],[200,120,40],[30,200,180],[250,180,200],[90,60,140],[128,128,20],[10,10,60],[230,230,140]];
+        const out = {}; let differs = false;
+        const dflt = tests.map(t => { setMapartColourMethod('mapartcraft'); return mapartSnapColor(rgbToHexBytes(...t)); });
+        for (const [m, f] of Object.entries(spaces)) {
+            setMapartColourMethod(m);
+            out[m] = tests.every((t, ti) => { const v = f(t); let best = null, bd = Infinity;
+                for (const h of pal) { const q = f(rgb(h)); const d = m.startsWith('ciede') ? colourDeltaE2000(v, q) : sq(v, q); if (d < bd) { bd = d; best = h; } }
+                const got = mapartSnapColor(rgbToHexBytes(...t)); if (got !== dflt[ti]) differs = true; return got === best; });
+        }
+        setMapartColourMethod('mapartcraft'); return [out, differs]; }""")
+    check('colour: every method snaps to its true nearest map colour', all(res[0].values()), res[0])
+    check('colour: switching method really changes some picks', res[1])
+    await pg.evaluate("() => setMapartColourMethod('hct')")
+    await pg.reload(); await pg.wait_for_timeout(1200)
+    check('colour: method is remembered app-wide', await pg.evaluate("() => mapartColourMethod === 'hct' && document.getElementById('mapartColourMethodSelect').value === 'hct'"))
+    await pg.evaluate("() => setMapartColourMethod('mapartcraft')")
+    await mapart_canvas(pg)
+    await pg.evaluate("() => { mapartSnapToasts = true; createSwatch('#4A90D9'); }")
+    check('colour: debug snap toast names the map colour', '\u2192' in (await pg.locator('#appToast').text_content() or '') and await pg.evaluate("() => /^#[0-9A-F]{6}$/.test(selectedColor)"), await pg.locator('#appToast').text_content())
+    await pg.evaluate("() => { mapartSnapToasts = false; saveMapartPrefs(); }")
+
+async def test_eyedrop_sample_size(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(10); scale = 10; layoutAll(); }")
+    # 3x3 around (5,5): 4 red, 5 blue -> average; one transparent pixel elsewhere doesn't darken a 3x3 at (20,20)
+    await pg.evaluate(DRAW, [[[4,4],[5,4],[6,4],[4,5]], '#FF0000'])
+    await pg.evaluate(DRAW, [[[5,5],[6,5],[4,6],[5,6],[6,6]], '#0000FF'])
+    await pg.evaluate(DRAW, [[[19,19],[20,19],[21,19],[19,20],[20,20],[21,20],[19,21],[20,21]], '#00FF00'])
+    await pg.evaluate("() => handleToolBtn('eyedrop')")
+    check('eyedrop: sample size row shows while the eyedropper is on', await pg.evaluate("() => document.getElementById('eyedropControls').style.display === '' && document.querySelectorAll('#eyedropSampleRow button').length === 7"))
+    await pg.evaluate("() => openDrawer('tools')"); await pg.wait_for_timeout(300)
+    await pg.locator('#eyedropSampleRow button[data-size="3"]').click()
+    await pg.evaluate("() => closeDrawer()"); await pg.wait_for_timeout(300)
+    await tap(pg, 5, 5)
+    check('eyedrop: 3 x 3 averages the square', await pg.evaluate("() => selectedColor") == '#71008E', await pg.evaluate("() => selectedColor"))
+    await pg.evaluate("() => handleToolBtn('eyedrop')"); await tap(pg, 20, 20)
+    check('eyedrop: transparent pixels in the square do not darken it', await pg.evaluate("() => selectedColor") == '#00FF00', await pg.evaluate("() => selectedColor"))
+    await pg.evaluate("() => handleToolBtn('eyedrop')"); await tap(pg, 28, 28)
+    check('eyedrop: an empty square picks transparent', await pg.evaluate("() => selectedColor") is None)
+    check('eyedrop: sample size remembered', await pg.evaluate("() => localStorage.getItem(EYEDROP_PREFS_KEY) === '3'"))
+    await pg.evaluate("() => { handleToolBtn('eyedrop'); setEyedropSampleSize(1); }"); await tap(pg, 5, 5)
+    check('eyedrop: POINT picks the single pixel', await pg.evaluate("() => selectedColor") == '#0000FF')
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''
