@@ -16,7 +16,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 6 | PSD import/export | Open |
 | 7 | IndexedDB project persistence | Done V1_47 |
 | 8 | glTF/GLB 3D viewer layer | Open |
-| 9 | Solid background fill (document setting) | Open |
+| 9 | Solid background fill (document setting) | Done V2_3 |
 | 10 | Checkerboard colour profiles | Done V1_39 (8-canvas-px squares V1_44_2) |
 | 11 | SVG export for vector layers | Open |
 | 12 | Transform: selection / layers / masks | Selection resize + rotate done V1_40-V1_41_3; layer/mask open |
@@ -58,6 +58,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 
 ### 9. Solid background fill
 - Decided: document-level setting (like gridW/profile), not a layer node. Painted above the checkerboard, below all layers, in live view and in flatten/export/thumbnails. One new save-data field. UI: button under the Mask/Clip row in Layers.
+- Built V2_3: Layers "Background" tile and a Colours-panel BACKGROUND row, kept in sync. Mapart always has one (default white carpet `#DCDCDC`, map colours only).
 - Distinct from item 10's solid checker profile (display-only, never exported).
 
 ### 11. SVG export

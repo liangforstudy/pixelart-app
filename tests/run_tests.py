@@ -68,6 +68,8 @@ GROUPS = {
                ['test_mapart_new_canvas_in_maps', 'test_resize_sheet_no_autoselect_outside_mapart', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
                 'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines']),
+    'background': ('Background fill (roadmap 9): backgroundColor, setBackgroundColor, updateBackgroundFill/UI, background pick mode (Colours + Layers), flattenTreeToCanvas bg argument, saveImage, save/load, mapart default and snapping.',
+                   ['test_background_fill', 'test_background_mapart']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
                 ['test_resize_from_gallery']),
 }
@@ -753,6 +755,59 @@ async def test_mapart_grid_lines(pg):
     check('grid: a new project starts with the grid off', await pg.evaluate("() => showGridLines === false") and (await pg.evaluate(LINES))[2] == 'none')
     await pg.evaluate("() => { toggleGridLines(); zoomIndex = ZOOM_STEPS.indexOf(8); scale = 8; layoutAll(); }")
     check('grid: outside mapart only pixel lines, no chunk/map lines', (await pg.evaluate(LINES))[:2] == [0, 0] and await pg.evaluate("() => document.getElementById('gridOverlay').style.backgroundImage !== 'none'"))
+
+SWATCH_CLICK = "(hex) => { const el = [...document.querySelectorAll('#palette .swatch-wrapper:not(#transparencyWrapper):not(#pickerContainer) .swatch')].find(e => rgbToHex(e.style.backgroundColor).toUpperCase() === hex); el.click(); return !!el; }"
+BG_PX = "([x, y, bg]) => { const c = flattenLayersToCanvas(frames[activeFrameIndex].layerTree, bg ? backgroundColor : undefined); const d = c.getContext('2d').getImageData(x, y, 1, 1).data; return d[3] ? rgbToHexBytes(d[0], d[1], d[2]) : null; }"
+
+async def test_background_fill(pg):
+    await new_canvas(pg)
+    check('bg: new Pixel Art project has no background', await pg.evaluate("() => backgroundColor === null && document.getElementById('bgSwatchColours').classList.contains('bg-none')"))
+    pal = await pg.evaluate(SWATCHES)
+    target, drawing = pal[1], pal[0]
+    await pg.evaluate("(c) => handleSwatchClick(c)", drawing)
+    await pg.evaluate("() => { openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }"); await pg.wait_for_timeout(300)
+    await pg.locator('#layersBgBtn').click(); await pg.wait_for_timeout(150)
+    check('bg: Layers Background button opens Colours in pick mode', await pg.evaluate("() => openPanelName === 'colors' && backgroundPickMode && document.getElementById('bgPickHint').style.display === ''"))
+    await pg.evaluate(SWATCH_CLICK, target); await pg.wait_for_timeout(150)
+    check('bg: tapping a swatch sets the background, drawing colour unchanged', await pg.evaluate("([t, d]) => backgroundColor === t && selectedColor === d && !backgroundPickMode", [target, drawing]))
+    check('bg: goes back to the Layers drawer, both swatches show it', await pg.evaluate("(t) => openPanelName === 'layers' && rgbToHex(document.getElementById('layersBgSwatch').style.backgroundColor).toUpperCase() === t && rgbToHex(document.getElementById('bgSwatchColours').style.backgroundColor).toUpperCase() === t", target))
+    check('bg: live fill sits under every layer', await pg.evaluate("() => { const el = document.getElementById('backgroundFill'); return container.firstChild === el && el.style.display === 'block' && parseFloat(el.style.width) === gridW * scale; }"))
+    await pg.evaluate(DRAW, [[[1, 1]], '#FF0000'])
+    check('bg: export flatten fills empty pixels, keeps drawn ones', await pg.evaluate(BG_PX, [0, 0, True]) == target and await pg.evaluate(BG_PX, [1, 1, True]) == '#FF0000')
+    check('bg: tool flatten (bucket/eyedropper) still sees empty pixels', await pg.evaluate(BG_PX, [0, 0, False]) is None)
+    data = await pg.evaluate("() => JSON.parse(JSON.stringify(currentProjectSaveData('b')))")
+    check('bg: saved in the project', data.get('backgroundColor') == target)
+    await pg.evaluate("() => undo()")
+    check('bg: undo removes the background', await pg.evaluate("() => backgroundColor === null && document.getElementById('backgroundFill').style.display === 'none'"))
+    await pg.evaluate("() => redo()")
+    check('bg: redo brings it back', await pg.evaluate("(t) => backgroundColor === t", target))
+    await pg.evaluate("() => { openPanel('colors'); }"); await pg.locator('#bgNoneBtn').click()
+    check('bg: NONE clears it', await pg.evaluate("() => backgroundColor === null"))
+    await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(300)
+    check('bg: reopening the project restores it', await pg.evaluate("(t) => backgroundColor === t && document.getElementById('backgroundFill').style.display === 'block'", target))
+    await pg.locator('#bgPickBtn').click()
+    await pg.evaluate("() => closePanel()")
+    check('bg: closing the panel cancels pick mode', await pg.evaluate("() => !backgroundPickMode && !document.getElementById('palette').classList.contains('bg-picking')"))
+
+async def test_background_mapart(pg):
+    await mapart_canvas(pg)
+    check('bg mapart: new mapart starts on white carpet, NONE hidden', await pg.evaluate("() => backgroundColor === '#DCDCDC' && document.getElementById('bgNoneBtn').style.display === 'none'"))
+    await pg.evaluate("() => { openPanel('colors'); toggleBackgroundPickMode(); }")
+    await pg.locator('#transparencyBtn').click()
+    check('bg mapart: transparent swatch in pick mode cancels, never none', await pg.evaluate("() => backgroundColor === '#DCDCDC' && !backgroundPickMode"))
+    check('bg mapart: setting a non-map colour snaps it', await pg.evaluate("() => { setBackgroundColor('#FF0001', true); return backgroundColor === '#DC0000'; }"))
+    await pg.evaluate("() => toggleMapartStaircase()")
+    await pg.evaluate("() => { toggleBackgroundPickMode(); }")
+    await pg.evaluate(SWATCH_CLICK, '#FFFFFF')
+    check('bg mapart: staircase on allows a light shade', await pg.evaluate("() => backgroundColor === '#FFFFFF'"))
+    await pg.evaluate("() => toggleMapartStaircase()")
+    check('bg mapart: staircase off moves it to the normal shade', await pg.evaluate("() => mapartStaircase === false && backgroundColor === '#DCDCDC'"))
+    await pg.evaluate(DRAW, [[[3, 3]], '#DC0000'])
+    check('bg mapart: PNG flatten has no transparent pixels', await pg.evaluate(BG_PX, [0, 0, True]) == '#DCDCDC' and await pg.evaluate(BG_PX, [3, 3, True]) == '#DC0000')
+    data = await pg.evaluate("() => { const d = JSON.parse(JSON.stringify(currentProjectSaveData('m'))); delete d.backgroundColor; return d; }")
+    await pg.evaluate("() => setBackgroundColor('#DC0000', false)")
+    await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(300)
+    check('bg mapart: older mapart save without the field opens on white carpet', await pg.evaluate("() => backgroundColor === '#DCDCDC'"))
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''

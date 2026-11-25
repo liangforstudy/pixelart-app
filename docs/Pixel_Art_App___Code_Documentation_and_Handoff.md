@@ -37,7 +37,7 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 - **V1_46** -- built-in on-screen keyboard and numeric keypad removed (iOS 16px focus-zoom fixed by 16px fields). Native inputs everywhere; the one remaining keydown listener is app shortcuts.
 - **V1_47** -- IndexedDB gallery (section 3.4); one save format for file and gallery; Fix List 1, 2, 7 fixed; autosave on page hide.
 - **V2_2** -- Mapart profile (section 3.11): whole-map canvases (128 px maps, up to 7x7), locked Minecraft map palette, staircase toggle, import snapping.
-- **V2_3** -- Grid lines moved to the View panel; Mapart adds 16 px chunk and 128 px map lines (section 3.11); grid on/off saved per project.
+- **V2_3** -- Grid lines moved to the View panel; Mapart adds 16 px chunk and 128 px map lines (section 3.11); grid on/off saved per project. Solid background fill (roadmap 9, section 3.13).
 
 **Known open**
 - Option B (drop PixelLayer's Proxy, keep both classes) decided, not implemented. A full-canvas PixelLayer bulk edit still builds a large string-keyed history Map + changes array (slow and memory-heavy on iOS near 999x999; won't hang).
@@ -150,6 +150,14 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 - Soft brush, soft eraser and colour to alpha are hidden (`MAPART_TOOL_FALLBACK`). Vector layers are not snapped yet.
 - Saved: `mapartStaircase` in the project data.
 - Grid (View panel `#gridToggleBtn`, one toggle for all levels): pixel lines from 4x up; in Mapart also 2px dark grey chunk lines every 16 px (hidden below 0.5x) and 3px red map lines every 128 px (always shown). Chunk/map lines are divs in `#gridOverlay` at `Math.round(k*step*scale)` so they stay crisp at fractional zoom. On/off saved per project as `gridLines`; new projects start off.
+
+### 3.13 Background fill (V2_3, roadmap 9)
+- `backgroundColor`: project-level hex or null (none). Saved as `backgroundColor`; new projects/imports reset via `resetBackgroundForNewProject` (Mapart `MAPART_DEFAULT_BACKGROUND` = white carpet `#DCDCDC`, else null).
+- Live view: `#backgroundFill` div kept as `#container`'s first child by `updateBackgroundFill` (called from `layoutAll`; recreated if the container was emptied).
+- Exports only: `flattenTreeToCanvas(..., bg)` fills first (top level only). Passed by `saveImage`, `copyToClipboard`, `exportSpritesheet`, gallery PNG export, thumbnails. `flattenToCanvas()` (bucket sample-all, eyedropper, resize screen) never includes it, so empty pixels stay empty and the eraser reveals the background.
+- UI: Colours `#bgRow` (`#bgSwatchColours`, `#bgPickBtn`, `#bgNoneBtn`, hidden in Mapart) and Layers `#layersBgBtn` (`#layersBgSwatch`); `updateBackgroundUI` syncs both. Pick mode (`backgroundPickMode`): next swatch tap goes to `setBackgroundColor` instead of `selectedColor`; transparent swatch = none (Mapart: cancels). From Layers it returns to Layers after the pick; closing/switching panels cancels.
+- Mapart: `mapartValidBackground` keeps it on an allowed colour (exact, else normal shade, else snapped); run from `syncMapartPalette`, so staircase off moves a light/dark background to its normal shade (not an undo step).
+- Undo: user changes push `{type:'background', before, after}`.
 
 ### 3.12 Layers drawer
 - `#panel-layers` is still panel `'layers'` (openPanel/closePanel), restyled as a frosted right-side drawer. No `#panelBackdrop` for it, so the canvas stays usable.

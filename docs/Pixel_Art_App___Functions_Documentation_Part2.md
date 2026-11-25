@@ -352,6 +352,15 @@
 - `async readZip(arrayBuffer)` Parses a zip central directory -> {name: Uint8Array}; handles STORE and DEFLATE. Throws on invalid zips.
 - `async writeZip(entries)` Builds a DEFLATE zip from {name: Uint8Array}, entries in insertion order.
 
+## Background fill (V2_3)
+- `setBackgroundColor(c, record)` Sets `backgroundColor` (Mapart-validated), optional undo step, ends pick mode, refreshes fill and UI.
+- `updateBackgroundFill()` Shows/sizes `#backgroundFill` as `#container`'s first child.
+- `updateBackgroundUI()` Syncs `#bgSwatchColours`, `#layersBgSwatch`, pick button/hint, NONE visibility.
+- `toggleBackgroundPickMode()` / `exitBackgroundPickMode()` Pick-from-swatches mode; exit reopens `backgroundPickReturnPanel` if set.
+- `openBackgroundPickerFromLayers()` Opens Colours in pick mode, returns to Layers after the pick.
+- `resetBackgroundForNewProject()` Mapart default or none.
+- `mapartValidBackground(c)` Allowed map colour for `c` (default if null).
+
 ## Mapart (V2_2)
 - `syncMapartPalette(force)` Enters/leaves the locked map palette (stash and restore the previous one); `force` rebuilds after a staircase change.
 - `updateMapartPaletteUI()` Shows the staircase row, hint and live off-shade count; hides picker-related rows.

@@ -86,6 +86,12 @@
         .layer-canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; display: block; pointer-events: none; }
         .layer-canvas.reference-canvas { image-rendering: auto; }
         #palette.mapart-locked .delete-badge { display: none !important; }
+        /* Background fill swatches (roadmap 9). .bg-none = no background (checker). */
+        .bg-swatch { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 8px; border: 2px solid #555; box-sizing: border-box; }
+        .bg-swatch.bg-none, .bg-mini.bg-none { background-color: #fff; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0; }
+        .bg-mini { display: inline-block; width: 18px; height: 18px; border-radius: 4px; border: 1px solid #888; box-sizing: border-box; }
+        #bgPickHint { font-size: 11px; color: #74c7ec; text-align: center; padding: 2px 4px 6px; }
+        #palette.bg-picking .swatch { outline: 2px dashed #74c7ec; outline-offset: 1px; }
         #mapartStaircaseOffBox { font-size: 11px; color: #ccc; text-align: center; padding: 6px 4px; }
         #mapartStaircaseOffBox .row { margin-top: 6px; }
         #mapartPaletteHint { font-size: 10px; color: #999; text-align: center; padding: 2px 4px 4px; }
@@ -1186,6 +1192,13 @@
                     <div class="row"><button class="btn" onclick="uiAction(()=>resolveMapartStaircaseOff('cancel'))">CANCEL</button></div>
                 </div>
             </div>
+            <div class="panel-subtitle">BACKGROUND</div>
+            <div class="row" id="bgRow" style="align-items:center;">
+                <div id="bgSwatchColours" class="bg-swatch bg-none"></div>
+                <button id="bgPickBtn" class="btn" onclick="uiAction(toggleBackgroundPickMode)">PICK FROM SWATCHES</button>
+                <button id="bgNoneBtn" class="btn btn-small" onclick="uiAction(() => setBackgroundColor(null, true))">NONE</button>
+            </div>
+            <div id="bgPickHint" style="display:none;">Tap a swatch to make it the background</div>
             <button id="paletteDoneBtn" class="layers-done-btn" style="display:none;" onclick="uiAction(exitSwatchEditMode)">✓ DONE REARRANGING</button>
             <div id="palette">
                 <div class="swatch-wrapper" id="transparencyWrapper">
@@ -1248,6 +1261,7 @@
                     <button class="layers-icon-btn" onclick="uiAction(() => { traceLog('+ REFERENCE button pressed, opening file picker'); refInput.click(); })"><span>🌄</span>Reference</button>
                     <button class="layers-icon-btn" onclick="uiAction(addMaskLayer)"><span>🎭</span>Mask</button>
                     <button class="layers-icon-btn" onclick="uiAction(addClipLayer)"><span>✂️</span>Clip</button>
+                    <button class="layers-icon-btn" id="layersBgBtn" onclick="uiAction(openBackgroundPickerFromLayers)"><span id="layersBgSwatch" class="bg-mini bg-none"></span>Background</button>
                     <button class="layers-icon-btn" id="thumbSizeToggleBtn" onclick="uiAction(toggleLayerThumbSize)"><span>🔎</span>Big thumbs</button>
                 </div>
                 <div class="row" id="layerSelectionActions" style="display:none; flex-wrap:wrap;"><button class="layers-done-btn" id="layerSelectionDoneBtn" onclick="uiAction(toggleLayerSelectionMode)">✓ DONE</button><div id="selectionCount" class="selection-count">0 selected</div>
@@ -2291,6 +2305,96 @@ function mapartAllowedHexes() {
     mapartAllowedLab = out.map(hx => mapartLab(parseInt(hx.slice(1, 3), 16), parseInt(hx.slice(3, 5), 16), parseInt(hx.slice(5, 7), 16)));
     return out;
 }
+// ── Background fill (roadmap 9) ───────────────────────────
+// Document-level colour (like gridW/profile), not a layer. null = none
+// (transparent, checker shows). Live view: #backgroundFill div, first
+// child of #container so every layer paints over it. Exports (PNG,
+// spritesheet, gallery PNG, thumbnails) draw it first via
+// flattenTreeToCanvas's bg argument. Tools (bucket sample-all,
+// eyedropper, resize screen) never see it: empty pixels stay empty.
+// Mapart always has one, snapped to the allowed map colours; default is
+// white carpet's normal shade. Saved per project as backgroundColor.
+const MAPART_DEFAULT_BACKGROUND = '#DCDCDC';
+let backgroundColor = null;
+let backgroundPickMode = false;
+let backgroundPickReturnPanel = null;
+// New project / import: Mapart starts on white carpet, others with none.
+function resetBackgroundForNewProject() {
+    backgroundPickMode = false; backgroundPickReturnPanel = null;
+    backgroundColor = selectedProfile === 'mapart' ? MAPART_DEFAULT_BACKGROUND : null;
+    updateBackgroundFill();
+    updateBackgroundUI();
+}
+// Mapart's rule for the background: never none, always an allowed colour.
+function mapartValidBackground(c) {
+    if (!c) return MAPART_DEFAULT_BACKGROUND;
+    const up = String(c).toUpperCase();
+    const allowed = new Set(mapartAllowedHexes());
+    if (allowed.has(up)) return up;
+    const flat = mapartFlatOf.get(up);
+    if (flat && allowed.has(flat)) return flat;
+    return mapartSnapColor(up) || MAPART_DEFAULT_BACKGROUND;
+}
+// Sets the background. record = push one undo step (user changes only).
+function setBackgroundColor(c, record) {
+    let next = c ? String(c).toUpperCase() : null;
+    if (selectedProfile === 'mapart') next = mapartValidBackground(next);
+    const prev = backgroundColor;
+    backgroundColor = next;
+    if (record && prev !== next) pushUndo({ type: 'background', before: prev, after: next });
+    exitBackgroundPickMode();
+    updateBackgroundFill();
+    updateBackgroundUI();
+}
+// Live-view fill under every layer. Recreated if #container was emptied.
+function updateBackgroundFill() {
+    if (!container) return;
+    let el = document.getElementById('backgroundFill');
+    if (!backgroundColor) { if (el) el.style.display = 'none'; return; }
+    if (!el) { el = document.createElement('div'); el.id = 'backgroundFill'; el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;'; }
+    if (el.parentNode !== container || container.firstChild !== el) container.insertBefore(el, container.firstChild);
+    el.style.display = 'block';
+    el.style.width = (gridW * scale) + 'px';
+    el.style.height = (gridH * scale) + 'px';
+    el.style.background = backgroundColor;
+}
+// Keeps the Colours and Layers background controls in step.
+function updateBackgroundUI() {
+    ['bgSwatchColours', 'layersBgSwatch'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('bg-none', !backgroundColor);
+        el.style.background = backgroundColor || '';
+    });
+    const none = document.getElementById('bgNoneBtn');
+    if (none) none.style.display = selectedProfile === 'mapart' ? 'none' : '';
+    const pick = document.getElementById('bgPickBtn');
+    if (pick) { pick.textContent = backgroundPickMode ? 'CANCEL' : 'PICK FROM SWATCHES'; pick.classList.toggle('active', backgroundPickMode); }
+    const hint = document.getElementById('bgPickHint');
+    if (hint) hint.style.display = backgroundPickMode ? '' : 'none';
+    const pal = document.getElementById('palette');
+    if (pal) pal.classList.toggle('bg-picking', backgroundPickMode);
+}
+// While on, the next swatch tap sets the background instead of the drawing colour.
+function toggleBackgroundPickMode() {
+    if (backgroundPickMode) { exitBackgroundPickMode(); return; }
+    backgroundPickMode = true;
+    updateBackgroundUI();
+}
+function exitBackgroundPickMode() {
+    const wasPicking = backgroundPickMode;
+    backgroundPickMode = false;
+    updateBackgroundUI();
+    if (wasPicking && backgroundPickReturnPanel) { const back = backgroundPickReturnPanel; backgroundPickReturnPanel = null; openPanel(back); }
+    else backgroundPickReturnPanel = null;
+}
+// Layers drawer's Background button: pick in Colours, then come back.
+function openBackgroundPickerFromLayers() {
+    openPanel('colors');
+    backgroundPickMode = true;
+    backgroundPickReturnPanel = 'layers';
+    updateBackgroundUI();
+}
 function mapartResetPaletteCache() { mapartAllowed = null; mapartAllowedSet = null; mapartAllowedLab = null; mapartSnapCache.clear(); }
 function mapartSnapRGB(r, g, b) {
     const key = (r << 16) | (g << 8) | b;
@@ -2367,6 +2471,8 @@ function syncMapartPalette(force) {
             try { replaceVisiblePalette(mapartAllowedHexes()); } finally { mapartBuildingPalette = false; }
         }
         if (pal) pal.classList.add('mapart-locked');
+        const bg = mapartValidBackground(backgroundColor);
+        if (bg !== backgroundColor) { backgroundColor = bg; updateBackgroundFill(); }
     } else if (mapartPaletteActive) {
         mapartPaletteActive = false;
         mapartKeptOffShade = false;
@@ -2376,6 +2482,7 @@ function syncMapartPalette(force) {
         replaceVisiblePalette(back);
     }
     updateMapartPaletteUI();
+    updateBackgroundUI();
 }
 function updateMapartPaletteUI() {
     const on = selectedProfile === 'mapart';
@@ -3551,6 +3658,7 @@ function togglePanel(name) {
 // Shows one floating panel and hides the others. Sets openPanelName BEFORE running any panel-specific setup, so an error building panel contents can't strand the panel-switching state.
 function openPanel(name) {
     if (isConfirmingClear) cancelClear();
+    if (backgroundPickMode && name !== 'colors') { backgroundPickMode = false; backgroundPickReturnPanel = null; updateBackgroundUI(); }
     if (drawerOpenName !== 'debug') closeDrawer();
     document.querySelectorAll('.floating-panel').forEach(p => p.classList.remove('open'));
     document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
@@ -3576,6 +3684,7 @@ function closePanel() {
     document.getElementById('panelBackdrop').classList.remove('open');
     openPanelName = null;
     exitSwatchEditMode();
+    if (backgroundPickMode) { backgroundPickReturnPanel = null; exitBackgroundPickMode(); }
 }
 
 /* ============================================================
@@ -4541,6 +4650,7 @@ function newCanvasCreation() {
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
     setGridLines(false);
+    resetBackgroundForNewProject();
     zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
     scale = ZOOM_STEPS[zoomIndex];
     layoutAll();
@@ -5095,6 +5205,7 @@ function layoutAll() {
     updateRotationFab();
     updateUndoRedoFabs();
     updateGridOverlay();
+    updateBackgroundFill();
     updateVectorHandles();
     // canvasWrap has generous padding (set in JS, see updateCanvasWrapPadding)
     // so the canvas can be panned to a corner even when zoomed out small --
@@ -6815,7 +6926,7 @@ function exportSpritesheet() {
     const sheet = document.createElement('canvas');
     sheet.width = gridW * frames.length; sheet.height = gridH;
     const sctx = sheet.getContext('2d');
-    frames.forEach((f, i) => sctx.drawImage(flattenLayersToCanvas(f.layerTree), i * gridW, 0));
+    frames.forEach((f, i) => sctx.drawImage(flattenLayersToCanvas(f.layerTree, backgroundColor), i * gridW, 0));
     const link = document.createElement('a');
     link.download = 'spritesheet.png';
     link.href = sheet.toDataURL();
@@ -6964,6 +7075,7 @@ function applyHistoryEntry(entry, forward) {
         );
     }
     else if(entry.type==='canvasResize') restoreCanvasResizeState(forward?entry.after:entry.before);
+    else if(entry.type==='background') { backgroundColor=forward?entry.after:entry.before; updateBackgroundFill(); updateBackgroundUI(); }
     else if(entry.type==='pixelsMulti') { entry.entries.forEach(e=>applyPixelDelta(e,forward)); refreshHookedComposites(); }
     else if(entry.type==='selection') setSelectionRaw(forward?(entry.afterMask?entry.afterMask.slice():null):(entry.beforeMask?entry.beforeMask.slice():null),forward?(entry.afterCount||0):(entry.beforeCount||0),forward?(entry.afterRect?{...entry.afterRect}:null):(entry.beforeRect?{...entry.beforeRect}:null));
     else if(entry.type==='tree') restoreTreeState(forward?entry.after:entry.before);
@@ -8770,6 +8882,12 @@ try { const savedGs = localStorage.getItem('pixelAppGradientNewStopColorSource')
 function saveGradientNewStopColorSource() { try { localStorage.setItem('pixelAppGradientNewStopColorSource', gradientNewStopColorSource); } catch(e) {} }
 // Selects a colour (or transparency) as the current drawing colour.
 function handleSwatchClick(c, isT = false) {
+    if (backgroundPickMode) {
+        // Transparent swatch = "no background" (Mapart can't have none, so it just cancels).
+        if (isT) { if (selectedProfile === 'mapart') exitBackgroundPickMode(); else setBackgroundColor(null, true); }
+        else setBackgroundColor(c, true);
+        return;
+    }
     selectedColor = isT ? null : c;
     if (!isT && c) {
         lastNonTransparentColor = c;
@@ -8950,11 +9068,13 @@ function applyCanvasSizeToolGating() {
 // don't exist at all. This is the actual general-purpose entry point;
 // flattenGroupSubtreeToCanvas() is now a thin wrapper over this for its
 // own recursive nested-group case.
-function flattenTreeToCanvas(nodes, gW, gH, smoothing) {
+function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg) {
     const out = document.createElement('canvas');
     out.width = gW; out.height = gH;
     const octx = out.getContext('2d');
     if (smoothing === false) octx.imageSmoothingEnabled = false;
+    // Background fill (export paths only; nested group calls never pass it).
+    if (bg) { octx.fillStyle = bg; octx.fillRect(0, 0, gW, gH); }
     // Walks a node array (a group's children, or the top-level layerTree)
     // left-to-right (bottom-to-top in stacking order, matching the
     // existing flat-array convention every other render path already
@@ -10690,8 +10810,9 @@ function activeLayerHasLiveHook() {
 // Takes a layerTree array, NOT a flat layers array (V1_39 fix -- see
 // flattenTreeToCanvas's doc comment for why: a flat array has no group
 // boundaries, so a group's own blendMode was previously unreachable here).
-function flattenLayersToCanvas(layerTree) {
-    return flattenTreeToCanvas(layerTree, gridW, gridH);
+// bg: pass backgroundColor for exports; tools leave it out.
+function flattenLayersToCanvas(layerTree, bg) {
+    return flattenTreeToCanvas(layerTree, gridW, gridH, undefined, bg);
 }
 // Shorthand for flattenLayersToCanvas() on the current frame's layer tree.
 function flattenToCanvas() { return flattenLayersToCanvas(frames[activeFrameIndex].layerTree); }
@@ -10936,6 +11057,7 @@ function importAsNewProjectFromImage(img, file) {
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
     setGridLines(false);
+    resetBackgroundForNewProject();
     pendingImportKind = 'pixel';
     zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
     scale = ZOOM_STEPS[zoomIndex];
@@ -11003,7 +11125,7 @@ function setupImportImageInput() {
 
 // Flattens the current frame to PNG and triggers a file download.
 function saveImage() {
-    const out = flattenToCanvas();
+    const out = flattenLayersToCanvas(frames[activeFrameIndex].layerTree, backgroundColor);
     const link = document.createElement('a');
     link.download = ((currentProjectName || 'pixel').trim() || 'pixel') + '.png';
     link.href = out.toDataURL();
@@ -11012,7 +11134,7 @@ function saveImage() {
 
 async function copyToClipboard() {
     try {
-        const out = flattenToCanvas();
+        const out = flattenLayersToCanvas(frames[activeFrameIndex].layerTree, backgroundColor);
         out.toBlob(async (blob) => {
             const item = new ClipboardItem({ "image/png": blob });
             await navigator.clipboard.write([item]);
@@ -11075,7 +11197,8 @@ function currentProjectSaveData(name) {
         portraitActiveTileKey,
         portraitTileIsolation: selectedProfile === 'portrait' && !!portraitTileIsolation,
         mapartStaircase: selectedProfile === 'mapart' ? !!mapartStaircase : undefined,
-        gridLines: !!showGridLines
+        gridLines: !!showGridLines,
+        backgroundColor: backgroundColor || null
     };
 }
 function downloadProjectData(data, fileBase) {
@@ -11186,6 +11309,8 @@ function openProjectFromSaveData(data, opts, onDone) {
             mapartStaircase = selectedProfile === 'mapart' && !!data.mapartStaircase;
             mapartKeptOffShade = false;
             showGridLines = !!data.gridLines;
+            backgroundPickMode = false; backgroundPickReturnPanel = null;
+            backgroundColor = data.backgroundColor ? String(data.backgroundColor).toUpperCase() : null;
             lastEnteredProfile = selectedProfile;
             frames = built;
             activeFrameIndex = Math.min(data.activeFrameIndex || 0, frames.length - 1);
@@ -11207,6 +11332,7 @@ function openProjectFromSaveData(data, opts, onDone) {
             if (selectedProfile === 'portrait') { updatePortraitTileOverlay(); updatePortraitTileControls(); }
             setGridLines(showGridLines);
             syncMapartPalette(selectedProfile === 'mapart');
+            updateBackgroundFill(); updateBackgroundUI();
             updateColorPickerAvailability();
             updateToolVisibility();
             currentProjectId = opts.projectId != null ? opts.projectId : null;
@@ -11515,7 +11641,7 @@ let galleryCtxTargetId = null; // which project the context menu is open for
 let galleryRenameTargetId = null;
 
 // ── Thumbnail generation ────────────────────────────────────
-function generateThumbnailDataURL(framesArr, gW, gH) {
+function generateThumbnailDataURL(framesArr, gW, gH, bg) {
     try {
         const size = 200;
         const out = document.createElement('canvas');
@@ -11523,7 +11649,7 @@ function generateThumbnailDataURL(framesArr, gW, gH) {
         const ctx = out.getContext('2d');
         ctx.imageSmoothingEnabled = false;
         // Use frame 0 as the thumbnail source
-        const src = galleryFlattenLayers(ensureFrameLayerTree(framesArr[0]), gW, gH);
+        const src = galleryFlattenLayers(ensureFrameLayerTree(framesArr[0]), gW, gH, bg);
         const ratio = Math.min(size / gW, size / gH);
         const dw = Math.round(gW * ratio);
         const dh = Math.round(gH * ratio);
@@ -11537,8 +11663,8 @@ function generateThumbnailDataURL(framesArr, gW, gH) {
 // Flatten helper for gallery thumbnails/export (accepts explicit w/h).
 // Takes a layerTree array, NOT a flat layers array (V1_39 fix -- same
 // reasoning as flattenLayersToCanvas above).
-function galleryFlattenLayers(layerTree, gW, gH) {
-    return flattenTreeToCanvas(layerTree, gW || gridW, gH || gridH, false);
+function galleryFlattenLayers(layerTree, gW, gH, bg) {
+    return flattenTreeToCanvas(layerTree, gW || gridW, gH || gridH, false, bg);
 }
 
 // ── Save current editor state into the store ────────────────
@@ -11547,7 +11673,7 @@ function galleryFlattenLayers(layerTree, gW, gH) {
 function saveCurrentStateToStore(existingId, nameOverride) {
     const name = nameOverride || currentProjectName || ('Untitled ' + (projectStore.length + 1));
     const data = currentProjectSaveData(name);
-    const meta = { id: existingId || newProjectId(), name, gridW, gridH, profile: selectedProfile, thumbnailDataURL: generateThumbnailDataURL(frames, gridW, gridH), updatedAt: Date.now() };
+    const meta = { id: existingId || newProjectId(), name, gridW, gridH, profile: selectedProfile, thumbnailDataURL: generateThumbnailDataURL(frames, gridW, gridH, backgroundColor), updatedAt: Date.now() };
     const idx = existingId ? projectStore.findIndex(p => p.id === existingId) : -1;
     if (idx !== -1) projectStore[idx] = meta; else projectStore.unshift(meta);
     persistProject(meta, data);
@@ -11941,6 +12067,7 @@ function startNewProjectFromGallery(w, h) {
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
     setGridLines(false);
+    resetBackgroundForNewProject();
     layoutAll();
 }
 
@@ -12048,7 +12175,8 @@ document.getElementById('ctx-export').addEventListener('click', () => {
                 gridW = data.gridW; gridH = data.gridH;
                 const f = built[Math.min(data.activeFrameIndex || 0, built.length - 1)];
                 f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); });
-                const out = galleryFlattenLayers(f.layerTree, gridW, gridH);
+                const bg = data.backgroundColor !== undefined ? data.backgroundColor : (data.profile === 'mapart' ? MAPART_DEFAULT_BACKGROUND : null);
+                const out = galleryFlattenLayers(f.layerTree, gridW, gridH, bg);
                 const link = document.createElement('a');
                 link.download = (proj.name || 'pixel') + '.png';
                 link.href = out.toDataURL();
