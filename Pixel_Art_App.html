@@ -460,7 +460,6 @@
         .thumb-privacy-row .tp-val { flex: 0 0 38px; font-size: 12px; color: #aaa; text-align: right; }
         #thumb-privacy-reset-btn { background: #2a2a2a; color: #aaa; }
         #thumb-privacy-done-btn { background: #0078d4; color: #fff; }
-        .gallery-card .thumb-wrap.thumb-hidden { display: flex; align-items: center; justify-content: center; background: #26262b; font-size: 34px; color: #555; }
 
         /* Canvas resize sheet */
         #resize-canvas-modal {
@@ -12195,10 +12194,9 @@ function renderGallery() {
         thumbWrap.className = 'thumb-wrap checkerboard-bg';
         applyCheckerProfile(thumbWrap, checkerSettings.canvas, 'canvas'); // gallery cards always mirror the canvas profile, not an independent selection
         if (proj.thumbHidden) {
-            // Screen privacy: plain tile, image not shown (still stored).
-            thumbWrap.className = 'thumb-wrap thumb-hidden';
-            thumbWrap.style.cssText = '';
-            thumbWrap.textContent = '\u{1F648}';
+            // Screen privacy: no thumbnail area at all, the card is just the
+            // name strip (rounded by the card itself). Image still stored.
+            card.classList.add('thumb-hidden-card');
         } else if (proj.thumbnailDataURL) {
             const img = document.createElement('img');
             img.loading = 'lazy'; img.decoding = 'async'; // off-screen thumbnails don't decode, so a large gallery stays light
@@ -12211,7 +12209,7 @@ function renderGallery() {
         info.innerHTML = '<div class="card-name">' + escapeHtml(proj.name) + '</div>' +
                          '<div class="card-dims">' + proj.gridW + ' \u00D7 ' + proj.gridH + 'px &middot; ' + (proj.profile || 'standard') + '</div>';
 
-        card.appendChild(thumbWrap);
+        if (!proj.thumbHidden) card.appendChild(thumbWrap);
         card.appendChild(info);
 
         // Single tap = open

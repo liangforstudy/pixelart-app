@@ -617,7 +617,7 @@ async def test_gallery_thumbnail_privacy(pg):
     await pg.evaluate("() => closeGalleryCtxMenu()")
     await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", pid)
     await pg.locator('#ctx-thumb-hide').click(); await pg.wait_for_timeout(600)
-    check('thumb privacy: hidden card shows no image, just the name', await pg.evaluate("(id) => { const c = document.querySelector('.gallery-card[data-id=\"' + id + '\"]'); return !!c.querySelector('.thumb-wrap.thumb-hidden') && !c.querySelector('img') && !!c.querySelector('.card-name'); }", pid))
+    check('thumb privacy: hidden card is just the name strip (no thumbnail area, rounded card)', await pg.evaluate("(id) => { const c = document.querySelector('.gallery-card[data-id=\"' + id + '\"]'); return c.classList.contains('thumb-hidden-card') && !c.querySelector('.thumb-wrap') && !c.querySelector('img') && !!c.querySelector('.card-name') && getComputedStyle(c).borderTopLeftRadius === '12px'; }", pid))
     check('thumb privacy: the stored image is kept (screen privacy only)', await pg.evaluate("(id) => { const p = projectStore.find(q => q.id === id); return p.thumbHidden === true && p.thumbnailDataURL.length > 100; }", pid))
     await pg.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await pg.wait_for_timeout(600)
     await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(600)
