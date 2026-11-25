@@ -277,6 +277,7 @@
 - `saveImage()` Flattens the current canvas to a single composited image.
 - `scheduleHookedCompositeRefresh()` Debounces mask/clip composite refreshes to at most once per animation frame.
 - `setLogToggle(kind, on)` Sets one of the three Debug-log capture flags by name.
+- `setGridLines(on)` Sets `showGridLines`, syncs `#gridToggleBtn`, redraws the overlay. Called on project open (saved `gridLines`) and new project/import (off).
 - `setPenWidth(v)` Sets the vector Pen tool's stroke width and updates its label.
 - `setupDigitKeyboardAdvance(root)` Wires a container of digit `<select>` elements.
 - `setupDrawingEvents()` The canvas gesture engine: one shared state object for pointer/touch drawing, tools, two-finger pan/zoom/rotate, selection transforms.
@@ -295,7 +296,7 @@
 - `stampResizedBuffer(layer, buf, sel)` Writes an already-resampled buffer into the layer at sel (bulkPixelWrite).
 - `startHold(callback)` Arms a 600ms long-press timer that calls `callback` if not cancelled first.
 - `startSpriteAnimLoop()` Starts the PMD sprite editor's playback `requestAnimationFrame` loop.
-- `toggleGridLines()` Flips the pixel-grid overlay on/off, updates the toggle button's text/active state.
+- `toggleGridLines()` Flips the grid overlay on/off via `setGridLines`.
 - `toggleLineExtendMode()` Toggles Extend Line mode; entering it also turns off vertex-delete mode.
 - `togglePlay()` Toggles flipbook-frame playback: clears any existing playback interval, and if now playing.
 - `toggleSelectedVisibility()` Toggles visibility for every root-selected node at once.
@@ -304,7 +305,7 @@
 - `transformActive()` Returns whether transform mode is currently active on a Reference layer specifically.
 - `uiAction(fn)` The shared wrapper nearly every button's tap handler goes through.
 - `updateCanvasWrapPadding()` Sizes the canvas wrapper's padding to a full viewport-dimension on each side.
-- `updateGridOverlay()` Shows/updates the pixel-grid overlay (a repeating CSS `linear-gradient` background sized.
+- `updateGridOverlay()` Redraws `#gridOverlay`: pixel lines (CSS gradient, 4x+), and in Mapart `.grid-chunk-line` (16 px, 0.5x+) and `.grid-map-line` (128 px, red, always) divs.
 - `updateRotationFab()` Shows the reset-rotation FAB when cameraRotation is 3+ degrees off square.
 - `updateRotationLabel()` Writes cameraRotation (0-359) to `#rotationLabel`.
 - `updateSpriteAnimDirectionGrid()` Rebuilds the PMD editor's direction-selector grid: for the standard 8-row case.

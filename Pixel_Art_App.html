@@ -1031,9 +1031,6 @@
 
         <div class="side-drawer left" id="toolsDrawer">
             <div class="panel-title">Tools</div>
-            <div class="row">
-                <button class="btn" id="gridToggleBtn" onclick="uiAction(toggleGridLines)">▦ GRID LINES: OFF</button>
-            </div>
             <div class="row" id="toolRow-utility"></div>
             <div id="pixelToolsSection">
 <div class="row" id="toolRow-raster1"></div>
@@ -1169,6 +1166,10 @@
             </div>
             <div class="row">
                 <button class="btn" onclick="uiAction(resetCanvasRotation)">↩️ RESET ROTATION</button>
+            </div>
+            <div class="panel-subtitle">Grid</div>
+            <div class="row">
+                <button class="btn" id="gridToggleBtn" onclick="uiAction(toggleGridLines)">▦ GRID LINES: OFF</button>
             </div>
         </div>
 
@@ -1473,7 +1474,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_2';
+const BUILD_VERSION = 'V2_3';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -4539,6 +4540,7 @@ function newCanvasCreation() {
 
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
+    setGridLines(false);
     zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
     scale = ZOOM_STEPS[zoomIndex];
     layoutAll();
@@ -5557,29 +5559,67 @@ function toggleLineExtendMode() {
     updateVectorHandles();
 }
 
-// Redraws the pixel-grid overlay (a 1px line between each grid cell) to
-// match the current size/zoom. Hidden below 4x zoom, since at low zoom
-// the lines would be denser than the pixels themselves and just look
-// like a solid haze rather than a useful grid.
+// Redraws the grid overlay to match the current size/zoom. Three levels:
+//  - pixel lines: faint 1px grey between cells (CSS gradient), hidden
+//    below 4x zoom where they'd just be a haze;
+//  - chunk lines (mapart only): 2px dark grey every 16px, hidden once a
+//    chunk is under 8 screen px (zoom < 0.5x);
+//  - map lines (mapart only): 3px red every 128px, never hidden, since a
+//    7x7 mapart only fits on screen below 1x.
+// Chunk/map lines are real divs at Math.round(k*step*scale) rather than
+// a gradient, so they stay crisp at fractional zooms (gradient tiles
+// blur and drift there). Counted from the canvas top-left; map borders
+// always land on chunk borders (128 = 8x16). Overlay only: never part of
+// the artwork or exports. On/off is saved per project (gridLines).
+const GRID_CHUNK_PX = 16, GRID_MAP_PX = 128;
 function updateGridOverlay() {
     const el = document.getElementById('gridOverlay');
     if (!el) return;
-    if (!showGridLines || scale < 4) { el.style.display = 'none'; return; }
+    const mapart = selectedProfile === 'mapart';
+    const showPixel = showGridLines && scale >= 4;
+    const showChunk = showGridLines && mapart && GRID_CHUNK_PX * scale >= 8;
+    const showMap = showGridLines && mapart;
+    el.innerHTML = '';
+    if (!showPixel && !showChunk && !showMap) { el.style.display = 'none'; el.style.backgroundImage = 'none'; return; }
+    const W = gridW * scale, H = gridH * scale;
     el.style.display = 'block';
-    el.style.width = (gridW * scale) + 'px';
-    el.style.height = (gridH * scale) + 'px';
-    el.style.backgroundImage =
-        'linear-gradient(to right, rgba(128,128,128,0.5) 1px, transparent 1px), ' +
-        'linear-gradient(to bottom, rgba(128,128,128,0.5) 1px, transparent 1px)';
-    el.style.backgroundSize = scale + 'px ' + scale + 'px';
+    el.style.width = W + 'px';
+    el.style.height = H + 'px';
+    if (showPixel) {
+        el.style.backgroundImage =
+            'linear-gradient(to right, rgba(128,128,128,0.5) 1px, transparent 1px), ' +
+            'linear-gradient(to bottom, rgba(128,128,128,0.5) 1px, transparent 1px)';
+        el.style.backgroundSize = scale + 'px ' + scale + 'px';
+    } else {
+        el.style.backgroundImage = 'none';
+    }
+    const frag = document.createDocumentFragment();
+    const addLines = (step, thick, color, cls) => {
+        for (let x = step; x < gridW; x += step) {
+            const d = document.createElement('div'); d.className = cls;
+            d.style.cssText = 'position:absolute;top:0;height:' + H + 'px;width:' + thick + 'px;left:' + (Math.round(x * scale) - thick / 2) + 'px;background:' + color + ';';
+            frag.appendChild(d);
+        }
+        for (let y = step; y < gridH; y += step) {
+            const d = document.createElement('div'); d.className = cls;
+            d.style.cssText = 'position:absolute;left:0;width:' + W + 'px;height:' + thick + 'px;top:' + (Math.round(y * scale) - thick / 2) + 'px;background:' + color + ';';
+            frag.appendChild(d);
+        }
+    };
+    // Chunk lines first so map lines paint over them where they coincide.
+    if (showChunk) addLines(GRID_CHUNK_PX, 2, 'rgba(48,48,48,0.9)', 'grid-chunk-line');
+    if (showMap) addLines(GRID_MAP_PX, 3, '#e53935', 'grid-map-line');
+    el.appendChild(frag);
 }
-// Flips the pixel-grid overlay on/off and redraws it to match.
-function toggleGridLines() {
-    showGridLines = !showGridLines;
+// Sets the grid on/off, syncs the View panel button and redraws.
+function setGridLines(on) {
+    showGridLines = !!on;
     const btn = document.getElementById('gridToggleBtn');
-    if (btn) { btn.innerText = '\u25A6 GRID LINES: ' + (showGridLines ? 'ON' : 'OFF'); btn.classList.toggle('active', showGridLines); }
+    if (btn) { btn.innerText = '▦ GRID LINES: ' + (showGridLines ? 'ON' : 'OFF'); btn.classList.toggle('active', showGridLines); }
     updateGridOverlay();
 }
+// Flips the grid overlay on/off (pixel lines, plus chunk/map lines in mapart).
+function toggleGridLines() { setGridLines(!showGridLines); }
 // Updates the degree readout in the View panel to match cameraRotation.
 function updateRotationLabel() {
     const el = document.getElementById('rotationLabel');
@@ -10895,6 +10935,7 @@ function importAsNewProjectFromImage(img, file) {
     setActiveLayer(0);
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
+    setGridLines(false);
     pendingImportKind = 'pixel';
     zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
     scale = ZOOM_STEPS[zoomIndex];
@@ -11033,7 +11074,8 @@ function currentProjectSaveData(name) {
         portraitTilePalettes: selectedProfile === 'portrait' ? Object.fromEntries(portraitTilePalettes) : null,
         portraitActiveTileKey,
         portraitTileIsolation: selectedProfile === 'portrait' && !!portraitTileIsolation,
-        mapartStaircase: selectedProfile === 'mapart' ? !!mapartStaircase : undefined
+        mapartStaircase: selectedProfile === 'mapart' ? !!mapartStaircase : undefined,
+        gridLines: !!showGridLines
     };
 }
 function downloadProjectData(data, fileBase) {
@@ -11143,6 +11185,7 @@ function openProjectFromSaveData(data, opts, onDone) {
             portraitTileIsolation = selectedProfile === 'portrait' && !!data.portraitTileIsolation;
             mapartStaircase = selectedProfile === 'mapart' && !!data.mapartStaircase;
             mapartKeptOffShade = false;
+            showGridLines = !!data.gridLines;
             lastEnteredProfile = selectedProfile;
             frames = built;
             activeFrameIndex = Math.min(data.activeFrameIndex || 0, frames.length - 1);
@@ -11162,6 +11205,7 @@ function openProjectFromSaveData(data, opts, onDone) {
             renderLayersPanel();
             renderFramesPanel();
             if (selectedProfile === 'portrait') { updatePortraitTileOverlay(); updatePortraitTileControls(); }
+            setGridLines(showGridLines);
             syncMapartPalette(selectedProfile === 'mapart');
             updateColorPickerAvailability();
             updateToolVisibility();
@@ -11896,6 +11940,7 @@ function startNewProjectFromGallery(w, h) {
     setActiveLayer(0);
     document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
     lastEnteredProfile = selectedProfile;
+    setGridLines(false);
     layoutAll();
 }
 

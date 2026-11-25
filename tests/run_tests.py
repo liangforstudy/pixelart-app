@@ -67,7 +67,7 @@ GROUPS = {
     'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load.',
                ['test_mapart_new_canvas_in_maps', 'test_resize_sheet_no_autoselect_outside_mapart', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
-                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps']),
+                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
                 ['test_resize_from_gallery']),
 }
@@ -732,6 +732,27 @@ async def test_mapart_resize_whole_maps(pg):
     await pg.evaluate("() => applyCanvasResizeOffset(300, 140, 0, 0)")
     check('mapart resize: snapped to whole maps (2 x 1)', await pg.evaluate("() => gridW === 256 && gridH === 128"), await pg.evaluate("() => [gridW, gridH]"))
     check('mapart resize: resize screen not offered', await pg.evaluate("() => !resizeScreenAllowed('mapart')"))
+
+async def test_mapart_grid_lines(pg):
+    await mapart_canvas(pg, 2, 2)
+    LINES = "() => [document.querySelectorAll('#gridOverlay .grid-chunk-line').length, document.querySelectorAll('#gridOverlay .grid-map-line').length, getComputedStyle(document.getElementById('gridOverlay')).display]"
+    check('grid: button lives in the View panel, off by default', await pg.evaluate("() => !!document.querySelector('#panel-view #gridToggleBtn') && !document.querySelector('#toolsDrawer #gridToggleBtn') && showGridLines === false"))
+    await pg.evaluate("() => { toggleGridLines(); zoomIndex = ZOOM_STEPS.indexOf(4); scale = 4; layoutAll(); }")
+    # 256 x 256: chunk lines at 16..240 (15 per axis), map line at 128 (1 per axis)
+    check('grid: mapart at 4x shows chunk (16px) and map (128px) lines', await pg.evaluate(LINES) == [30, 2, 'block'], await pg.evaluate(LINES))
+    check('grid: map line is red at x = 128 * scale', await pg.evaluate("() => { const d = document.querySelector('#gridOverlay .grid-map-line'); return d.style.background.includes('229, 57, 53') && parseFloat(d.style.left) + 1.5 === 512; }"))
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(0.35); scale = 0.35; layoutAll(); }")
+    check('grid: at 0.35x chunk and pixel lines hide, map lines stay', await pg.evaluate(LINES) == [0, 2, 'block'] and await pg.evaluate("() => document.getElementById('gridOverlay').style.backgroundImage === 'none'"), await pg.evaluate(LINES))
+    data = await pg.evaluate("() => JSON.parse(JSON.stringify(currentProjectSaveData('g')))")
+    check('grid: on/off saved with the project', data.get('gridLines') is True)
+    await pg.evaluate("() => setGridLines(false)")
+    await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data)
+    await pg.wait_for_timeout(300)
+    check('grid: reopening the project turns it back on', await pg.evaluate("() => showGridLines === true && document.getElementById('gridToggleBtn').innerText.includes('ON')") and (await pg.evaluate(LINES))[1] == 2)
+    await new_canvas(pg)
+    check('grid: a new project starts with the grid off', await pg.evaluate("() => showGridLines === false") and (await pg.evaluate(LINES))[2] == 'none')
+    await pg.evaluate("() => { toggleGridLines(); zoomIndex = ZOOM_STEPS.indexOf(8); scale = 8; layoutAll(); }")
+    check('grid: outside mapart only pixel lines, no chunk/map lines', (await pg.evaluate(LINES))[:2] == [0, 0] and await pg.evaluate("() => document.getElementById('gridOverlay').style.backgroundImage !== 'none'"))
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''
