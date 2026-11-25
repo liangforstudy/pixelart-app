@@ -361,6 +361,8 @@
             padding: 6px 0; min-width: 170px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.6);
             display: none;
+            /* Scrolls if it's ever taller than the visible screen (V2_5). */
+            max-height: calc(100dvh - 16px); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; box-sizing: border-box;
         }
         #gallery-ctx-menu.open { display: block; }
         .ctx-item {
@@ -12524,11 +12526,19 @@ function openGalleryCtxMenu(id, e) {
     menu.classList.add('open');
     backdrop.classList.add('open');
     // Position near the touch/click
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) || window.innerWidth / 2;
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) || window.innerHeight / 2;
-    const mw = 190, mh = 260;
-    menu.style.left = Math.min(x, window.innerWidth - mw - 8) + 'px';
-    menu.style.top = Math.min(y, window.innerHeight - mh - 8) + 'px';
+    // Measured, not assumed: the menu grew past the old fixed 260px guess
+    // and its bottom items landed under Safari's toolbar. visualViewport is
+    // the area actually visible (excludes the iOS toolbar).
+    const vv = window.visualViewport;
+    const vw = vv ? vv.width : window.innerWidth, vh = vv ? vv.height : window.innerHeight;
+    const ox = vv ? vv.offsetLeft : 0, oy = vv ? vv.offsetTop : 0;
+    menu.style.maxHeight = Math.max(120, vh - 16) + 'px';
+    const mw = menu.offsetWidth || 190, mh = menu.offsetHeight || 260;
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) || vw / 2;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) || vh / 2;
+    menu.style.left = Math.max(ox + 8, Math.min(x, ox + vw - mw - 8)) + 'px';
+    menu.style.top = Math.max(oy + 8, Math.min(y, oy + vh - mh - 8)) + 'px';
+    menu.scrollTop = 0;
 }
 function closeGalleryCtxMenu() {
     document.getElementById('gallery-ctx-menu').classList.remove('open');
