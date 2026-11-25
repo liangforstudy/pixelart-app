@@ -4098,7 +4098,15 @@ class ClipLayer extends PixelLayer {
 
 // A layer holding an imported image at any resolution, positioned/sized in
 // grid-space units (not pixels) so it can be dragged, scaled and rotated
-// freely and still render crisp at any zoom -- see layoutCSS() below.
+// freely. Guide only: never in exports (gallery thumbnails do show it).
+// V2_4: the canvas holds the image ONCE at its own resolution (capped at
+// REFERENCE_MAX_DIM) and CSS scales it, instead of redrawing into a
+// zoom-sized buffer capped at 2x the image -- that cap plus smoothing is
+// what made pixel-art references blurry when zoomed in. sampling:
+//   'auto'   -- pixelated while each image px covers >= 1 screen px
+//               (zoomed in), smooth while shrunk;
+//   'pixel'  -- always pixelated;  'smooth' -- always smoothed.
+const REFERENCE_MAX_DIM = 4096;
 class ReferenceLayer extends Layer {
     constructor(name, img) {
         super('reference', name);
@@ -4112,36 +4120,73 @@ class ReferenceLayer extends Layer {
         this.rotation = 0; // degrees, rotates around the layer's own center
         this.flipH = false;
         this.flipV = false;
-        traceLog('ReferenceLayer constructed: img=' + img.naturalWidth + '\u00D7' + img.naturalHeight + ' canvas=' + gridW + '\u00D7' + gridH + ' -> gx=' + this.gx.toFixed(2) + ' gy=' + this.gy.toFixed(2) + ' gw=' + this.gw.toFixed(2) + ' gh=' + this.gh.toFixed(2));
+        this.sampling = 'auto';
+        this.drawSource();
+        traceLog('ReferenceLayer constructed: img=' + img.naturalWidth + '×' + img.naturalHeight + ' canvas=' + gridW + '×' + gridH + ' -> gx=' + this.gx.toFixed(2) + ' gy=' + this.gy.toFixed(2) + ' gw=' + this.gw.toFixed(2) + ' gh=' + this.gh.toFixed(2));
+    }
+    // Copies the image into the canvas at its own size (once). Only an
+    // image over REFERENCE_MAX_DIM is shrunk (smoothly) to stay under
+    // mobile canvas limits.
+    drawSource() {
+        const nw = this.image.naturalWidth || 1, nh = this.image.naturalHeight || 1;
+        const k = Math.min(1, REFERENCE_MAX_DIM / Math.max(nw, nh));
+        const w = Math.max(1, Math.round(nw * k)), h = Math.max(1, Math.round(nh * k));
+        if (this.el.width !== w || this.el.height !== h) { this.el.width = w; this.el.height = h; }
+        this.ctx.clearRect(0, 0, w, h);
+        this.ctx.imageSmoothingEnabled = k < 1;
+        try { this.ctx.drawImage(this.image, 0, 0, w, h); }
+        catch (err) { console.error('ReferenceLayer drawImage failed:', err && err.message); }
+    }
+    // True when the current zoom shows it pixelated (see sampling above).
+    isPixelated() {
+        if (this.sampling === 'pixel') return true;
+        if (this.sampling === 'smooth') return false;
+        const dpr = window.devicePixelRatio || 1;
+        return (this.gw * scale * dpr) / (this.image.naturalWidth || 1) >= 1;
     }
     layoutCSS() {
-        const dpr = window.devicePixelRatio || 1;
         this.el.style.left = (this.gx * scale) + 'px';
         this.el.style.top = (this.gy * scale) + 'px';
         this.el.style.width = (this.gw * scale) + 'px';
         this.el.style.height = (this.gh * scale) + 'px';
         this.el.style.transform = 'rotate(' + (this.rotation || 0) + 'deg) scaleX(' + (this.flipH ? -1 : 1) + ') scaleY(' + (this.flipV ? -1 : 1) + ')';
         this.el.style.transformOrigin = 'center center';
-        // Cap the actual pixel buffer size: there's no visible benefit
-        // rendering past ~2x the source image's own resolution, and going
-        // much higher risks exceeding mobile browsers' canvas size limits
-        // -- which don't error, they just silently stop rendering (this is
-        // exactly what was happening at high zoom). MAX_DIM is a safe
-        // ceiling across current iOS/Android browsers.
-        const MAX_DIM = 4096;
-        const rawW = this.gw * scale * dpr;
-        const rawH = this.gh * scale * dpr;
-        const capW = Math.min(MAX_DIM, Math.max(this.image.naturalWidth * 2, 64));
-        const capH = Math.min(MAX_DIM, Math.max(this.image.naturalHeight * 2, 64));
-        this.el.width = Math.max(1, Math.round(Math.min(rawW, capW)));
-        this.el.height = Math.max(1, Math.round(Math.min(rawH, capH)));
-        this.ctx.clearRect(0, 0, this.el.width, this.el.height);
-        try {
-            this.ctx.drawImage(this.image, 0, 0, this.el.width, this.el.height);
-        } catch (err) {
-            console.error('ReferenceLayer drawImage failed:', err && err.message);
-        }
-        traceLog('ReferenceLayer.layoutCSS: canvasPx=' + this.el.width + '\u00D7' + this.el.height + ' cssPx=' + this.el.style.width + '/' + this.el.style.height + ' visible=' + this.visible + ' opacity=' + this.opacity);
+        this.el.style.imageRendering = this.isPixelated() ? 'pixelated' : 'auto';
+    }
+    // 1 image px = 1 canvas px, snapped to whole cells, centred.
+    setActualSize() {
+        this.gw = this.image.naturalWidth; this.gh = this.image.naturalHeight;
+        this.gx = Math.round((gridW - this.gw) / 2); this.gy = Math.round((gridH - this.gh) / 2);
+        this.rotation = 0;
+        this.layoutCSS();
+    }
+    // Draws this layer into a grid-sized 2D context (gallery thumbnails,
+    // eyedropper composite). Caller sets globalAlpha.
+    drawInto(ctx, smoothing) {
+        ctx.save();
+        ctx.translate(this.gx + this.gw / 2, this.gy + this.gh / 2);
+        ctx.rotate((this.rotation || 0) * Math.PI / 180);
+        ctx.scale(this.flipH ? -1 : 1, this.flipV ? -1 : 1);
+        ctx.imageSmoothingEnabled = smoothing !== false && !this.isPixelated();
+        try { ctx.drawImage(this.el, -this.gw / 2, -this.gh / 2, this.gw, this.gh); } catch (e) {}
+        ctx.restore();
+    }
+    // Colour [r,g,b,a] of the image under grid point (x+.5, y+.5), undoing
+    // rotation/flip; null outside the image.
+    sampleAt(x, y) {
+        const cx = this.gx + this.gw / 2, cy = this.gy + this.gh / 2;
+        const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+        const rad = -(this.rotation || 0) * Math.PI / 180;
+        let rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+        let ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+        if (this.flipH) rx = -rx;
+        if (this.flipV) ry = -ry;
+        const lx = rx + this.gw / 2, ly = ry + this.gh / 2;
+        if (lx < 0 || lx >= this.gw || ly < 0 || ly >= this.gh) return null;
+        const px = Math.min(this.el.width - 1, Math.floor(lx / this.gw * this.el.width));
+        const py = Math.min(this.el.height - 1, Math.floor(ly / this.gh * this.el.height));
+        const d = this.ctx.getImageData(px, py, 1, 1).data;
+        return [d[0], d[1], d[2], d[3]];
     }
 }
 
@@ -4494,7 +4539,7 @@ function cloneLayer(l) {
     }
     const nl = new ReferenceLayer(l.name, l.image);
     nl.gx = l.gx; nl.gy = l.gy; nl.gw = l.gw; nl.gh = l.gh;
-    nl.rotation = l.rotation; nl.flipH = l.flipH; nl.flipV = l.flipV;
+    nl.rotation = l.rotation; nl.flipH = l.flipH; nl.flipV = l.flipV; nl.sampling = l.sampling || 'auto';
     nl.visible = l.visible; nl.opacity = l.opacity;
     return nl;
 }
@@ -6187,17 +6232,46 @@ function setupLayerFileInputs() {
 }
 
 // Renders a small preview PNG (as a data URL) of a layer's current content, for the Layers panel list. Fully wrapped in try/catch so one bad layer can't break the whole panel.
-function makeThumbnail(layer, size) {
+// Thumbnail scaling (V2_4), MediBang-style: shrinking averages pixels by
+// halving step by step with high-quality smoothing (one big drawImage
+// step only samples a few source pixels, which is what made thumbnails
+// look jagged/pixelated, worst on iOS); enlarging stays nearest-neighbour
+// so small pixel art stays crisp. Fits inside dw x dh keeping the aspect
+// ratio, centred. Returns the drawn rect.
+function drawImageFitted(ctx, src, sw, sh, dx, dy, dw, dh) {
+    if (!sw || !sh) return null;
+    const k = Math.min(dw / sw, dh / sh);
+    const tw = Math.max(1, Math.round(sw * k)), th = Math.max(1, Math.round(sh * k));
+    const ox = dx + Math.round((dw - tw) / 2), oy = dy + Math.round((dh - th) / 2);
+    if (k >= 1) { ctx.imageSmoothingEnabled = false; ctx.drawImage(src, 0, 0, sw, sh, ox, oy, tw, th); return { x: ox, y: oy, w: tw, h: th }; }
+    let cur = src, cw = sw, ch = sh;
+    while (cw / 2 >= tw && ch / 2 >= th) {
+        const nw = Math.max(tw, Math.floor(cw / 2)), nh = Math.max(th, Math.floor(ch / 2));
+        const step = document.createElement('canvas'); step.width = nw; step.height = nh;
+        const sctx = step.getContext('2d');
+        sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';
+        sctx.drawImage(cur, 0, 0, cw, ch, 0, 0, nw, nh);
+        cur = step; cw = nw; ch = nh;
+    }
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(cur, 0, 0, cw, ch, ox, oy, tw, th);
+    return { x: ox, y: oy, w: tw, h: th };
+}
+// cssSize: the size it's shown at. Rendered at cssSize x devicePixelRatio
+// so the browser never stretches it (that stretch was the blur).
+function makeThumbnail(layer, cssSize) {
     try {
+        const dpr = Math.min(3, window.devicePixelRatio || 1);
+        const size = Math.max(1, Math.round(cssSize * dpr)), sq = Math.max(1, Math.round(6 * dpr));
         const c = document.createElement('canvas');
         c.width = size; c.height = size;
         const cx = c.getContext('2d');
         cx.fillStyle = '#3a3a3a'; cx.fillRect(0, 0, size, size);
         cx.fillStyle = '#4a4a4a';
-        for (let yy = 0; yy < size; yy += 6) for (let xx = ((yy/6)%2)*6; xx < size; xx += 12) cx.fillRect(xx, yy, 6, 6);
+        for (let yy = 0, r = 0; yy < size; yy += sq, r++) for (let xx = (r % 2) * sq; xx < size; xx += sq * 2) cx.fillRect(xx, yy, sq, sq);
         try {
-            if (layer.type === 'pixel' || layer.type === 'image' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') { cx.imageSmoothingEnabled = layer.type === 'image'; cx.drawImage(layer.el, 0, 0, size, size); }
-            else if (layer.image && layer.image.complete) { cx.imageSmoothingEnabled = true; cx.drawImage(layer.image, 0, 0, size, size); }
+            if (layer.type === 'pixel' || layer.type === 'image' || layer.type === 'mask' || layer.type === 'clip' || layer.type === 'vector') drawImageFitted(cx, layer.el, layer.el.width, layer.el.height, 0, 0, size, size);
+            else if (layer.type === 'reference') drawImageFitted(cx, layer.el, layer.el.width, layer.el.height, 0, 0, size, size);
         } catch (e) { console.warn('thumbnail draw skipped:', e && e.message); }
         return c.toDataURL();
     } catch (e) {
@@ -6521,7 +6595,7 @@ function renderLayersPanel() {
         row.className='layer-row'+(i===activeLayerIndex?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node);
         row.style.paddingLeft=(6+depth*18)+'px';
         const colorTag=document.createElement('button'); colorTag.className='layer-color-tag'+(layer.color?'':' no-color'); colorTag.style.background=layer.color||'transparent'; colorTag.title='Layer colour tag'; colorTag.setAttribute('aria-label','Change layer colour tag'); colorTag.onclick=e=>{e.stopPropagation();cycleLayerColor(layer.id);};
-        const thumb=document.createElement('img'); thumb.src=makeThumbnail(layer,largeLayerThumbs?64:28); thumb.style.cssText='width:'+(largeLayerThumbs?64:28)+'px;height:'+(largeLayerThumbs?64:28)+'px;border-radius:4px;flex:none;border:1px solid #444;';
+        const thumb=document.createElement('img'); thumb.src=makeThumbnail(layer,layersDrawerPrefs.mode==='strip'?72:(largeLayerThumbs?64:28)); thumb.style.cssText='width:'+(largeLayerThumbs?64:28)+'px;height:'+(largeLayerThumbs?64:28)+'px;border-radius:4px;flex:none;border:1px solid #444;';
         const vis=document.createElement('button'); vis.className='layer-icon-btn layer-vis'+(layer.visible?'':' off'); vis.innerText=layer.visible?'\u{1F441}\uFE0F':'\u{1F6AB}'; vis.onclick=e=>{e.stopPropagation();layer.visible=!layer.visible;layer.applyVisualState();refreshHookedComposites();renderLayersPanel();};
         const sel=document.createElement('input'); sel.type='checkbox'; sel.checked=isNodeSelected(node); sel.style.display=layerSelectionMode?'block':'none'; sel.disabled=layerSelectionMode&&selectionContainsDescendantOfSelected(node); sel.onclick=e=>{e.stopPropagation();selectTreeNode(node,sel.checked);renderLayersPanel();};
         const name=document.createElement('div'); name.className='layer-name'; name.innerText=layer.name;
@@ -6605,7 +6679,8 @@ function applyLayersDrawerPrefs(){
     if(!layersGlassSliderBuilt){ const slot=document.getElementById('layersGlassSliderSlot'); if(slot){ const ctl=mkIosSlider(layersDrawerPrefs.glass, v=>{ layersDrawerPrefs.glass=Math.max(40,Math.min(100,Math.round(v))); p.style.setProperty('--layers-glass', String(layersDrawerPrefs.glass/100)); saveLayersDrawerPrefs(); }); slot.appendChild(ctl.el); layersGlassSliderBuilt=true; } }
 }
 function layersHeaderAction(){ if(layerSelectionMode) toggleLayerSelectionMode(); else addPixelLayer(); }
-function setLayersDrawerMode(mode){ layersDrawerPrefs.mode = mode==='full' ? 'full' : 'strip'; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); }
+// Re-renders so thumbnails are redrawn at the new mode's size (72px strip vs 28/64px full).
+function setLayersDrawerMode(mode){ const next = mode==='full' ? 'full' : 'strip'; const changed = layersDrawerPrefs.mode !== next; layersDrawerPrefs.mode = next; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); if (changed && openPanelName==='layers') { try { renderLayersPanel(); } catch(_){} } }
 function toggleLayersDrawerWidth(){ setLayersDrawerMode(isLayersStrip() ? 'full' : 'strip'); }
 function toggleLayersReturnPref(){ layersDrawerPrefs.returnAfterStroke = !layersDrawerPrefs.returnAfterStroke; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); }
 (function setupLayersDrawerBehaviour(){
@@ -6823,7 +6898,31 @@ function buildReferenceTransformUI(layer) {
         renderLayersPanel();
     };
     resetRow.appendChild(resetBtn);
+    // 1 image px = 1 canvas px, snapped to whole cells, so a pixel-art
+    // reference lines up with the grid for tracing.
+    const actualBtn = document.createElement('button');
+    actualBtn.className = 'btn'; actualBtn.id = 'refActualSizeBtn';
+    actualBtn.style.fontSize = '10px';
+    actualBtn.innerText = '1:1 ACTUAL SIZE';
+    actualBtn.onclick = (e) => { e.stopPropagation(); layer.setActualSize(); renderLayersPanel(); };
+    resetRow.appendChild(actualBtn);
     wrap.appendChild(resetRow);
+
+    const sampLabel = document.createElement('div');
+    sampLabel.innerText = 'DISPLAY'; sampLabel.style.fontSize = '9px'; sampLabel.style.color = '#888'; sampLabel.style.textAlign = 'center';
+    wrap.appendChild(sampLabel);
+    const sampRow = document.createElement('div');
+    sampRow.className = 'row'; sampRow.id = 'refSamplingRow';
+    [['auto', 'AUTO'], ['pixel', 'PIXEL'], ['smooth', 'SMOOTH']].forEach(([mode, label]) => {
+        const b = document.createElement('button');
+        b.className = 'btn' + ((layer.sampling || 'auto') === mode ? ' active' : '');
+        b.style.fontSize = '10px'; b.dataset.sampling = mode;
+        b.innerText = label;
+        b.onclick = (e) => { e.stopPropagation(); layer.sampling = mode; layer.layoutCSS(); renderLayersPanel(); };
+        attachLongPressTooltip(b, mode === 'auto' ? 'Sharp pixels when zoomed in, smooth when shrunk' : mode === 'pixel' ? 'Always sharp, blocky pixels (pixel art)' : 'Always smoothed (photos)');
+        sampRow.appendChild(b);
+    });
+    wrap.appendChild(sampRow);
     return wrap;
 }
 
@@ -9097,7 +9196,9 @@ function applyCanvasSizeToolGating() {
 // don't exist at all. This is the actual general-purpose entry point;
 // flattenGroupSubtreeToCanvas() is now a thin wrapper over this for its
 // own recursive nested-group case.
-function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg) {
+// includeRefs: also draw visible reference layers (gallery thumbnails and
+// the eyedropper only -- exports never include them).
+function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg, includeRefs) {
     const out = document.createElement('canvas');
     out.width = gW; out.height = gH;
     const octx = out.getContext('2d');
@@ -9125,7 +9226,7 @@ function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg) {
                 // 'source-over' regardless of what the group/layer's actual
                 // blendMode was, which is why thumbnails/exports showed the
                 // pre-blend appearance).
-                const nested = flattenTreeToCanvas(node.children, gW, gH, smoothing);
+                const nested = flattenTreeToCanvas(node.children, gW, gH, smoothing, undefined, includeRefs);
                 octx.globalAlpha = opacity;
                 octx.globalCompositeOperation = node.blendMode || 'source-over';
                 octx.drawImage(nested, 0, 0);
@@ -9139,6 +9240,7 @@ function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg) {
             if (!visible || opacity <= 0) continue;
             octx.globalAlpha = opacity;
             octx.globalCompositeOperation = l.blendMode || 'source-over';
+            if (l.type === 'reference' && includeRefs) { l.drawInto(octx, smoothing); continue; }
             if (l.type !== 'pixel' && l.type !== 'image' && l.type !== 'vector') continue; // reference layers stay guide-only, excluded, matching flattenLayersToCanvas
             const next = nodes[i + 1];
             const aboveLayer = next && next.kind === 'layer' ? next.layer : null;
@@ -9296,30 +9398,17 @@ function setupDrawingEvents() {
         if (currentTool === 'eyedrop') {
             const activeL = activeLayer();
             if (activeL && activeL.type === 'reference') {
-                // Un-rotate/un-flip the tapped point around the layer's own
-                // center to find where it actually falls in the layer's
-                // own (untransformed) local space -- the old version
-                // assumed no rotation/flip and mapped straight through
-                // gx/gy/gw/gh, which was wrong for a rotated/flipped layer.
-                const cx = activeL.gx + activeL.gw / 2, cy = activeL.gy + activeL.gh / 2;
-                let dx = x - cx, dy = y - cy;
-                const rad = -(activeL.rotation || 0) * Math.PI / 180;
-                let rx = dx * Math.cos(rad) - dy * Math.sin(rad);
-                let ry = dx * Math.sin(rad) + dy * Math.cos(rad);
-                if (activeL.flipH) rx = -rx; // flip is its own inverse
-                if (activeL.flipV) ry = -ry;
-                const localGX = rx + activeL.gw / 2, localGY = ry + activeL.gh / 2;
-                if (localGX >= 0 && localGX < activeL.gw && localGY >= 0 && localGY < activeL.gh) {
-                    try {
-                        const localX = Math.min(activeL.el.width - 1, Math.max(0, Math.floor(localGX / activeL.gw * activeL.el.width)));
-                        const localY = Math.min(activeL.el.height - 1, Math.max(0, Math.floor(localGY / activeL.gh * activeL.el.height)));
-                        const d = activeL.ctx.getImageData(localX, localY, 1, 1).data;
-                        selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
-                        if (selectedColor) createSwatch(selectedColor); else updateUI();
-                    } catch (err) { console.error('reference layer eyedrop failed:', err && err.message); }
-                }
+                // Reference selected: read straight from the image (works
+                // outside the canvas too). Exact colours since V2_4.
+                try {
+                    const d = activeL.sampleAt(x, y);
+                    if (d) { selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]); if (selectedColor) createSwatch(selectedColor); else updateUI(); }
+                } catch (err) { console.error('reference layer eyedrop failed:', err && err.message); }
             } else if (x >= 0 && x < gridW && y >= 0 && y < gridH) {
-                const comp = flattenToCanvas();
+                // What's on screen, visible references included (like CSP's
+                // "obtain colour from display"), background left out so an
+                // empty pixel still picks transparent (= eraser).
+                const comp = flattenTreeToCanvas(frames[activeFrameIndex].layerTree, gridW, gridH, false, undefined, true);
                 const d = comp.getContext('2d').getImageData(x, y, 1, 1).data;
                 selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]);
                 if (selectedColor) createSwatch(selectedColor); else updateUI();
@@ -11188,7 +11277,7 @@ function serializeLayer(l) {
     if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', dataURL: l.el.toDataURL() };
     if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
     if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines, gradientHostFor: l.gradientHostFor || null };
-    return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, dataURL: l.image.src };
+    return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, sampling: l.sampling || 'auto', dataURL: l.image.src };
 }
 
 function serializeLayerTree(nodes, frameLayers) {
@@ -11314,7 +11403,7 @@ function buildFramesFromSaveData(data, onDone) {
                 else if (ld.type === 'image') { l = new ImageLayer(ld.name, w, h); l.loadFromImage(img); }
                 else if (ld.type === 'mask') { l = new MaskLayer(ld.name, w, h); l.loadFromImage(img); }
                 else if (ld.type === 'clip') { l = new ClipLayer(ld.name, w, h); l.loadFromImage(img); }
-                else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; }
+                else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; l.sampling = ['auto', 'pixel', 'smooth'].includes(ld.sampling) ? ld.sampling : 'auto'; }
                 common(l, ld);
             } catch (e) { fail(e && e.message); return; }
             slots[fi][li] = l; done();
@@ -11680,17 +11769,16 @@ let galleryRenameTargetId = null;
 // ── Thumbnail generation ────────────────────────────────────
 function generateThumbnailDataURL(framesArr, gW, gH, bg) {
     try {
-        const size = 200;
+        const size = 400; // V2_4: was 200, stretched on 2-3x phone screens
         const out = document.createElement('canvas');
         out.width = size; out.height = size;
         const ctx = out.getContext('2d');
         ctx.imageSmoothingEnabled = false;
         // Use frame 0 as the thumbnail source
-        const src = galleryFlattenLayers(ensureFrameLayerTree(framesArr[0]), gW, gH, bg);
-        const ratio = Math.min(size / gW, size / gH);
-        const dw = Math.round(gW * ratio);
-        const dh = Math.round(gH * ratio);
-        ctx.drawImage(src, Math.round((size - dw) / 2), Math.round((size - dh) / 2), dw, dh);
+        // Gallery card shows what you see, references included (guide-only
+        // still means they never reach PNG/spritesheet exports).
+        const src = galleryFlattenLayers(ensureFrameLayerTree(framesArr[0]), gW, gH, bg, true);
+        drawImageFitted(ctx, src, gW, gH, 0, 0, size, size);
         return out.toDataURL('image/png');
     } catch (e) {
         return '';
@@ -11700,8 +11788,8 @@ function generateThumbnailDataURL(framesArr, gW, gH, bg) {
 // Flatten helper for gallery thumbnails/export (accepts explicit w/h).
 // Takes a layerTree array, NOT a flat layers array (V1_39 fix -- same
 // reasoning as flattenLayersToCanvas above).
-function galleryFlattenLayers(layerTree, gW, gH, bg) {
-    return flattenTreeToCanvas(layerTree, gW || gridW, gH || gridH, false, bg);
+function galleryFlattenLayers(layerTree, gW, gH, bg, includeRefs) {
+    return flattenTreeToCanvas(layerTree, gW || gridW, gH || gridH, false, bg, includeRefs);
 }
 
 // ── Save current editor state into the store ────────────────

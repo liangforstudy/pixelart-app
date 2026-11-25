@@ -352,6 +352,15 @@
 - `async readZip(arrayBuffer)` Parses a zip central directory -> {name: Uint8Array}; handles STORE and DEFLATE. Throws on invalid zips.
 - `async writeZip(entries)` Builds a DEFLATE zip from {name: Uint8Array}, entries in insertion order.
 
+## Reference layers and thumbnails (V2_4)
+- `ReferenceLayer.drawSource()` Copies the image into its canvas once at native size (capped at `REFERENCE_MAX_DIM`).
+- `ReferenceLayer.isPixelated()` Applies `sampling` (auto/pixel/smooth) for the current zoom; `layoutCSS` sets `image-rendering` from it.
+- `ReferenceLayer.setActualSize()` 1 image px = 1 cell, whole-cell centred position, rotation 0.
+- `ReferenceLayer.drawInto(ctx, smoothing)` Draws it with its transform into a grid-sized context (gallery thumbnail, eyedropper composite).
+- `ReferenceLayer.sampleAt(x, y)` Exact [r,g,b,a] under a grid cell, undoing rotation/flip; null outside.
+- `drawImageFitted(ctx, src, sw, sh, dx, dy, dw, dh)` Aspect-fit draw: halving downscale with high-quality smoothing, nearest-neighbour when enlarging.
+- `makeThumbnail(layer, cssSize)` Layer thumbnail at cssSize x DPR over a checker.
+
 ## Background fill (V2_3)
 - `setBackgroundColor(c, record)` Sets `backgroundColor` (Mapart-validated), optional undo step, ends pick mode, refreshes fill and UI.
 - `updateBackgroundFill()` Shows/sizes `#backgroundFill` as `#container`'s first child.

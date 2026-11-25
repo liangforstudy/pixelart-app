@@ -49,6 +49,8 @@ GROUPS = {
                 ['test_palette_drag_swaps']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
                   ['test_space_pan']),
+    'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load.',
+                  ['test_reference_layer']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
     'layout': ('Floating bars, top-left #topBar, bottom #floatingBar, panels/drawers opening (togglePanel, closePanel).',
@@ -835,6 +837,54 @@ async def test_space_pan(pg):
     ok = await pg.evaluate("""() => { const i = document.createElement('input'); document.body.appendChild(i); i.focus();
         i.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true })); const held = spacePanHeld; i.remove(); return held; }""")
     check('space pan: Space in a text field types instead of panning', ok is False)
+
+REF_PNG = """() => { const c = document.createElement('canvas'); c.width = 64; c.height = 48; const x = c.getContext('2d');
+    for (let by = 0; by < 6; by++) for (let bx = 0; bx < 8; bx++) { x.fillStyle = ((bx + by) % 2) ? '#123456' : '#ABCDEF'; x.fillRect(bx * 8, by * 8, 8, 8); }
+    return c.toDataURL('image/png').split(',')[1]; }"""
+
+async def test_reference_layer(pg):
+    import base64
+    await new_canvas(pg)
+    png = base64.b64decode(await pg.evaluate(REF_PNG))
+    await pg.locator('#refInput').set_input_files({'name': 'ref.png', 'mimeType': 'image/png', 'buffer': png})
+    await pg.wait_for_timeout(800)
+    check('ref: reference layer added and fitted (64 x 48 into 32 x 32)', await pg.evaluate("() => activeLayer().type === 'reference' && activeLayer().gw === 32 && activeLayer().gh === 24"))
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(40); scale = 40; layoutAll(); }")
+    check('ref: canvas holds the image at its own size, not a zoom-sized buffer', await pg.evaluate("() => activeLayer().el.width === 64 && activeLayer().el.height === 48"))
+    check('ref: auto shows sharp pixels when zoomed in', await pg.evaluate("() => activeLayer().el.style.imageRendering === 'pixelated'"))
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(0.25); scale = 0.25; layoutAll(); }")
+    check('ref: auto smooths when shrunk', await pg.evaluate("() => activeLayer().el.style.imageRendering === 'auto'"))
+    await pg.evaluate("() => { openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }"); await pg.wait_for_timeout(200)
+    await pg.locator('#refSamplingRow button[data-sampling="pixel"]').click()
+    check('ref: PIXEL forces sharp pixels at any zoom', await pg.evaluate("() => activeLayer().sampling === 'pixel' && activeLayer().el.style.imageRendering === 'pixelated'"))
+    await pg.locator('#refSamplingRow button[data-sampling="smooth"]').click()
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(40); scale = 40; layoutAll(); }")
+    check('ref: SMOOTH forces smoothing even zoomed in', await pg.evaluate("() => activeLayer().el.style.imageRendering === 'auto'"))
+    await pg.evaluate("() => { activeLayer().sampling = 'auto'; renderLayersPanel(); }"); await pg.wait_for_timeout(200)
+    await pg.locator('#refActualSizeBtn').click()
+    check('ref: 1:1 ACTUAL SIZE = 64 x 48 cells on whole-cell positions', await pg.evaluate("() => { const l = activeLayer(); return l.gw === 64 && l.gh === 48 && l.gx === -16 && l.gy === -8 && l.rotation === 0; }"))
+    await pg.evaluate("() => { closePanel(); zoomIndex = ZOOM_STEPS.indexOf(8); scale = 8; layoutAll(); }")
+    # with the reference at 1:1 from (-16,-8), canvas cell (0,0) is image px (16,8) = block (2,1) -> odd -> #123456; cell (8,0) = block (3,1) -> even -> #ABCDEF
+    await pg.evaluate("() => handleToolBtn('eyedrop')"); await tap(pg, 0, 0)
+    check('ref: eyedropper on the selected reference picks its exact colour', await pg.evaluate("() => selectedColor") == '#123456', await pg.evaluate("() => selectedColor"))
+    await pg.evaluate("() => setActiveLayer(0)")
+    await pg.evaluate("() => handleToolBtn('eyedrop')"); await tap(pg, 8, 0)
+    check('ref: eyedropper on a pixel layer still picks the reference shown underneath', await pg.evaluate("() => selectedColor") == '#ABCDEF', await pg.evaluate("() => selectedColor"))
+    thumb_ok = await pg.evaluate("""() => new Promise(res => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = 200; c.height = 200; const x = c.getContext('2d'); x.drawImage(img, 0, 0); res(x.getImageData(100, 100, 1, 1).data[3] > 0); }; img.src = generateThumbnailDataURL(frames, gridW, gridH, null); })""")
+    check('ref: gallery card thumbnail shows the reference', thumb_ok)
+    check('ref: PNG export still leaves it out (guide only)', await pg.evaluate("() => flattenLayersToCanvas(frames[activeFrameIndex].layerTree).getContext('2d').getImageData(5, 5, 1, 1).data[3] === 0"))
+    th = await pg.evaluate("""() => new Promise(res => { const l = layers.find(l => l.type === 'reference'); const img = new Image(); img.onload = () => {
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+        const mid = x.getImageData(Math.floor(img.width / 2), Math.floor(img.height / 2), 1, 1).data;
+        const big = new Image(); big.onload = () => { const c2 = document.createElement('canvas'); c2.width = big.width; c2.height = big.height; const y = c2.getContext('2d'); y.drawImage(big, 0, 0);
+            res([img.width, Array.from(mid), Array.from(y.getImageData(Math.floor(big.width / 2), 0, 1, 1).data)]); }; big.src = makeThumbnail(l, 40); }; img.src = makeThumbnail(l, 6); })""")
+    # 6 css px thumbnail of the 8px-block checker: blocks average out instead of nearest-neighbour picking one colour
+    check('thumb: rendered at css size x devicePixelRatio', th[0] == 6 * await pg.evaluate("() => Math.min(3, window.devicePixelRatio || 1)"), th[0])
+    check('thumb: shrinking averages colours (MediBang-style), not nearest-neighbour', th[1][0] not in (0x12, 0xAB) and 0x12 < th[1][0] < 0xAB, th[1])
+    check('thumb: keeps the aspect ratio (64 x 48 letterboxed, top row is checker)', th[2][:3] in ([0x3A] * 3, [0x4A] * 3), th[2])
+    data = await pg.evaluate("() => { layers.find(l => l.type === 'reference').sampling = 'pixel'; return JSON.parse(JSON.stringify(currentProjectSaveData('r'))); }")
+    await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(500)
+    check('ref: display mode and 1:1 placement saved with the project', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l && l.sampling === 'pixel' && l.gw === 64 && l.gx === -16; }"))
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''

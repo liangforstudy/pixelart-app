@@ -39,6 +39,8 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 - **V2_2** -- Mapart profile (section 3.11): whole-map canvases (128 px maps, up to 7x7), locked Minecraft map palette, staircase toggle, import snapping.
 - **V2_3** -- Grid lines moved to the View panel; Mapart adds 16 px chunk and 128 px map lines (section 3.11); grid on/off saved per project. Solid background fill (roadmap 9, section 3.13).
 - **V2_4** -- Hold Space to pan (every profile, any tool, from anywhere in the viewport; `spacePanHeld`, ignored in text fields). Fixed Pan-tool mouse drags (window mousemove now forwards `g.manualPan`).
+  Reference layers: canvas holds the image once at its own size (`drawSource`, cap `REFERENCE_MAX_DIM` 4096) and CSS scales it; per-layer `sampling` auto/pixel/smooth (auto = pixelated while each image px >= 1 device px), saved; 1:1 ACTUAL SIZE (`setActualSize`, whole-cell position). Still guide-only for exports, but gallery card thumbnails and the eyedropper include visible references (`flattenTreeToCanvas` `includeRefs`; eyedropper ignores the background). `sampleAt` gives exact colours.
+  Thumbnails: `drawImageFitted` (halving downscale with high-quality smoothing, nearest when enlarging, aspect kept); layer thumbs rendered at shown size x DPR (72 strip / 28 or 64 full, re-rendered on mode switch); gallery card 400px.
 
 **Known open**
 - Option B (drop PixelLayer's Proxy, keep both classes) decided, not implemented. A full-canvas PixelLayer bulk edit still builds a large string-keyed history Map + changes array (slow and memory-heavy on iOS near 999x999; won't hang).
