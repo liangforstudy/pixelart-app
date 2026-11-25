@@ -369,6 +369,13 @@
 - `mapartColourName(hex)` "normal White Wool"-style name for toasts.
 - `setEyedropSampleSize(n)` / `renderEyedropSampleRow()` Sample size pref and its button row. `averageCanvasColour(canvas, x, y, n)` Alpha-weighted N x N average or null.
 
+## Thumbnail privacy (V2_5)
+- `openThumbPrivacySheet(id, onReady)` Builds the stored project's frames and opens the per-layer/group thumbnail opacity sheet.
+- `renderThumbPrivacyList()` / `updateThumbPrivacyPreview()` / `resetThumbPrivacySheet()` Sheet rows (frame 1, top first, no mask/clip rows), live preview, reset to 100%.
+- `closeThumbPrivacySheet()` Writes `thumbOpacity` back into the save data (by layer index / tree position), syncs the open project if it's the same one, stores the new card image.
+- `thumbnailFromBuiltFrames(built, data)` Card image from built frames at the project's own size.
+- `projectHasThumbOpacity(frames)` Any layer/group below 100% (drives the reminder toast).
+
 ## Background fill (V2_3)
 - `setBackgroundColor(c, record)` Sets `backgroundColor` (Mapart-validated), optional undo step, ends pick mode, refreshes fill and UI.
 - `updateBackgroundFill()` Shows/sizes `#backgroundFill` as `#container`'s first child.

@@ -77,7 +77,7 @@ GROUPS = {
     'background': ('Background fill (roadmap 9): backgroundColor, setBackgroundColor, updateBackgroundFill/UI, background pick mode (Colours + Layers), flattenTreeToCanvas bg argument, saveImage, save/load, mapart default and snapping.',
                    ['test_background_fill', 'test_background_mapart']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
-                ['test_resize_from_gallery']),
+                ['test_resize_from_gallery', 'test_gallery_thumbnail_privacy']),
 }
 # Editing any of these can break every group: run them all.
 SHARED_CODE = 'PixelLayer / ImageLayer classes, plot() / layer.plot(), bulkPixelWrite, history (pushUndo, beginEdit, commitEdit, undo, redo), layoutAll / camera, boot / init, the canvas gesture handlers (onStart, onMove, onEnd), CSS shared by many screens.'
@@ -575,6 +575,47 @@ async def test_resize_from_gallery(pg):
     await pg.locator('#rsDiscardBtn').click(); await pg.wait_for_timeout(500)
     meta = await pg.evaluate("(id) => { const p = projectStore.find(q => q.id === id); return [p.gridW, p.gridH]; }", pid)
     check('gallery: discard goes back to the hub without saving', meta == [40, 40] and await pg.evaluate("() => document.getElementById('gallery-screen').style.display === 'flex'"), meta)
+
+THUMB_ALPHA = """(id) => new Promise(res => { const p = projectStore.find(q => q.id === id); const img = new Image();
+    img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); res(x.getImageData(img.width >> 1, img.height >> 1, 1, 1).data[3]); };
+    img.onerror = () => res(-1); img.src = p.thumbnailDataURL; })"""
+
+async def test_gallery_thumbnail_privacy(pg):
+    await new_canvas(pg)
+    await pg.evaluate(DRAW, [[[x, y] for x in range(32) for y in range(32)], '#FF0000'])
+    await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(600)
+    pid = await pg.evaluate("() => projectStore[0].id")
+    check('thumb privacy: card thumbnail shows the art', await pg.evaluate(THUMB_ALPHA, pid) == 255)
+    await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", pid)
+    await pg.locator('#ctx-thumb-privacy').click(); await pg.wait_for_timeout(800)
+    check('thumb privacy: sheet lists the layers with sliders at 100%', await pg.evaluate("() => document.getElementById('thumb-privacy-modal').classList.contains('open') && document.querySelectorAll('#thumb-privacy-list input[type=range]').length === 1 && document.querySelector('#thumb-privacy-list input').value === '100'"))
+    await pg.evaluate("() => { const r = document.querySelector('#thumb-privacy-list input'); r.value = '0'; r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }")
+    await pg.locator('#thumb-privacy-done-btn').click(); await pg.wait_for_timeout(600)
+    check('thumb privacy: card thumbnail now hides that layer', await pg.evaluate(THUMB_ALPHA, pid) == 0)
+    await pg.evaluate("() => { document.getElementById('appToast').textContent = ''; }")
+    await pg.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await pg.wait_for_timeout(600)
+    check('thumb privacy: inside the project the layer keeps 100% opacity', await pg.evaluate("() => layers[0].opacity === 1 && layers[0].thumbOpacity === 0"))
+    check('thumb privacy: opening it shows the reminder toast', 'Thumbnail opacity is different' in (await pg.locator('#appToast').text_content() or ''))
+    await pg.evaluate("() => addPixelLayer()")
+    check('thumb privacy: new layers start at 100% in the thumbnail', await pg.evaluate("() => layers[layers.length - 1].thumbOpacity === undefined"))
+    await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(600)
+    check('thumb privacy: saving the project keeps the thumbnail setting', await pg.evaluate(THUMB_ALPHA, pid) == 0)
+    await pg.evaluate("() => { document.getElementById('appToast').textContent = ''; }")
+    await pg.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await pg.wait_for_timeout(600)
+    check('thumb privacy: the toast shows only once per page load', 'Thumbnail opacity' not in (await pg.locator('#appToast').text_content() or ''))
+    await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(600)
+    await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", pid)
+    check('thumb privacy: menu offers Hide Thumbnail', 'Hide Thumbnail' in await pg.locator('#ctx-thumb-hide').text_content())
+    await pg.locator('#ctx-thumb-hide').click(); await pg.wait_for_timeout(600)
+    check('thumb privacy: hidden card shows no image, just the name', await pg.evaluate("(id) => { const c = document.querySelector('.gallery-card[data-id=\"' + id + '\"]'); return !!c.querySelector('.thumb-wrap.thumb-hidden') && !c.querySelector('img') && !!c.querySelector('.card-name'); }", pid))
+    check('thumb privacy: the stored image is kept (screen privacy only)', await pg.evaluate("(id) => { const p = projectStore.find(q => q.id === id); return p.thumbHidden === true && p.thumbnailDataURL.length > 100; }", pid))
+    await pg.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await pg.wait_for_timeout(600)
+    await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(600)
+    check('thumb privacy: still hidden after opening and saving', await pg.evaluate("(id) => projectStore.find(q => q.id === id).thumbHidden === true", pid))
+    await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", pid)
+    check('thumb privacy: menu now offers Show Thumbnail', 'Show Thumbnail' in await pg.locator('#ctx-thumb-hide').text_content())
+    await pg.locator('#ctx-thumb-hide').click(); await pg.wait_for_timeout(600)
+    check('thumb privacy: Show brings the image back', await pg.evaluate("(id) => !!document.querySelector('.gallery-card[data-id=\"' + id + '\"] img')", pid))
 
 # ---------------------------------------------------------------- new canvas (V2_1)
 async def open_new_canvas_sheet(pg):

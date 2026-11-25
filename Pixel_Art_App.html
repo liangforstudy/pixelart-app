@@ -442,6 +442,24 @@
         #rename-cancel-btn { background: #2a2a2a; color: #aaa; }
         #rename-ok-btn { background: #0078d4; color: #fff; }
 
+        /* Thumbnail opacity sheet (V2_5) */
+        #thumb-privacy-modal { position: fixed; inset: 0; z-index: 1800; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; }
+        #thumb-privacy-modal.open { display: flex; }
+        #thumb-privacy-box { background: #1c1c1e; border-radius: 14px; padding: 16px; width: min(360px, 92vw); max-height: 86vh; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+        .thumb-privacy-title { font-size: 15px; font-weight: 700; color: #eee; text-align: center; }
+        .thumb-privacy-hint { font-size: 11px; color: #888; text-align: center; line-height: 1.4; }
+        #thumb-privacy-preview { width: 120px; height: 120px; margin: 0 auto; border-radius: 10px; overflow: hidden; flex: none; }
+        #thumb-privacy-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        #thumb-privacy-list { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+        .thumb-privacy-row { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+        .thumb-privacy-row .tp-name { flex: 0 0 34%; font-size: 12px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .thumb-privacy-row .tp-name small { color: #777; display: block; font-size: 9px; text-transform: uppercase; }
+        .thumb-privacy-row input[type=range] { flex: 1; min-height: 44px; }
+        .thumb-privacy-row .tp-val { flex: 0 0 38px; font-size: 12px; color: #aaa; text-align: right; }
+        #thumb-privacy-reset-btn { background: #2a2a2a; color: #aaa; }
+        #thumb-privacy-done-btn { background: #0078d4; color: #fff; }
+        .gallery-card .thumb-wrap.thumb-hidden { display: flex; align-items: center; justify-content: center; background: #26262b; font-size: 34px; color: #555; }
+
         /* Canvas resize sheet */
         #resize-canvas-modal {
             position: fixed; inset: 0; z-index: 1850; display: none; align-items: flex-end; justify-content: center;
@@ -923,7 +941,24 @@
         <div class="ctx-item" id="ctx-export">🖼️ Export PNG</div>
         <div class="ctx-item" id="ctx-save-file">💾 Export Project</div>
         <div class="ctx-divider"></div>
+        <div class="ctx-item" id="ctx-thumb-privacy">🕶️ Thumbnail Opacity</div>
+        <div class="ctx-item" id="ctx-thumb-hide">🙈 Hide Thumbnail</div>
+        <div class="ctx-divider"></div>
         <div class="ctx-item danger" id="ctx-delete">🗑️ Delete</div>
+    </div>
+
+    <!-- Thumbnail opacity sheet (screen privacy, V2_5) -->
+    <div id="thumb-privacy-modal">
+        <div id="thumb-privacy-box">
+            <div class="thumb-privacy-title">Thumbnail Opacity</div>
+            <div class="thumb-privacy-hint">Only changes this project's gallery card. Layers inside the project keep their own opacity. New layers show at 100%.</div>
+            <div id="thumb-privacy-preview" class="checkerboard-bg"><img id="thumb-privacy-preview-img" alt=""></div>
+            <div id="thumb-privacy-list"></div>
+            <div class="rename-actions">
+                <button id="thumb-privacy-reset-btn" onclick="uiAction(resetThumbPrivacySheet)">RESET ALL TO 100%</button>
+                <button id="thumb-privacy-done-btn" onclick="uiAction(closeThumbPrivacySheet)">DONE</button>
+            </div>
+        </div>
     </div>
 
     <!-- Rename modal -->
@@ -4922,6 +4957,7 @@ function newCanvasCreation() {
     lastEnteredProfile = selectedProfile;
     setGridLines(false);
     resetBackgroundForNewProject();
+    currentThumbHidden = false;
     zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
     scale = ZOOM_STEPS[zoomIndex];
     layoutAll();
@@ -9433,7 +9469,9 @@ function applyCanvasSizeToolGating() {
 // own recursive nested-group case.
 // includeRefs: also draw visible reference layers (gallery thumbnails and
 // the eyedropper only -- exports never include them).
-function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg, includeRefs) {
+// thumb: gallery card thumbnail -- also multiplies each layer/group's
+// thumbOpacity (thumbnail privacy; the project itself is unchanged).
+function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg, includeRefs, thumb) {
     const out = document.createElement('canvas');
     out.width = gW; out.height = gH;
     const octx = out.getContext('2d');
@@ -9452,7 +9490,7 @@ function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg, includeRefs) {
             if (!node) continue;
             if (node.kind === 'group') {
                 const visible = parentVisible && node.visible;
-                const opacity = parentOpacity * node.opacity;
+                const opacity = parentOpacity * node.opacity * (thumb && typeof node.thumbOpacity === 'number' ? node.thumbOpacity : 1);
                 if (!visible || opacity <= 0) continue;
                 // Nested group: recurse into its own offscreen canvas first,
                 // then draw that flattened result onto the running composite
@@ -9461,7 +9499,7 @@ function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg, includeRefs) {
                 // 'source-over' regardless of what the group/layer's actual
                 // blendMode was, which is why thumbnails/exports showed the
                 // pre-blend appearance).
-                const nested = flattenTreeToCanvas(node.children, gW, gH, smoothing, undefined, includeRefs);
+                const nested = flattenTreeToCanvas(node.children, gW, gH, smoothing, undefined, includeRefs, thumb);
                 octx.globalAlpha = opacity;
                 octx.globalCompositeOperation = node.blendMode || 'source-over';
                 octx.drawImage(nested, 0, 0);
@@ -9471,7 +9509,7 @@ function flattenTreeToCanvas(nodes, gW, gH, smoothing, bg, includeRefs) {
             const l = node.layer;
             if (l.type === 'mask' || l.type === 'clip') continue; // composited in when we reach their hooked target below, same convention as flattenLayersToCanvas
             const visible = parentVisible && l.visible;
-            const opacity = parentOpacity * l.opacity;
+            const opacity = parentOpacity * l.opacity * (thumb && typeof l.thumbOpacity === 'number' ? l.thumbOpacity : 1);
             if (!visible || opacity <= 0) continue;
             octx.globalAlpha = opacity;
             octx.globalCompositeOperation = l.blendMode || 'source-over';
@@ -11430,6 +11468,7 @@ function importAsNewProjectFromImage(img, file) {
     lastEnteredProfile = selectedProfile;
     setGridLines(false);
     resetBackgroundForNewProject();
+    currentThumbHidden = false;
     pendingImportKind = 'pixel';
     zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
     scale = ZOOM_STEPS[zoomIndex];
@@ -11519,7 +11558,13 @@ async function copyToClipboard() {
 }
 
 // Converts one Layer into a plain JSON-friendly object for project save files (pixel data as a PNG data URL, reference geometry as numbers).
+// Thumbnail privacy (V2_5): thumbOpacity only exists when set below 100%.
 function serializeLayer(l) {
+    const o = serializeLayerCore(l);
+    if (typeof l.thumbOpacity === 'number' && l.thumbOpacity !== 1) o.thumbOpacity = l.thumbOpacity;
+    return o;
+}
+function serializeLayerCore(l) {
     if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', dataURL: l.el.toDataURL() };
     if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
     if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines, gradientHostFor: l.gradientHostFor || null };
@@ -11528,7 +11573,7 @@ function serializeLayer(l) {
 
 function serializeLayerTree(nodes, frameLayers) {
     return (nodes || []).map(n => {
-        if (n.kind === 'group' || n.kind === 'folder') return { kind: 'group', id: n.id, name: n.name, color: n.color, visible: n.visible, opacity: n.opacity, collapsed: n.collapsed, blendMode: n.blendMode || 'source-over', children: serializeLayerTree(n.children, frameLayers) };
+        if (n.kind === 'group' || n.kind === 'folder') { const g = { kind: 'group', id: n.id, name: n.name, color: n.color, visible: n.visible, opacity: n.opacity, collapsed: n.collapsed, blendMode: n.blendMode || 'source-over', children: serializeLayerTree(n.children, frameLayers) }; if (typeof n.thumbOpacity === 'number' && n.thumbOpacity !== 1) g.thumbOpacity = n.thumbOpacity; return g; }
         const idx = frameLayers.indexOf(n.layer);
         return { kind: 'layer', layerIndex: idx };
     });
@@ -11558,6 +11603,11 @@ function serializeFramesForSave(framesArr) {
     });
 }
 // Snapshot of the project currently open in the editor.
+// Thumbnail privacy (V2_5): per-project "hide the gallery card image".
+// The image is still generated and stored (screen privacy, not storage).
+let currentThumbHidden = false;
+// Projects whose "thumbnail opacity differs" toast was shown since the page loaded.
+const thumbPrivacyToastShown = new Set();
 function currentProjectSaveData(name) {
     return {
         version: PROJECT_SAVE_VERSION,
@@ -11570,7 +11620,8 @@ function currentProjectSaveData(name) {
         portraitTileIsolation: selectedProfile === 'portrait' && !!portraitTileIsolation,
         mapartStaircase: selectedProfile === 'mapart' ? !!mapartStaircase : undefined,
         gridLines: !!showGridLines,
-        backgroundColor: backgroundColor || null
+        backgroundColor: backgroundColor || null,
+        thumbHidden: !!currentThumbHidden
     };
 }
 function downloadProjectData(data, fileBase) {
@@ -11608,7 +11659,7 @@ function buildFramesFromSaveData(data, onDone) {
             const f = { name: fd.name };
             if (Array.isArray(fd.layerTree)) {
                 const buildTree = nodes => (nodes || []).map(n => {
-                    if (n.kind === 'group' || n.kind === 'folder') return { kind: 'group', id: n.id || ('group-' + (nextGroupId++)), name: n.name || 'Group', color: n.color || null, visible: n.visible !== false, opacity: typeof n.opacity === 'number' ? n.opacity : 1, collapsed: !!n.collapsed, blendMode: n.blendMode || 'source-over', children: buildTree(n.children) };
+                    if (n.kind === 'group' || n.kind === 'folder') return { kind: 'group', id: n.id || ('group-' + (nextGroupId++)), name: n.name || 'Group', color: n.color || null, visible: n.visible !== false, opacity: typeof n.opacity === 'number' ? n.opacity : 1, collapsed: !!n.collapsed, blendMode: n.blendMode || 'source-over', thumbOpacity: typeof n.thumbOpacity === 'number' ? n.thumbOpacity : undefined, children: buildTree(n.children) };
                     return slot[n.layerIndex] ? makeLayerNode(slot[n.layerIndex]) : null;
                 }).filter(Boolean);
                 f.layerTree = buildTree(fd.layerTree);
@@ -11625,6 +11676,7 @@ function buildFramesFromSaveData(data, onDone) {
         l.color = ld.color || null;
         if (ld.type === 'pixel' || ld.type === 'image' || ld.type === 'vector') l.blendMode = ld.blendMode || 'source-over';
         l.visible = ld.visible; l.opacity = ld.opacity;
+        if (typeof ld.thumbOpacity === 'number') l.thumbOpacity = ld.thumbOpacity;
         l.applyVisualState();
     };
     const blankOf = ld => {
@@ -11681,6 +11733,7 @@ function openProjectFromSaveData(data, opts, onDone) {
             mapartStaircase = selectedProfile === 'mapart' && !!data.mapartStaircase;
             mapartKeptOffShade = false;
             showGridLines = !!data.gridLines;
+            currentThumbHidden = !!data.thumbHidden;
             backgroundPickMode = false; backgroundPickReturnPanel = null;
             backgroundColor = data.backgroundColor ? String(data.backgroundColor).toUpperCase() : null;
             lastEnteredProfile = selectedProfile;
@@ -11709,6 +11762,14 @@ function openProjectFromSaveData(data, opts, onDone) {
             updateToolVisibility();
             currentProjectId = opts.projectId != null ? opts.projectId : null;
             if (failures) showAppToast(failures + (failures > 1 ? ' layers' : ' layer') + " couldn't be read and " + (failures > 1 ? 'were' : 'was') + ' left blank.', 7000);
+            else {
+                // Once per project per page load: explain why the gallery card looks different.
+                const key = currentProjectId != null ? currentProjectId : ('name:' + currentProjectName);
+                if (projectHasThumbOpacity(frames) && !thumbPrivacyToastShown.has(key)) {
+                    thumbPrivacyToastShown.add(key);
+                    showAppToast("Thumbnail opacity is different from this project's layer opacity. Change it from the gallery card's long-press menu.", 7000);
+                }
+            }
         } catch (e) {
             console.error('openProjectFromSaveData failed:', e && e.message);
             alert('Could not open this project -- check the Debug tab for details.');
@@ -11770,7 +11831,7 @@ let projectChannel = null, otherTabWarned = false;
 function readBootGuard() { try { return JSON.parse(localStorage.getItem(BOOT_GUARD_KEY) || '{}') || {}; } catch (e) { return {}; } }
 function updateBootGuard(patch) { try { localStorage.setItem(BOOT_GUARD_KEY, JSON.stringify({ ...readBootGuard(), ...patch })); } catch (e) {} }
 function newProjectId() { return Date.now() * 100 + Math.floor(Math.random() * 100); }
-function projectMetaOf(p) { return { id: p.id, name: p.name, gridW: p.gridW, gridH: p.gridH, profile: p.profile, thumbnailDataURL: p.thumbnailDataURL || '', updatedAt: p.updatedAt || Date.now() }; }
+function projectMetaOf(p) { return { id: p.id, name: p.name, gridW: p.gridW, gridH: p.gridH, profile: p.profile, thumbnailDataURL: p.thumbnailDataURL || '', thumbHidden: !!p.thumbHidden, updatedAt: p.updatedAt || Date.now() }; }
 function isGalleryVisible() { const g = document.getElementById('gallery-screen'); return !!g && g.style.display === 'flex'; }
 function formatBytes(n) { if (!Number.isFinite(n)) return '?'; if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB'; if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB'; return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB'; }
 
@@ -12023,7 +12084,7 @@ function generateThumbnailDataURL(framesArr, gW, gH, bg) {
         // Use frame 0 as the thumbnail source
         // Gallery card shows what you see, references included (guide-only
         // still means they never reach PNG/spritesheet exports).
-        const src = galleryFlattenLayers(ensureFrameLayerTree(framesArr[0]), gW, gH, bg, true);
+        const src = galleryFlattenLayers(ensureFrameLayerTree(framesArr[0]), gW, gH, bg, true, true);
         drawImageFitted(ctx, src, gW, gH, 0, 0, size, size);
         return out.toDataURL('image/png');
     } catch (e) {
@@ -12034,8 +12095,8 @@ function generateThumbnailDataURL(framesArr, gW, gH, bg) {
 // Flatten helper for gallery thumbnails/export (accepts explicit w/h).
 // Takes a layerTree array, NOT a flat layers array (V1_39 fix -- same
 // reasoning as flattenLayersToCanvas above).
-function galleryFlattenLayers(layerTree, gW, gH, bg, includeRefs) {
-    return flattenTreeToCanvas(layerTree, gW || gridW, gH || gridH, false, bg, includeRefs);
+function galleryFlattenLayers(layerTree, gW, gH, bg, includeRefs, thumb) {
+    return flattenTreeToCanvas(layerTree, gW || gridW, gH || gridH, false, bg, includeRefs, thumb);
 }
 
 // ── Save current editor state into the store ────────────────
@@ -12044,7 +12105,7 @@ function galleryFlattenLayers(layerTree, gW, gH, bg, includeRefs) {
 function saveCurrentStateToStore(existingId, nameOverride) {
     const name = nameOverride || currentProjectName || ('Untitled ' + (projectStore.length + 1));
     const data = currentProjectSaveData(name);
-    const meta = { id: existingId || newProjectId(), name, gridW, gridH, profile: selectedProfile, thumbnailDataURL: generateThumbnailDataURL(frames, gridW, gridH, backgroundColor), updatedAt: Date.now() };
+    const meta = { id: existingId || newProjectId(), name, gridW, gridH, profile: selectedProfile, thumbnailDataURL: generateThumbnailDataURL(frames, gridW, gridH, backgroundColor), thumbHidden: !!currentThumbHidden, updatedAt: Date.now() };
     const idx = existingId ? projectStore.findIndex(p => p.id === existingId) : -1;
     if (idx !== -1) projectStore[idx] = meta; else projectStore.unshift(meta);
     persistProject(meta, data);
@@ -12131,7 +12192,12 @@ function renderGallery() {
         const thumbWrap = document.createElement('div');
         thumbWrap.className = 'thumb-wrap checkerboard-bg';
         applyCheckerProfile(thumbWrap, checkerSettings.canvas, 'canvas'); // gallery cards always mirror the canvas profile, not an independent selection
-        if (proj.thumbnailDataURL) {
+        if (proj.thumbHidden) {
+            // Screen privacy: plain tile, image not shown (still stored).
+            thumbWrap.className = 'thumb-wrap thumb-hidden';
+            thumbWrap.style.cssText = '';
+            thumbWrap.textContent = '\u{1F648}';
+        } else if (proj.thumbnailDataURL) {
             const img = document.createElement('img');
             img.loading = 'lazy'; img.decoding = 'async'; // off-screen thumbnails don't decode, so a large gallery stays light
             img.src = proj.thumbnailDataURL;
@@ -12439,6 +12505,7 @@ function startNewProjectFromGallery(w, h) {
     lastEnteredProfile = selectedProfile;
     setGridLines(false);
     resetBackgroundForNewProject();
+    currentThumbHidden = false;
     layoutAll();
 }
 
@@ -12451,6 +12518,8 @@ function openGalleryCtxMenu(id, e) {
     const ctxProj = projectStore.find(p => p.id === id);
     const ctxResize = document.getElementById('ctx-resize');
     if (ctxResize) ctxResize.classList.toggle('ctx-gated', !!(resizePrefs.both && ctxProj && !resizeScreenAllowed(ctxProj.profile)));
+    const ctxHide = document.getElementById('ctx-thumb-hide');
+    if (ctxHide) ctxHide.textContent = ctxProj && ctxProj.thumbHidden ? '\u{1F441}\uFE0F Show Thumbnail' : '\u{1F648} Hide Thumbnail';
     const backdrop = document.getElementById('gallery-ctx-backdrop');
     menu.classList.add('open');
     backdrop.classList.add('open');
@@ -12568,6 +12637,133 @@ document.getElementById('ctx-save-file').addEventListener('click', () => {
         downloadProjectData({ ...data, name: proj.name }, proj.name || 'project');
     });
 });
+
+// ── Thumbnail privacy (V2_5) ────────────────────────────────
+// True if any layer/group in any frame has a thumbnail opacity below 100%.
+function projectHasThumbOpacity(framesArr) {
+    const set = v => typeof v === 'number' && v !== 1;
+    const walk = nodes => (nodes || []).some(n => n.kind === 'group' ? (set(n.thumbOpacity) || walk(n.children)) : (n.layer && set(n.layer.thumbOpacity)));
+    return (framesArr || []).some(f => f.layers.some(l => set(l.thumbOpacity)) || walk(f.layerTree));
+}
+// Rebuilds a stored project's card image from its save data (used after
+// thumbnail-opacity edits from the gallery). Borrows the project's size
+// for vector layout like the gallery PNG export does.
+function thumbnailFromBuiltFrames(built, data) {
+    const keepW = gridW, keepH = gridH;
+    try {
+        gridW = data.gridW; gridH = data.gridH;
+        built.forEach(f => f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); }));
+        const bg = data.backgroundColor !== undefined ? data.backgroundColor : (data.profile === 'mapart' ? MAPART_DEFAULT_BACKGROUND : null);
+        return generateThumbnailDataURL(built, gridW, gridH, bg);
+    } finally { gridW = keepW; gridH = keepH; }
+}
+// Hide/show the card image for one project (meta + save data).
+document.getElementById('ctx-thumb-hide').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    getProjectData(id, (data, err) => {
+        if (!data) { showAppToast("Couldn't change it: " + err, 6000); return; }
+        proj.thumbHidden = !proj.thumbHidden;
+        data.thumbHidden = proj.thumbHidden;
+        if (currentProjectId === id) currentThumbHidden = proj.thumbHidden;
+        persistProject(proj, data);
+        renderGallery();
+    });
+});
+let thumbPrivacy = null; // { id, data, built, rows } while the sheet is open
+document.getElementById('ctx-thumb-privacy').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    openThumbPrivacySheet(id);
+});
+function openThumbPrivacySheet(id, onReady) {
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    getProjectData(id, (data, err) => {
+        if (!data) { showAppToast("Couldn't open it: " + err, 6000); return; }
+        buildFramesFromSaveData(data, built => {
+            thumbPrivacy = { id, data, built };
+            renderThumbPrivacyList();
+            updateThumbPrivacyPreview();
+            document.getElementById('thumb-privacy-modal').classList.add('open');
+            if (onReady) onReady();
+        });
+    });
+}
+// One row per layer/group of frame 1 (the thumbnail's frame), top first.
+// Mask/clip layers follow their host, so they get no row.
+function renderThumbPrivacyList() {
+    const list = document.getElementById('thumb-privacy-list');
+    list.innerHTML = '';
+    if (!thumbPrivacy) return;
+    const f = thumbPrivacy.built[0];
+    const addRow = (target, label, kind, depth) => {
+        const row = document.createElement('div'); row.className = 'thumb-privacy-row';
+        row.style.paddingLeft = (depth * 12) + 'px';
+        const name = document.createElement('div'); name.className = 'tp-name'; name.textContent = label;
+        const small = document.createElement('small'); small.textContent = kind; name.appendChild(small);
+        const val = document.createElement('div'); val.className = 'tp-val';
+        const r = document.createElement('input'); r.type = 'range'; r.min = '0'; r.max = '100'; r.step = '1';
+        const cur = typeof target.thumbOpacity === 'number' ? target.thumbOpacity : 1;
+        r.value = String(Math.round(cur * 100)); val.textContent = r.value + '%';
+        r.oninput = () => { val.textContent = r.value + '%'; };
+        r.onchange = () => { const v = (+r.value) / 100; if (v >= 1) delete target.thumbOpacity; else target.thumbOpacity = v; updateThumbPrivacyPreview(); };
+        row.append(name, r, val);
+        list.appendChild(row);
+    };
+    const walk = (nodes, depth) => {
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            const n = nodes[i];
+            if (n.kind === 'group') { addRow(n, n.name || 'Group', 'group', depth); walk(n.children || [], depth + 1); }
+            else if (n.layer && n.layer.type !== 'mask' && n.layer.type !== 'clip') addRow(n.layer, n.layer.name, n.layer.type, depth);
+        }
+    };
+    walk(ensureFrameLayerTree(f), 0);
+}
+function updateThumbPrivacyPreview() {
+    if (!thumbPrivacy) return;
+    const url = thumbnailFromBuiltFrames(thumbPrivacy.built, thumbPrivacy.data);
+    thumbPrivacy.url = url;
+    document.getElementById('thumb-privacy-preview-img').src = url;
+}
+function resetThumbPrivacySheet() {
+    if (!thumbPrivacy) return;
+    const clear = nodes => (nodes || []).forEach(n => { delete n.thumbOpacity; if (n.kind === 'group') clear(n.children); });
+    thumbPrivacy.built.forEach(f => { f.layers.forEach(l => { delete l.thumbOpacity; }); clear(f.layerTree); });
+    renderThumbPrivacyList();
+    updateThumbPrivacyPreview();
+}
+// Writes the edited values back into the stored save data (layer order
+// and tree shape are unchanged, so indexes line up), stores the new card
+// image and closes the sheet.
+function closeThumbPrivacySheet() {
+    const tp = thumbPrivacy;
+    document.getElementById('thumb-privacy-modal').classList.remove('open');
+    thumbPrivacy = null;
+    if (!tp) return;
+    const proj = projectStore.find(p => p.id === tp.id);
+    if (!proj) return;
+    tp.built.forEach((f, fi) => {
+        const fd = tp.data.frames[fi]; if (!fd) return;
+        f.layers.forEach((l, li) => { const ld = fd.layers[li]; if (!ld) return; if (typeof l.thumbOpacity === 'number' && l.thumbOpacity !== 1) ld.thumbOpacity = l.thumbOpacity; else delete ld.thumbOpacity; });
+        const copyGroups = (built, saved) => (built || []).forEach((n, i) => { const sn = saved && saved[i]; if (!sn || n.kind !== 'group') return; if (typeof n.thumbOpacity === 'number' && n.thumbOpacity !== 1) sn.thumbOpacity = n.thumbOpacity; else delete sn.thumbOpacity; copyGroups(n.children, sn.children); });
+        copyGroups(f.layerTree, fd.layerTree);
+    });
+    // Same project still held in memory behind the gallery: keep it in step.
+    if (currentProjectId === tp.id && frames && frames.length === tp.built.length) {
+        frames.forEach((f, fi) => {
+            const bf = tp.built[fi];
+            f.layers.forEach((l, li) => { const b = bf.layers[li]; if (b && typeof b.thumbOpacity === 'number') l.thumbOpacity = b.thumbOpacity; else delete l.thumbOpacity; });
+            const copy = (live, b) => (live || []).forEach((n, i) => { const bn = b && b[i]; if (!bn || n.kind !== 'group') return; if (typeof bn.thumbOpacity === 'number') n.thumbOpacity = bn.thumbOpacity; else delete n.thumbOpacity; copy(n.children, bn.children); });
+            copy(ensureFrameLayerTree(f), bf.layerTree);
+        });
+    }
+    proj.thumbnailDataURL = tp.url || proj.thumbnailDataURL;
+    persistProject(proj, tp.data);
+    renderGallery();
+}
 
 document.getElementById('ctx-delete').addEventListener('click', () => {
     const id = galleryCtxTargetId;
