@@ -17,6 +17,7 @@ Default key convention: subject-then-property, prefixed `pixelApp` (e.g. `pixelA
 | `pixelAppSpriteAnimHideMissingNameToast` | localStorage | `'1'` = don't show the missing-name toast | default |
 | `pixelArtMapartPrefs` | localStorage | `{method, snapToasts}`: mapart colour method id (`MAPART_COLOUR_METHODS`) and the debug snap-toast toggle (V2_5) | default for the `pixelArt*` prefs family |
 | `pixelArtEyedropSample` | localStorage | Eyedropper sample size: 1, 3, 5, 11, 31, 51 or 101 (V2_5) | default for the `pixelArt*` prefs family |
+| `pixelArtTransformPrefs` | localStorage | `{moveStep, sizeStep, rotStep, interp, lock}` for the Transform screen (V2_6) | default for the `pixelArt*` prefs family |
 | `pixelAppBootGuard` | localStorage | `{bootsUnfinished, safeMode, openingProjectId, openingProjectName}` crash guard | default |
 | `pixelAppProjects` | IndexedDB v1 | stores `meta` (keyPath `id`: name, gridW, gridH, profile, thumbnailDataURL, updatedAt) and `data` (keyPath `id`: `{id, data}`, save data v7) | - |
 

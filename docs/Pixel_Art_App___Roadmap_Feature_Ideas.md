@@ -19,13 +19,13 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 9 | Solid background fill (document setting) | Done V2_3 |
 | 10 | Checkerboard colour profiles | Done V1_39 (8-canvas-px squares V1_44_2) |
 | 11 | SVG export for vector layers | Open |
-| 12 | Transform: selection / layers / masks | Selection resize + rotate done V1_40-V1_41_3; layer/mask open |
+| 12 | Transform: selection / layers / masks | Selection resize + rotate done V1_40-V1_41_3; Transform screen Default mode V2_6; Free, Mesh, vector open |
 | 13 | Blend modes (group + layer) | Done Sessions 7a-7d |
 | 14 | Raster tool gating on huge canvases | Done; toast + tappable greyed buttons V1_44_1 |
 | 15 | Expand canvas by selecting outside it | Done V2_1 as the resize screen (choosing how it's opened is still being tried out) |
 | 16 | Swatch raw values (hex/RGBA/HSV+A) + copy hex | Done |
 | 17 | Standalone gallery for exported JSON files | Idea only |
-| 18 | Nudge menu (18a) / nudge transformation (18b) | Idea only |
+| 18 | Nudge menu (18a) / nudge transformation (18b) | 18b done in the Transform screen V2_6 (arrows, typed steps); 18a idea only |
 | 19 | Feather for Bucket fill edges and Wand selections | Idea only |
 | 20 | Line Extraction (lines from a flattened colour image, offline) | Researched V2.1 (method proven on 8 images in a Python test bench); passes, presets, Advanced and cockpit mode decided; not built |
 | 21 | Vector tracing of extracted lines into VectorLayer splines | Idea only; prototype in `experiments/` first |
@@ -66,7 +66,12 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 - Output flattened; the live project untouched (read-only export). Entry point in the File panel.
 
 ### 12. Transform -- remaining
-- Layer/mask transform: extend ReferenceLayer-style fields (`gx/gy/gw/gh/rotation/flipH/flipV`). Check it inside a blended group.
+- Built V2_6: Transform screen "Default" mode (section 3.14 of the handoff) for pixel/image/mask/clip/reference layers and selections.
+- Free mode: corner distort (homography); a "mirror corners" switch gives Photoshop-style Perspective. Same maths either way.
+- Mesh mode: puppet warp (pins you drag to bend the art).
+- Movable anchor point (Paint.NET style) or a 3x3 anchor picker like the Resize sheet; today the anchor is the centre (handles anchor the opposite side).
+- Keeping content pushed off the canvas: part of a future smart-object layer; today it is cut off on Done.
+- Vector layer transform (move the spline points, lossless).
 - Rotate snap-angle slider (rotate is freeform today).
 - Shelved "Free Transform": decided single offset rotate handle at one corner; undecided whether Lock/Free resize merge (touch has no modifier key) and whether rotate stays a separate mode.
 - Selection transform limits: rectangular selections only; nearest-neighbour only (bilinear/bicubic options present but disabled); negative size mirrors.

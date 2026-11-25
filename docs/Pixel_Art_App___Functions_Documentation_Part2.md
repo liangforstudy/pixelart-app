@@ -369,6 +369,16 @@
 - `mapartColourName(hex)` "normal White Wool"-style name for toasts.
 - `setEyedropSampleSize(n)` / `renderEyedropSampleRow()` Sample size pref and its button row. `averageCanvasColour(canvas, x, y, n)` Alpha-weighted N x N average or null.
 
+## Transform screen (V2_6)
+- `xfOpen()` Lifts the active layer's pixels (or selected pixels) and opens `#xfScreen`; false + toast if nothing to transform.
+- `xfDone()` / `xfCancel()` / `xfClose()` Apply (one `layerTransform` undo step) / discard / hide.
+- `xfResample(st, src, sw, sh, interp, mask)` Inverse-mapped nearest/bilinear/bicubic into a canvas-sized RGBA buffer (+ transformed selection mask).
+- `xfNudge(dx, dy)` / `xfStepSize(sign)` / `xfStepRotate(sign)` / `xfFlip(axis)` / `xfReset()` Step edits.
+- `xfFieldChanged(id)` Typed X/Y/W/H/degree and step boxes. `xfSyncUI()` / `xfSyncFields()` Refresh the bar.
+- `xfPointerDown/Move/Up`, `xfWheel` Handles, move, rotate, pinch (piece or view), Space pan, zoom. `xfFocusView()` Zooms in on small pieces.
+- `xfBoxPoint(st, sx, sy)` / `xfToLocal(st, gx, gy)` Box geometry. `xfLayerRGBA(layer)` RGBA of a pixel-like layer.
+- `buildTransformOpenRow()` Layer settings TRANSFORM (SELECTION) button.
+
 ## Thumbnail privacy (V2_5)
 - `openThumbPrivacySheet(id, onReady)` Builds the stored project's frames and opens the per-layer/group thumbnail opacity sheet.
 - `renderThumbPrivacyList()` / `updateThumbPrivacyPreview()` / `resetThumbPrivacySheet()` Sheet rows (frame 1, top first, no mask/clip rows), live preview, reset to 100%.

@@ -45,6 +45,7 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
   Mapart colour methods (Customise > MAPART COLOUR MATCHING, app-wide, `pixelArtMapartPrefs`): the 7 mapartcraft choices; every mapart snap uses `mapartMetric` + squared distance (CIEDE2000 modes use `colourDeltaE2000`). Written from published maths (IEC sRGB, Lindbloom D50 matrix, CIE Lab, Sharma 2005, CAM16 in Material's HCT variant); tests pin reference values. mapartcraft's CIE76/CIEDE2000 skip gamma decode, so off-palette picks can differ from it. Debug drawer: MAPART SNAP TOASTS.
   Thumbnail privacy (gallery long-press): 🕶️ Thumbnail Opacity sheet (`openThumbPrivacySheet`): per layer/group `thumbOpacity` (saved only when < 100%; new layers 100%) used only by `generateThumbnailDataURL` via `flattenTreeToCanvas(..., thumb)`; reminder toast once per project per page load (`thumbPrivacyToastShown`). 🙈 Hide Thumbnail: `thumbHidden` in meta and save data; the card is just the name strip (no thumbnail area, `.thumb-hidden-card`), the image is still generated and stored.
   Eyedropper sample size (Tools drawer while the eyedropper is on, `pixelArtEyedropSample`): Point or N x N average (alpha-weighted, mostly-transparent = transparent); the cursor shows the square.
+- **V2_6** -- Transform screen (section 3.14): Default mode for one layer or its selected pixels.
 
 **Known open**
 - Option B (drop PixelLayer's Proxy, keep both classes) decided, not implemented. A full-canvas PixelLayer bulk edit still builds a large string-keyed history Map + changes array (slow and memory-heavy on iOS near 999x999; won't hang).
@@ -157,6 +158,13 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 - Soft brush, soft eraser and colour to alpha are hidden (`MAPART_TOOL_FALLBACK`). Vector layers are not snapped yet.
 - Saved: `mapartStaircase` in the project data.
 - Grid (View panel `#gridToggleBtn`, one toggle for all levels): pixel lines from 4x up; in Mapart also 2px dark grey chunk lines every 16 px (hidden below 0.5x) and 3px red map lines every 128 px (always shown). Chunk/map lines are divs in `#gridOverlay` at `Math.round(k*step*scale)` so they stay crisp at fractional zoom. On/off saved per project as `gridLines`; new projects start off.
+
+### 3.14 Transform screen (V2_6, roadmap 12/18)
+- `#xfScreen`, opened by `xfOpen` from the layer settings TRANSFORM button (all pixel-like layers and references; vector not yet) or the command palette. State `XF.st` = centre, size, rot, flips; `XF.st0` for Reset.
+- On open the pixels are lifted once (`xfLayerRGBA`): with a selection (mask or rect) only selected cells, bounds = selection shape; otherwise bounds = visible pixels. `XF.base` = what stays behind, `XF.backdrop` = other layers (drawn at 45%). Preview = drawImage of the lifted piece, so nothing degrades while adjusting.
+- Done (`xfDone`) resamples once with `xfResample` (nearest, bilinear, Catmull-Rom bicubic; premultiplied; also moves the selection mask), composites over the base, cuts off-canvas content, one `layerTransform` history entry (pixel `changes` / image `before`/`after` / reference params, plus `selBefore`/`selAfter`). Unrotated (or 90-degree) results snap to whole cells (rotated extents). Mapart pixel layers snap to map colours. References are lossless (params only).
+- Controls: handles (opposite side anchored), inside drag = move, outside drag = rotate, 2 fingers on the piece = scale/rotate/move, elsewhere = view zoom/pan, wheel zoom, Space pan, arrows/Esc/Enter. Steps (`pixelArtTransformPrefs`): move px, size px of width (height follows when ratio locked), rotate degrees; -/+ and rotate are centre anchored. Opens zoomed in on small pieces (`xfFocusView`). Debug FAB hidden while open (`body.xf-open`).
+- Free (corner/perspective distort) and Mesh (puppet warp) tabs are placeholders (toast).
 
 ### 3.13 Background fill (V2_3, roadmap 9)
 - `backgroundColor`: project-level hex or null (none). Saved as `backgroundColor`; new projects/imports reset via `resetBackgroundForNewProject` (Mapart `MAPART_DEFAULT_BACKGROUND` = white carpet `#DCDCDC`, else null).

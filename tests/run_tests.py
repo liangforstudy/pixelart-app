@@ -47,6 +47,8 @@ GROUPS = {
                       ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
+    'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
+                  ['test_transform_basics', 'test_transform_selection_and_kinds']),
     'eyedrop': ('Eyedropper sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
                 ['test_eyedrop_sample_size']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
@@ -995,6 +997,107 @@ async def test_eyedrop_sample_size(pg):
     check('eyedrop: sample size remembered', await pg.evaluate("() => localStorage.getItem(EYEDROP_PREFS_KEY) === '3'"))
     await pg.evaluate("() => { handleToolBtn('eyedrop'); setEyedropSampleSize(1); }"); await tap(pg, 5, 5)
     check('eyedrop: POINT picks the single pixel', await pg.evaluate("() => selectedColor") == '#0000FF')
+
+LAYER_GRID = "() => { const l = activeLayer(); const out = {}; for (let x = 0; x < gridW; x++) for (let y = 0; y < gridH; y++) { const v = l.pixelData[x][y]; if (v != null) out[x + ',' + y] = v; } return out; }"
+
+async def test_transform_basics(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { localStorage.removeItem(XF_PREFS_KEY); xfPrefs = { moveStep: 1, sizeStep: 1, rotStep: 15, interp: 'nearest', lock: true }; }")
+    # 3 x 2 pattern at (4,4): row0 A B C, row1 D E F
+    cols = {(4,4):'#AA0000',(5,4):'#00AA00',(6,4):'#0000AA',(4,5):'#AAAA00',(5,5):'#00AAAA',(6,5):'#AA00AA'}
+    for (x, y), c in cols.items(): await pg.evaluate(DRAW, [[[x, y]], c])
+    await pg.evaluate("() => { openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }"); await pg.wait_for_timeout(300)
+    await pg.locator('#layerTransformOpenBtn').click(); await pg.wait_for_timeout(300)
+    check('xf: TRANSFORM opens the full screen around the layer content', await pg.evaluate("() => XF.open && document.getElementById('xfScreen').style.display === 'flex' && XF.st.w === 3 && XF.st.h === 2 && XF.st.cx === 5.5 && XF.st.cy === 5"))
+    check('xf: Free and Mesh are shown as planned, Default is active', await pg.evaluate("() => document.querySelector('.xf-tab.active').textContent === 'Default' && document.querySelectorAll('.xf-tab-later').length === 2"))
+    await pg.locator('#xfMoveStep').fill('10'); await pg.locator('#xfMoveStep').dispatch_event('change')
+    await pg.locator('#xfRightBtn').click()
+    check('xf: typed move step: one arrow press moves 10 px', await pg.evaluate("() => xfPrefs.moveStep === 10 && document.getElementById('xfX').value === '14'"))
+    await pg.keyboard.press('ArrowDown')
+    check('xf: keyboard arrows nudge by the step', await pg.evaluate("() => XF.st.cy === 15"))
+    await pg.locator('#xfDoneBtn').click(); await pg.wait_for_timeout(200)
+    g = await pg.evaluate(LAYER_GRID)
+    check('xf: Done moves the pixels exactly (nearest)', g == {f'{x+10},{y+10}': c for (x, y), c in cols.items()}, g)
+    check('xf: one undo step', await pg.evaluate("() => undoStack[undoStack.length - 1].type === 'layerTransform'"))
+    await pg.evaluate("() => undo()")
+    check('xf: undo puts them back', await pg.evaluate(LAYER_GRID) == {f'{x},{y}': c for (x, y), c in cols.items()})
+    await pg.evaluate("() => redo()"); await pg.evaluate("() => undo()")
+    # rotate 90 clockwise
+    await pg.evaluate("() => { xfPrefs.rotStep = 90; xfOpen(); }")
+    await pg.locator('#xfRotRightBtn').click(); await pg.evaluate("() => xfDone()")
+    g = await pg.evaluate(LAYER_GRID)
+    # box 3x2 centred (5.5,5) turns into 2 wide x 3 tall; edges snap to whole cells: x 5..6, y 4..6. Clockwise: left column = old bottom row.
+    want = {'6,4':'#AA0000','6,5':'#00AA00','6,6':'#0000AA','5,4':'#AAAA00','5,5':'#00AAAA','5,6':'#AA00AA'}
+    check('xf: rotate 90 with nearest keeps every pixel (columns become rows)', g == want, g)
+    await pg.evaluate("() => undo()")
+    await pg.evaluate("() => { xfOpen(); xfFlip('h'); xfDone(); }")
+    g = await pg.evaluate(LAYER_GRID)
+    check('xf: flip H mirrors in place', g == {'6,4':'#AA0000','5,4':'#00AA00','4,4':'#0000AA','6,5':'#AAAA00','5,5':'#00AAAA','4,5':'#AA00AA'}, g)
+    await pg.evaluate("() => undo()")
+    await pg.evaluate("() => { xfPrefs.sizeStep = 3; xfOpen(); }")
+    await pg.locator('#xfGrowBtn').click()
+    check('xf: + grows by the size step in px of width, height follows (ratio locked)', await pg.evaluate("() => XF.st.w === 6 && XF.st.h === 4"))
+    await pg.evaluate("() => xfDone()")
+    g = await pg.evaluate(LAYER_GRID)
+    check('xf: 2x nearest resize doubles each pixel, centre anchored', len(g) == 24 and g.get('3,3') == '#AA0000' and g.get('4,4') == '#AA0000' and g.get('8,6') == '#AA00AA', sorted(g)[:4])
+    await pg.evaluate("() => undo()")
+    n_undo = await pg.evaluate("() => undoStack.length")
+    await pg.evaluate("() => { xfOpen(); XF.st.cx += 4; }")
+    await pg.locator('#xfCancelBtn').click()
+    check('xf: cancel changes nothing and adds no undo step', await pg.evaluate("() => !XF.open && undoStack.length") == n_undo and await pg.evaluate(LAYER_GRID) == {f'{x},{y}': c for (x, y), c in cols.items()})
+    # handle drag: right edge with ratio unlocked -> left edge stays
+    await pg.evaluate("() => { xfPrefs.lock = false; xfOpen(); }"); await pg.wait_for_timeout(200)
+    p0 = await pg.evaluate("() => { const m = xfViewMetrics(); const [gx, gy] = xfBoxPoint(XF.st, 1, 0); return [m.rect.left + m.ox + gx * m.sc, m.rect.top + m.oy + gy * m.sc, m.sc]; }")
+    await pg.mouse.move(p0[0], p0[1]); await pg.mouse.down(); await pg.mouse.move(p0[0] + 3 * p0[2], p0[1], steps=4); await pg.mouse.up()
+    check('xf: dragging the right handle widens it, left edge stays put', await pg.evaluate("() => Math.abs(XF.st.w - 6) < 0.01 && Math.abs((XF.st.cx - XF.st.w / 2) - 4) < 0.01 && XF.st.h === 2"), await pg.evaluate("() => XF.st"))
+    await pg.keyboard.press('Escape')
+    check('xf: Escape cancels', await pg.evaluate("() => !XF.open"))
+    # off-canvas content is cut on Done
+    await pg.evaluate("() => { xfOpen(); XF.st.cx -= 5; xfDone(); }")
+    g = await pg.evaluate(LAYER_GRID)
+    check('xf: content pushed off the canvas is cut off on Done', g == {'0,4':'#00AA00','0,5':'#00AAAA','1,4':'#0000AA','1,5':'#AA00AA'}, g)
+    check('xf: step prefs remembered', await pg.evaluate("() => JSON.parse(localStorage.getItem(XF_PREFS_KEY)).moveStep === 10"))
+
+async def test_transform_selection_and_kinds(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { xfPrefs = { moveStep: 1, sizeStep: 1, rotStep: 15, interp: 'nearest', lock: true }; }")
+    await pg.evaluate(DRAW, [[[x, 10] for x in range(2, 8)], '#123456'])
+    # select only x 2..4 of the row
+    await pg.evaluate("() => { const m = new Uint8Array(gridW * gridH); for (let x = 2; x <= 4; x++) m[10 * gridW + x] = 1; setSelectionRaw(m, 3, selectionBoundsFromMask(m)); renderLayersPanel(); }")
+    check('xf: with a selection the button says TRANSFORM SELECTION', await pg.evaluate("() => { openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); return document.getElementById('layerTransformOpenBtn').textContent.includes('SELECTION'); }"))
+    await pg.evaluate("() => { xfOpen(); XF.st.cy += 5; xfDone(); }")
+    g = await pg.evaluate(LAYER_GRID)
+    check('xf: only the selected pixels move, the rest stays', g == {'2,15':'#123456','3,15':'#123456','4,15':'#123456','5,10':'#123456','6,10':'#123456','7,10':'#123456'}, g)
+    check('xf: the selection moves with them', await pg.evaluate("() => wandSelection[15 * gridW + 3] === 1 && !wandSelection[10 * gridW + 3] && wandSelectionCount === 3"))
+    await pg.evaluate("() => undo()")
+    check('xf: undo restores pixels and selection together', await pg.evaluate("() => wandSelection[10 * gridW + 3] === 1") and len(await pg.evaluate(LAYER_GRID)) == 6 and (await pg.evaluate(LAYER_GRID)).get('3,10') == '#123456')
+    await pg.evaluate("() => setSelectionRaw(null, 0, null)")
+    # bicubic gives smooth in-between colours, no garbage
+    await pg.evaluate("() => { xfPrefs.interp = 'bicubic'; xfOpen(); XF.st.rot = 30; XF.st.w *= 2; XF.st.h *= 2; xfDone(); }")
+    g = await pg.evaluate(LAYER_GRID)
+    check('xf: bicubic rotate/scale makes smooth edges (partial alpha), valid colours', any(v.startswith('rgba(') for v in g.values()) and all(v.startswith('#') or v.startswith('rgba(') for v in g.values()) and 'NaN' not in ''.join(g.values()), list(g.values())[:3])
+    await pg.evaluate("() => undo()")
+    # image layer
+    ok = await pg.evaluate("""() => { const l = new ImageLayer('img', gridW, gridH); addLayer(l); reindexDom(); setActiveLayer(layers.length - 1);
+        const d = l.imageData.data; const i = (3 * gridW + 3) * 4; d[i] = 200; d[i + 3] = 255; l.redrawFromData();
+        xfPrefs.interp = 'nearest'; xfOpen(); XF.st.cx += 2; xfDone();
+        const j = (3 * gridW + 5) * 4; return [l.imageData.data[i + 3], l.imageData.data[j], l.imageData.data[j + 3], undoStack[undoStack.length - 1].kind]; }""")
+    check('xf: image layers transform too', ok == [0, 200, 255, 'image'], ok)
+    # reference: lossless params
+    import base64
+    png = base64.b64decode(await pg.evaluate(REF_PNG))
+    await pg.locator('#refInput').set_input_files({'name': 'ref.png', 'mimeType': 'image/png', 'buffer': png}); await pg.wait_for_timeout(700)
+    r = await pg.evaluate("() => { const l = activeLayer(); xfOpen(); XF.st.rot = 45; XF.st.cx += 3; xfDone(); return [l.type, l.rotation, l.gx, undoStack[undoStack.length - 1].kind]; }")
+    check('xf: reference layers just get new position/rotation (no resampling)', r[0] == 'reference' and r[1] == 45 and abs(r[2] - 3) < 0.01 and r[3] == 'reference', r)
+    await pg.evaluate("() => undo()")
+    check('xf: reference undo', await pg.evaluate("() => activeLayer().rotation === 0 && activeLayer().gx === 0"))
+    # mapart: smooth resampling still ends on map colours
+    await mapart_canvas(pg)
+    await pg.evaluate(DRAW, [[[x, y] for x in range(10, 20) for y in range(10, 20)], '#DC0000'])
+    await pg.evaluate(DRAW, [[[x, y] for x in range(14, 16) for y in range(10, 20)], '#3F6EDC'])
+    ok = await pg.evaluate("() => { xfPrefs.interp = 'bilinear'; xfOpen(); XF.st.rot = 20; xfDone(); const allowed = new Set(mapartAllowedHexes()); let n = 0; for (let x = 0; x < gridW; x++) for (let y = 0; y < gridH; y++) { const v = activeLayer().pixelData[x][y]; if (v != null) { n++; if (!allowed.has(v)) return 'bad ' + v; } } return n; }")
+    check('xf: mapart results snap to map colours', isinstance(ok, int) and ok > 50, ok)
+    check('xf: Vector layers are not offered yet', await pg.evaluate("() => { addVectorLayer(); return xfOpen() === false && !XF.open; }"))
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''

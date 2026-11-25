@@ -384,6 +384,33 @@
         #rsInfo { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 36px; justify-content: center; }
         #rsSize { font-size: 18px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
         #rsDetail { font-size: 11px; color: #aaa; text-align: center; }
+        /* Transform screen (V2_6) */
+        #xfScreen { position: fixed; inset: 0; z-index: 1160; background: #0e0e0e; display: flex; flex-direction: column;
+            padding-top: env(safe-area-inset-top); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        #xfTopBar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #1c1c1c; border-bottom: 1px solid #333; }
+        .xf-top-btn { min-width: 52px; min-height: 44px; background: none; border: none; color: #4da3ff; font-size: 17px; font-weight: 600; cursor: pointer; }
+        #xfCancelBtn { font-size: 22px; }
+        #xfModeTabs { flex: 1; display: flex; background: #2a2a2e; border-radius: 10px; padding: 3px; gap: 2px; }
+        .xf-tab { flex: 1; min-height: 38px; border: none; border-radius: 8px; background: none; color: #ddd; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .xf-tab.active { background: #55555c; color: #fff; }
+        .xf-tab-later { color: #777; }
+        #xfStage { flex: 1 1 auto; min-height: 0; position: relative; }
+        #xfCanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+        #xfBar { flex: none; background: #1c1c1c; border-top: 1px solid #333; padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+        .xf-row { display: flex; gap: 6px; }
+        .xf-row .btn { flex: 1 1 0; min-height: 44px; }
+        .xf-row .btn.xf-icon { font-size: 20px; }
+        .xf-split { display: flex; gap: 8px; align-items: stretch; }
+        .xf-col { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+        #xfInterp { width: 100%; height: 44px; font-size: 16px; text-align: left; padding: 0 8px; }
+        #xfPad { flex: none; display: grid; grid-template-areas: ". u ." "l . r" ". d ."; grid-template-columns: 44px 44px 44px; grid-template-rows: 30px 30px 30px; gap: 2px; }
+        .xf-pad-btn { min-height: 0 !important; padding: 0; font-size: 14px; }
+        .xf-fields { display: flex; gap: 4px; }
+        .xf-fields label { flex: 1 1 0; display: flex; flex-direction: column; font-size: 9px; color: #888; text-align: center; gap: 2px; min-width: 0; }
+        .xf-fields input { height: 38px; font-size: 16px; width: 100%; box-sizing: border-box; text-align: center; }
+        .xf-steps label { font-size: 8px; }
+        #xfDoneBtn { color: #4da3ff; }
+        body.xf-open #debugFab { display: none; } /* it sat on top of Done */
         .rs-row { display: flex; gap: 6px; }
         .rs-row .btn { flex: 1 1 0; min-height: 44px; }
         #rsConfirmBtn { background: #0078d4; border-color: #0078d4; color: #fff; }
@@ -993,6 +1020,61 @@
         </div>
     </div>
 
+    <!-- Transform screen (V2_6): one layer, or the selected pixels on it. -->
+    <div id="xfScreen" style="display:none;">
+        <div id="xfTopBar">
+            <button class="xf-top-btn" id="xfCancelBtn" onclick="uiAction(xfCancel)" aria-label="Cancel">✕</button>
+            <div id="xfModeTabs">
+                <button class="xf-tab active" data-mode="default">Default</button>
+                <button class="xf-tab xf-tab-later" data-mode="free" onclick="uiAction(() => showAppToast('Free (corner / perspective distort) is planned -- roadmap item 12.', 3500))">Free</button>
+                <button class="xf-tab xf-tab-later" data-mode="mesh" onclick="uiAction(() => showAppToast('Mesh (puppet warp) is planned -- roadmap item 12.', 3500))">Mesh</button>
+            </div>
+            <button class="xf-top-btn" id="xfDoneBtn" onclick="uiAction(xfDone)">Done</button>
+        </div>
+        <div id="xfStage"><canvas id="xfCanvas"></canvas></div>
+        <div id="xfBar">
+            <div class="xf-row">
+                <button class="btn" id="xfResetBtn" onclick="uiAction(xfReset)">RESET</button>
+                <button class="btn xf-icon" id="xfShrinkBtn" onclick="uiAction(() => xfStepSize(-1))" aria-label="Smaller">−</button>
+                <button class="btn xf-icon" id="xfGrowBtn" onclick="uiAction(() => xfStepSize(1))" aria-label="Bigger">+</button>
+                <button class="btn xf-icon" id="xfRotLeftBtn" onclick="uiAction(() => xfStepRotate(-1))" aria-label="Rotate left">↺</button>
+                <button class="btn xf-icon" id="xfRotRightBtn" onclick="uiAction(() => xfStepRotate(1))" aria-label="Rotate right">↻</button>
+            </div>
+            <div class="xf-split">
+                <div class="xf-col">
+                    <div class="xf-row">
+                        <button class="btn" id="xfFlipHBtn" onclick="uiAction(() => xfFlip('h'))">⇋ FLIP H</button>
+                        <button class="btn" id="xfFlipVBtn" onclick="uiAction(() => xfFlip('v'))">⇵ FLIP V</button>
+                        <button class="btn" id="xfLockBtn" onclick="uiAction(xfToggleLock)">🔒 RATIO</button>
+                    </div>
+                    <select id="xfInterp" class="num-input" onchange="uiAction(() => xfSetInterp(this.value))">
+                        <option value="nearest">Nearest (sharp pixels)</option>
+                        <option value="bilinear">Bilinear (smooth)</option>
+                        <option value="bicubic">Bicubic (smooth, sharper)</option>
+                    </select>
+                </div>
+                <div id="xfPad">
+                    <button class="btn xf-pad-btn" id="xfUpBtn" style="grid-area:u" onclick="uiAction(() => xfNudge(0,-1))" aria-label="Up">▲</button>
+                    <button class="btn xf-pad-btn" id="xfLeftBtn" style="grid-area:l" onclick="uiAction(() => xfNudge(-1,0))" aria-label="Left">◀</button>
+                    <button class="btn xf-pad-btn" id="xfRightBtn" style="grid-area:r" onclick="uiAction(() => xfNudge(1,0))" aria-label="Right">▶</button>
+                    <button class="btn xf-pad-btn" id="xfDownBtn" style="grid-area:d" onclick="uiAction(() => xfNudge(0,1))" aria-label="Down">▼</button>
+                </div>
+            </div>
+            <div class="xf-fields">
+                <label>X<input type="number" inputmode="decimal" id="xfX" class="num-input"></label>
+                <label>Y<input type="number" inputmode="decimal" id="xfY" class="num-input"></label>
+                <label>W<input type="number" inputmode="decimal" id="xfW" class="num-input"></label>
+                <label>H<input type="number" inputmode="decimal" id="xfH" class="num-input"></label>
+                <label>°<input type="number" inputmode="decimal" id="xfR" class="num-input"></label>
+            </div>
+            <div class="xf-fields xf-steps">
+                <label>MOVE STEP px<input type="number" inputmode="decimal" id="xfMoveStep" class="num-input" min="0.01"></label>
+                <label>SIZE STEP px<input type="number" inputmode="decimal" id="xfSizeStep" class="num-input" min="0.01"></label>
+                <label>ROTATE STEP °<input type="number" inputmode="decimal" id="xfRotStep" class="num-input" min="0.01"></label>
+            </div>
+        </div>
+    </div>
+
     <!-- Canvas resize sheet. Size fields use the native numeric keyboard (inputmode=numeric). -->
     <div id="resize-canvas-modal">
         <div id="resize-canvas-sheet">
@@ -1541,7 +1623,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_5';
+const BUILD_VERSION = 'V2_6';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -3266,6 +3348,11 @@ function estimateHistoryEntryBytes(entry) {
     if (entry.type === 'imageFull') {
         return 128 + (entry.before?.byteLength||0) + (entry.after?.byteLength||0);
     }
+    if (entry.type === 'layerTransform') {
+        let bytes = 256 + (entry.before?.byteLength||0) + (entry.after?.byteLength||0) + (entry.selBefore?.mask?.byteLength||0) + (entry.selAfter?.mask?.byteLength||0);
+        if (Array.isArray(entry.changes)) for (let i=0;i<entry.changes.length;i+=4) bytes += 32 + String(entry.changes[i+2] ?? '').length * 2 + String(entry.changes[i+3] ?? '').length * 2;
+        return bytes;
+    }
     if (entry.type === 'pixelsMulti' && Array.isArray(entry.entries)) {
         return entry.entries.reduce((n, e) => n + estimateHistoryEntryBytes(e), 64);
     }
@@ -3862,7 +3949,7 @@ function applyPanelVisibility() {
 }
 function historyEntryLabel(entry, index) {
     if (entry.label) return entry.label;
-    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', selectionTransform:'Resize selection', tree:'Layer / group change', canvasResize:'Resize Canvas', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', removeSpline:'Delete vector point', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
+    const names = {pixels:'Draw / edit pixels', imageTiles:'Photo edit', imageFull:'Photo image operation', selection:'Selection change', selectionTransform:'Resize selection', layerTransform:'Transform layer', tree:'Layer / group change', canvasResize:'Resize Canvas', deleteLayer:'Delete layer', addLayer:'Add layer', addSpline:'Add vector shape', removeSpline:'Delete vector point', editSplinePoints:'Edit vector points', clearVectorLayer:'Clear vector layer'};
     let label = names[entry.type] || 'Edit';
     if (entry.layer && entry.layer.name) label += ': ' + entry.layer.name;
     if (entry.layerId) { const layer=findLayerById(entry.frameIndex,entry.layerId); if(layer) label += ': ' + layer.name; }
@@ -6716,6 +6803,7 @@ function registerBuiltInCommands(){
     registerCommand('view.zoomIn','Zoom In',['zoom','magnify'],zoomIn,'View');
     registerCommand('view.zoomOut','Zoom Out',['shrink','zoom out'],zoomOut,'View');
     registerCommand('view.grid','Toggle Grid',['grid lines','show grid'],toggleGridLines,'View');
+    registerCommand('layer.transform','Transform Layer',['transform','scale layer','rotate layer','move layer','resize layer','nudge','flip layer'],()=>xfOpen(),'Layers');
     registerCommand('layers.thumbnails','Larger Thumbnails',['thumbnail size','bigger thumbnails'],toggleLayerThumbSize,'Layers');
     registerCommand('file.save','Save Project',['save','project'],saveProject,'File');
     registerCommand('file.export','Export PNG',['png','export image'],saveImage,'File');
@@ -6900,7 +6988,7 @@ function renderLayersPanel() {
             // (flattenLayersToCanvas, flattenGroupSubtreeToCanvas), so a
             // blend mode on either wouldn't have a coherent meaning.
             if(layer.type==='pixel'||layer.type==='image'||layer.type==='vector'){const lbm=document.createElement('select');lbm.className='num-input';BLEND_MODE_OPTIONS.forEach(v=>{const o=document.createElement('option');o.value=v;o.innerText=v.toUpperCase();if((layer.blendMode||'source-over')===v)o.selected=true;lbm.appendChild(o);});lbm.onchange=()=>{layer.blendMode=lbm.value;layer.applyVisualState();refreshHookedComposites();};opRow.append(lbm);}
-            settings.appendChild(opRow);if(layer.type==='reference')settings.appendChild(buildReferenceTransformUI(layer));}
+            settings.appendChild(opRow);if(isPixelLike(layer)||layer.type==='reference')settings.appendChild(buildTransformOpenRow());if(layer.type==='reference')settings.appendChild(buildReferenceTransformUI(layer));}
     };
     const renderGroupRow=(node,depth)=>{
         const row=document.createElement('div'); row.className='layer-row group-row'+(activeGroupId===node.id?' active-layer':'')+(layerSelectionMode&&isNodeSelected(node)?' selected-layer':''); row.dataset.nodeId=nodeId(node); row.style.paddingLeft=(depth*18)+'px';
@@ -7441,6 +7529,16 @@ function applyHistoryEntry(entry, forward) {
         );
     }
     else if(entry.type==='canvasResize') restoreCanvasResizeState(forward?entry.after:entry.before);
+    else if(entry.type==='layerTransform') {
+        const layer=findLayerById(entry.frameIndex,entry.layerId);
+        if(layer){
+            if(entry.kind==='pixel') applyPixelDelta(entry,forward);
+            else if(entry.kind==='image' && layer instanceof ImageLayer){ layer.imageData=new ImageData(new Uint8ClampedArray(forward?entry.after:entry.before),layer.gridW,layer.gridH); layer.redrawFromData(); }
+            else if(entry.kind==='reference'){ Object.assign(layer, forward?entry.refAfter:entry.refBefore); layer.layoutCSS(); }
+        }
+        const sn=forward?entry.selAfter:entry.selBefore;
+        if(sn) setSelectionRaw(sn.mask?sn.mask.slice():null, sn.count, sn.rect?{...sn.rect}:null);
+    }
     else if(entry.type==='background') { backgroundColor=forward?entry.after:entry.before; updateBackgroundFill(); updateBackgroundUI(); }
     else if(entry.type==='pixelsMulti') { entry.entries.forEach(e=>applyPixelDelta(e,forward)); refreshHookedComposites(); }
     else if(entry.type==='selection') setSelectionRaw(forward?(entry.afterMask?entry.afterMask.slice():null):(entry.beforeMask?entry.beforeMask.slice():null),forward?(entry.afterCount||0):(entry.beforeCount||0),forward?(entry.afterRect?{...entry.afterRect}:null):(entry.beforeRect?{...entry.beforeRect}:null));
@@ -7545,6 +7643,13 @@ function setSpacePanHeld(on) {
 // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y for undo/redo (desktop convenience; touch users use the on-screen buttons).
 function setupKeyboardShortcuts() {
     window.addEventListener('keydown', (e) => {
+        // Transform screen: arrows nudge by the move step, Esc cancels, Enter applies.
+        if (XF.open && !keyTargetIsTextField(e.target)) {
+            const k = e.key, dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[k];
+            if (dir) { e.preventDefault(); xfNudge(dir[0], dir[1]); return; }
+            if (k === 'Escape') { e.preventDefault(); xfCancel(); return; }
+            if (k === 'Enter') { e.preventDefault(); xfDone(); return; }
+        }
         if (e.code === 'Space' && !e.ctrlKey && !e.metaKey && !e.altKey && !keyTargetIsTextField(e.target)) {
             // preventDefault also stops Space "clicking" a focused button or scrolling the page.
             e.preventDefault();
@@ -12645,6 +12750,458 @@ document.getElementById('ctx-save-file').addEventListener('click', () => {
         downloadProjectData({ ...data, name: proj.name }, proj.name || 'project');
     });
 });
+
+/* ============================================================
+   TRANSFORM SCREEN (V2_6) -- "Default" mode (move / resize / rotate /
+   flip) for one layer, or only its selected pixels when a selection is
+   active. Full-screen like the resize screen. While open, every change is
+   drawn from the ORIGINAL pixels (lifted once on open), so shrinking then
+   growing never blurs; Done resamples once (own nearest / bilinear /
+   Catmull-Rom bicubic, alpha-premultiplied) and records ONE undo step
+   ('layerTransform'). Anything pushed off the canvas is cut off on Done.
+   Reference layers are lossless: Done just sets gx/gy/gw/gh/rotation/flip.
+   Anchor is the centre for the -/+ and rotate steps, the boxes and pinch;
+   dragging a handle anchors the opposite side. Free (corner/perspective)
+   and Mesh (puppet warp) are planned (roadmap 12).
+   State st: centre (cx,cy), size (w,h) in canvas px, rot (deg), fh/fv.
+   ============================================================ */
+const XF_PREFS_KEY = 'pixelArtTransformPrefs';
+let xfPrefs = { moveStep: 1, sizeStep: 1, rotStep: 15, interp: 'nearest', lock: true };
+try {
+    const v = JSON.parse(localStorage.getItem(XF_PREFS_KEY) || 'null');
+    if (v) {
+        ['moveStep', 'sizeStep', 'rotStep'].forEach(k => { if (typeof v[k] === 'number' && v[k] > 0 && v[k] < 100000) xfPrefs[k] = v[k]; });
+        if (['nearest', 'bilinear', 'bicubic'].includes(v.interp)) xfPrefs.interp = v.interp;
+        if (typeof v.lock === 'boolean') xfPrefs.lock = v.lock;
+    }
+} catch (_) {}
+function saveXfPrefs() { try { localStorage.setItem(XF_PREFS_KEY, JSON.stringify(xfPrefs)); } catch (_) {} }
+const XF = { open: false, layer: null, kind: null, src: null, srcData: null, srcMask: null, base: null, baseData: null, backdrop: null,
+    hadSelection: false, selBefore: null, st: null, st0: null, view: { zoom: 1, panX: 0, panY: 0 }, ptrs: new Map(), drag: null, pinch: null };
+const XF_HANDLES = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+
+// RGBA bytes of a pixel-like layer (PixelLayer colours or ImageLayer data).
+function xfLayerRGBA(layer) {
+    const W = layer.gridW, H = layer.gridH;
+    if (layer instanceof ImageLayer) return new Uint8ClampedArray(layer.imageData.data);
+    const out = new Uint8ClampedArray(W * H * 4);
+    for (let x = 0; x < W; x++) { const col = layer.pixelData[x]; for (let y = 0; y < H; y++) {
+        const v = col[y]; if (v == null) continue;
+        const c = parseStoredColor(v), i = (y * W + x) * 4;
+        out[i] = c.r; out[i + 1] = c.g; out[i + 2] = c.b; out[i + 3] = Math.round(c.a * 255);
+    } }
+    return out;
+}
+function xfCanvasFrom(data, w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(new ImageData(data, w, h), 0, 0); return c; }
+
+// Opens the screen for the active layer. Returns false (with a toast) if
+// there's nothing it can transform.
+function xfOpen() {
+    const layer = activeLayer();
+    if (!layer || !(isPixelLike(layer) || layer.type === 'reference')) { showAppToast(layer && layer.type === 'vector' ? 'Vector layer transform is planned (roadmap 12).' : 'Select a pixel, image, mask, clip or reference layer to transform.', 4000); return false; }
+    const W = gridW, H = gridH;
+    XF.layer = layer; XF.hadSelection = false; XF.selBefore = null; XF.srcMask = null; XF.base = null; XF.baseData = null;
+    if (layer.type === 'reference') {
+        XF.kind = 'reference';
+        XF.src = layer.el; XF.srcData = null;
+        XF.st0 = { cx: layer.gx + layer.gw / 2, cy: layer.gy + layer.gh / 2, w: layer.gw, h: layer.gh, rot: layer.rotation || 0, fh: !!layer.flipH, fv: !!layer.flipV };
+    } else {
+        XF.kind = layer instanceof ImageLayer ? 'image' : 'pixel';
+        const rgba = xfLayerRGBA(layer);
+        const sel = hasWandSelection() ? wandSelection : null;
+        const rect = !sel && selection ? selection : null;
+        const isSel = (x, y) => sel ? !!sel[y * W + x] : rect ? (x >= rect.x0 && x <= rect.x1 && y >= rect.y0 && y <= rect.y1) : true;
+        const selecting = !!(sel || rect);
+        // Bounds: the selection's shape when selecting (transparent selected
+        // cells move too), otherwise the layer's visible pixels.
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            if (!isSel(x, y)) continue;
+            if (!selecting && rgba[(y * W + x) * 4 + 3] === 0) continue;
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+        if (x1 < 0) { showAppToast(selecting ? 'The selection is empty.' : 'Nothing on this layer to transform.', 3500); return false; }
+        const sw = x1 - x0 + 1, sh = y1 - y0 + 1;
+        const srcData = new Uint8ClampedArray(sw * sh * 4), srcMask = new Uint8Array(sw * sh);
+        const baseData = new Uint8ClampedArray(rgba);
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+            if (!isSel(x, y)) continue;
+            const si = (y * W + x) * 4, di = ((y - y0) * sw + (x - x0)) * 4;
+            srcData[di] = rgba[si]; srcData[di + 1] = rgba[si + 1]; srcData[di + 2] = rgba[si + 2]; srcData[di + 3] = rgba[si + 3];
+            srcMask[(y - y0) * sw + (x - x0)] = 1;
+            baseData[si] = baseData[si + 1] = baseData[si + 2] = baseData[si + 3] = 0;
+        }
+        XF.srcData = srcData; XF.srcW = sw; XF.srcH = sh; XF.src = xfCanvasFrom(srcData, sw, sh);
+        XF.baseData = baseData; XF.base = xfCanvasFrom(baseData, W, H);
+        if (selecting) { XF.hadSelection = true; XF.selBefore = selectionSnapshot(); XF.srcMask = srcMask; }
+        XF.st0 = { cx: x0 + sw / 2, cy: y0 + sh / 2, w: sw, h: sh, rot: 0, fh: false, fv: false };
+    }
+    XF.st = { ...XF.st0 };
+    // Everything except this layer, for context (drawn faded).
+    const keepVis = layer.visible;
+    try { layer.visible = false; XF.backdrop = flattenTreeToCanvas(frames[activeFrameIndex].layerTree, W, H, false, backgroundColor, true); }
+    finally { layer.visible = keepVis; }
+    XF.view = { zoom: 1, panX: 0, panY: 0 }; XF.ptrs.clear(); XF.drag = null; XF.pinch = null;
+    closePanel(); closeDrawer();
+    XF.open = true;
+    document.body.classList.add('xf-open');
+    document.getElementById('xfScreen').style.display = 'flex';
+    xfSyncUI();
+    xfResizeCanvas();
+    xfFocusView();
+    return true;
+}
+function xfClose() {
+    XF.open = false; XF.drag = null; XF.pinch = null; XF.ptrs.clear();
+    document.body.classList.remove('xf-open');
+    document.getElementById('xfScreen').style.display = 'none';
+    XF.src = XF.base = XF.backdrop = null; XF.srcData = XF.baseData = XF.srcMask = null;
+}
+function xfCancel() { xfClose(); }
+
+// ---- view (fit + wheel zoom + Space pan) ----
+function xfResizeCanvas() {
+    const c = document.getElementById('xfCanvas'); if (!c) return;
+    const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    xfDraw();
+}
+function xfViewMetrics() {
+    const c = document.getElementById('xfCanvas'), r = c.getBoundingClientRect();
+    const fit = Math.max(0.01, Math.min((r.width - 48) / gridW, (r.height - 48) / gridH));
+    const sc = fit * XF.view.zoom;
+    return { sc, ox: (r.width - gridW * sc) / 2 + XF.view.panX, oy: (r.height - gridH * sc) / 2 + XF.view.panY, rect: r };
+}
+// Opens zoomed in on small pieces (handles crowd otherwise), centred on them.
+function xfFocusView() {
+    const m = xfViewMetrics(), fit = m.sc / XF.view.zoom, big = Math.max(XF.st.w, XF.st.h) * fit;
+    XF.view.zoom = big < 160 ? Math.min(64, 160 / Math.max(0.01, big)) : 1;
+    if (XF.view.zoom > 1) {
+        const sc = fit * XF.view.zoom;
+        XF.view.panX = gridW * sc / 2 - XF.st.cx * sc; XF.view.panY = gridH * sc / 2 - XF.st.cy * sc;
+    } else { XF.view.panX = XF.view.panY = 0; }
+    xfDraw();
+}
+function xfToGrid(clientX, clientY) { const m = xfViewMetrics(); return [(clientX - m.rect.left - m.ox) / m.sc, (clientY - m.rect.top - m.oy) / m.sc]; }
+// Box corner/edge point (sx, sy in -1..1) in canvas px.
+function xfBoxPoint(st, sx, sy) {
+    const a = st.rot * Math.PI / 180, lx = sx * st.w / 2, ly = sy * st.h / 2;
+    return [st.cx + lx * Math.cos(a) - ly * Math.sin(a), st.cy + lx * Math.sin(a) + ly * Math.cos(a)];
+}
+// Canvas point -> box-local coords (unrotated, relative to centre).
+function xfToLocal(st, gx, gy) {
+    const a = -st.rot * Math.PI / 180, dx = gx - st.cx, dy = gy - st.cy;
+    return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+}
+let xfChecker = null;
+function xfDraw() {
+    if (!XF.open) return;
+    const c = document.getElementById('xfCanvas'), ctx = c.getContext('2d');
+    const dpr = window.devicePixelRatio || 1, m = xfViewMetrics(), st = XF.st;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#2b2b2e'; ctx.fillRect(0, 0, m.rect.width, m.rect.height);
+    if (!xfChecker) { const k = document.createElement('canvas'); k.width = k.height = 16; const kx = k.getContext('2d'); kx.fillStyle = '#d8d8d8'; kx.fillRect(0, 0, 16, 16); kx.fillStyle = '#b8b8b8'; kx.fillRect(0, 0, 8, 8); kx.fillRect(8, 8, 8, 8); xfChecker = ctx.createPattern(k, 'repeat'); }
+    ctx.fillStyle = xfChecker; ctx.fillRect(m.ox, m.oy, gridW * m.sc, gridH * m.sc);
+    const smooth = XF.kind === 'reference' ? !XF.layer.isPixelated() : xfPrefs.interp !== 'nearest';
+    const drawFloat = () => {
+        ctx.save();
+        ctx.translate(st.cx, st.cy); ctx.rotate(st.rot * Math.PI / 180); ctx.scale(st.fh ? -1 : 1, st.fv ? -1 : 1);
+        ctx.imageSmoothingEnabled = smooth; if (smooth) ctx.imageSmoothingQuality = xfPrefs.interp === 'bicubic' ? 'high' : 'low';
+        ctx.drawImage(XF.src, -st.w / 2, -st.h / 2, st.w, st.h);
+        ctx.restore();
+    };
+    ctx.save(); ctx.translate(m.ox, m.oy); ctx.scale(m.sc, m.sc);
+    // Faint copy outside the canvas: shows what Done will cut off.
+    ctx.globalAlpha = 0.25; drawFloat(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.rect(0, 0, gridW, gridH); ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    if (XF.backdrop) { ctx.globalAlpha = 0.45; ctx.drawImage(XF.backdrop, 0, 0); ctx.globalAlpha = 1; }
+    if (XF.base) ctx.drawImage(XF.base, 0, 0);
+    drawFloat();
+    ctx.restore();
+    // Outline + handles in screen space.
+    const scr = ([gx, gy]) => [m.ox + gx * m.sc, m.oy + gy * m.sc];
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => scr(xfBoxPoint(st, a, b)));
+    ctx.beginPath(); corners.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+    ctx.lineWidth = 1; ctx.strokeStyle = '#000'; ctx.stroke(); ctx.setLineDash([4, 4]); ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.setLineDash([]);
+    XF_HANDLES.forEach(([a, b]) => {
+        const [x, y] = scr(xfBoxPoint(st, a, b));
+        ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2);
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.stroke(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
+    });
+}
+
+// ---- edits ----
+function xfChanged() { xfSyncFields(); xfDraw(); }
+function xfNudge(dx, dy) { XF.st.cx += dx * xfPrefs.moveStep; XF.st.cy += dy * xfPrefs.moveStep; xfChanged(); }
+// -/+ by pixels of width (height follows when the ratio is locked), centre anchored.
+function xfStepSize(sign) {
+    const st = XF.st, nw = Math.max(1, st.w + sign * xfPrefs.sizeStep);
+    if (xfPrefs.lock) st.h = Math.max(1, st.h * nw / st.w);
+    st.w = nw; xfChanged();
+}
+function xfStepRotate(sign) { XF.st.rot = xfNormDeg(XF.st.rot + sign * xfPrefs.rotStep); xfChanged(); }
+function xfNormDeg(d) { d = ((d % 360) + 360) % 360; return Math.abs(d - Math.round(d)) < 1e-9 ? Math.round(d) : d; }
+function xfFlip(axis) { if (axis === 'h') XF.st.fh = !XF.st.fh; else XF.st.fv = !XF.st.fv; xfSyncUI(); xfDraw(); }
+function xfToggleLock() { xfPrefs.lock = !xfPrefs.lock; saveXfPrefs(); xfSyncUI(); }
+function xfSetInterp(v) { if (['nearest', 'bilinear', 'bicubic'].includes(v)) { xfPrefs.interp = v; saveXfPrefs(); } xfSyncUI(); xfDraw(); }
+function xfReset() { XF.st = { ...XF.st0 }; xfSyncUI(); xfDraw(); }
+const xfRound = v => Math.round(v * 100) / 100;
+function xfSyncFields() {
+    const st = XF.st, f = { xfX: st.cx - st.w / 2, xfY: st.cy - st.h / 2, xfW: st.w, xfH: st.h, xfR: st.rot };
+    Object.entries(f).forEach(([id, v]) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = xfRound(v); });
+}
+function xfSyncUI() {
+    xfSyncFields();
+    const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v; };
+    set('xfMoveStep', xfPrefs.moveStep); set('xfSizeStep', xfPrefs.sizeStep); set('xfRotStep', xfPrefs.rotStep);
+    const lock = document.getElementById('xfLockBtn'); if (lock) { lock.textContent = (xfPrefs.lock ? '🔒' : '🔓') + ' RATIO'; lock.classList.toggle('active', xfPrefs.lock); }
+    const sel = document.getElementById('xfInterp');
+    if (sel) { sel.value = xfPrefs.interp; sel.disabled = XF.kind === 'reference'; sel.title = XF.kind === 'reference' ? 'Reference layers are never resampled: their display mode decides how they look.' : ''; }
+    const fh = document.getElementById('xfFlipHBtn'); if (fh && XF.st) fh.classList.toggle('active', XF.st.fh);
+    const fv = document.getElementById('xfFlipVBtn'); if (fv && XF.st) fv.classList.toggle('active', XF.st.fv);
+}
+// Typed boxes: X/Y = top-left before rotation; W/H centre-anchored (W
+// keeps the ratio when locked); ° about the centre.
+function xfFieldChanged(id) {
+    const el = document.getElementById(id), v = parseFloat(el.value);
+    if (!isFinite(v)) { xfSyncFields(); return; }
+    const st = XF.st;
+    if (id === 'xfX') st.cx = v + st.w / 2;
+    else if (id === 'xfY') st.cy = v + st.h / 2;
+    else if (id === 'xfW') { const nw = Math.max(1, v); if (xfPrefs.lock) st.h = Math.max(1, st.h * nw / st.w); st.w = nw; }
+    else if (id === 'xfH') { const nh = Math.max(1, v); if (xfPrefs.lock) st.w = Math.max(1, st.w * nh / st.h); st.h = nh; }
+    else if (id === 'xfR') st.rot = xfNormDeg(v);
+    else if (id === 'xfMoveStep' || id === 'xfSizeStep' || id === 'xfRotStep') {
+        if (v > 0) xfPrefs[id === 'xfMoveStep' ? 'moveStep' : id === 'xfSizeStep' ? 'sizeStep' : 'rotStep'] = v;
+        saveXfPrefs(); xfSyncUI(); return;
+    }
+    xfChanged();
+}
+
+// ---- pointer: handles (opposite side anchored), inside = move,
+// outside = rotate, two fingers = pinch scale + rotate + move, Space = pan view.
+function xfHitHandle(clientX, clientY) {
+    const m = xfViewMetrics();
+    for (let i = 0; i < XF_HANDLES.length; i++) {
+        const [gx, gy] = xfBoxPoint(XF.st, XF_HANDLES[i][0], XF_HANDLES[i][1]);
+        if (Math.hypot(m.rect.left + m.ox + gx * m.sc - clientX, m.rect.top + m.oy + gy * m.sc - clientY) <= 22) return i;
+    }
+    return -1;
+}
+function xfPointerDown(e) {
+    const c = e.currentTarget; try { c.setPointerCapture(e.pointerId); } catch (_) {}
+    XF.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (XF.ptrs.size === 2) {
+        const [a, b] = [...XF.ptrs.values()];
+        const mid = xfToGrid((a.x + b.x) / 2, (a.y + b.y) / 2);
+        XF.drag = null;
+        // Two fingers centred on the piece scale/rotate/move it; anywhere
+        // else they zoom and pan the view.
+        const [mlx, mly] = xfToLocal(XF.st, mid[0], mid[1]);
+        const onPiece = Math.abs(mlx) <= XF.st.w / 2 && Math.abs(mly) <= XF.st.h / 2;
+        XF.pinch = { view: !onPiece, st0: { ...XF.st }, d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, a0: Math.atan2(b.y - a.y, b.x - a.x), mid0: mid, zoom0: XF.view.zoom };
+        return;
+    }
+    if (XF.ptrs.size > 2) return;
+    if (spacePanHeld) { XF.drag = { type: 'pan', x: e.clientX, y: e.clientY, panX: XF.view.panX, panY: XF.view.panY }; return; }
+    const hi = xfHitHandle(e.clientX, e.clientY), g = xfToGrid(e.clientX, e.clientY), st0 = { ...XF.st };
+    if (hi !== -1) { XF.drag = { type: 'handle', idx: hi, st0 }; return; }
+    const [lx, ly] = xfToLocal(st0, g[0], g[1]);
+    if (Math.abs(lx) <= st0.w / 2 && Math.abs(ly) <= st0.h / 2) XF.drag = { type: 'move', g0: g, st0 };
+    else XF.drag = { type: 'rotate', a0: Math.atan2(g[1] - st0.cy, g[0] - st0.cx), st0 };
+}
+function xfPointerMove(e) {
+    if (!XF.ptrs.has(e.pointerId)) return;
+    XF.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (XF.pinch && XF.pinch.view && XF.ptrs.size >= 2) {
+        const [a, b] = [...XF.ptrs.values()], p = XF.pinch;
+        XF.view.zoom = Math.max(0.1, Math.min(64, p.zoom0 * Math.hypot(b.x - a.x, b.y - a.y) / p.d0));
+        const m = xfViewMetrics(), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+        XF.view.panX += (cx - m.rect.left) - (m.ox + p.mid0[0] * m.sc);
+        XF.view.panY += (cy - m.rect.top) - (m.oy + p.mid0[1] * m.sc);
+        xfDraw(); return;
+    }
+    if (XF.pinch && XF.ptrs.size >= 2) {
+        const [a, b] = [...XF.ptrs.values()], p = XF.pinch, st = XF.st;
+        const s = Math.hypot(b.x - a.x, b.y - a.y) / p.d0, mid = xfToGrid((a.x + b.x) / 2, (a.y + b.y) / 2);
+        st.w = Math.max(1, p.st0.w * s); st.h = Math.max(1, p.st0.h * s);
+        st.rot = xfNormDeg(p.st0.rot + (Math.atan2(b.y - a.y, b.x - a.x) - p.a0) * 180 / Math.PI);
+        st.cx = p.st0.cx + mid[0] - p.mid0[0]; st.cy = p.st0.cy + mid[1] - p.mid0[1];
+        xfChanged(); return;
+    }
+    const d = XF.drag; if (!d) return;
+    if (d.type === 'pan') { XF.view.panX = d.panX + e.clientX - d.x; XF.view.panY = d.panY + e.clientY - d.y; xfDraw(); return; }
+    const g = xfToGrid(e.clientX, e.clientY), st = XF.st, s0 = d.st0;
+    if (d.type === 'move') { st.cx = s0.cx + g[0] - d.g0[0]; st.cy = s0.cy + g[1] - d.g0[1]; }
+    else if (d.type === 'rotate') { st.rot = xfNormDeg(s0.rot + (Math.atan2(g[1] - s0.cy, g[0] - s0.cx) - d.a0) * 180 / Math.PI); }
+    else if (d.type === 'handle') {
+        const [sx, sy] = XF_HANDLES[d.idx], [lx, ly] = xfToLocal(s0, g[0], g[1]);
+        const fx = -sx * s0.w / 2, fy = -sy * s0.h / 2; // opposite side stays put
+        let w = s0.w, h = s0.h;
+        if (sx) w = Math.max(1, (lx - fx) * sx);
+        if (sy) h = Math.max(1, (ly - fy) * sy);
+        if (xfPrefs.lock) {
+            const k = sx && sy ? Math.max(w / s0.w, h / s0.h) : sx ? w / s0.w : h / s0.h;
+            w = Math.max(1, s0.w * k); h = Math.max(1, s0.h * k);
+        }
+        const clx = sx ? fx + sx * w / 2 : 0, cly = sy ? fy + sy * h / 2 : 0, a = s0.rot * Math.PI / 180;
+        st.w = w; st.h = h;
+        st.cx = s0.cx + clx * Math.cos(a) - cly * Math.sin(a); st.cy = s0.cy + clx * Math.sin(a) + cly * Math.cos(a);
+    }
+    xfChanged();
+}
+function xfPointerUp(e) {
+    XF.ptrs.delete(e.pointerId);
+    if (XF.ptrs.size < 2) XF.pinch = null;
+    if (XF.ptrs.size === 0) XF.drag = null;
+}
+function xfWheel(e) {
+    e.preventDefault();
+    const m = xfViewMetrics(), g = xfToGrid(e.clientX, e.clientY);
+    XF.view.zoom = Math.max(0.1, Math.min(64, XF.view.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const m2 = xfViewMetrics();
+    // keep the point under the cursor in place
+    XF.view.panX += (e.clientX - m2.rect.left) - (m2.ox + g[0] * m2.sc);
+    XF.view.panY += (e.clientY - m2.rect.top) - (m2.oy + g[1] * m2.sc);
+    xfDraw();
+}
+
+// ---- resampling (Done) ----
+// Catmull-Rom (Keys a = -0.5) weight.
+function xfCubic(t) { t = Math.abs(t); return t <= 1 ? (1.5 * t - 2.5) * t * t + 1 : t < 2 ? ((-0.5 * t + 2.5) * t - 4) * t + 2 : 0; }
+// Transforms the lifted pixels into a canvas-sized RGBA buffer (premultiplied
+// filtering, straight-alpha output) and, if given, a mask the same way
+// (nearest). Only pixels inside the canvas are produced.
+function xfResample(st, src, sw, sh, interp, mask) {
+    const W = gridW, H = gridH, out = new Uint8ClampedArray(W * H * 4), outMask = mask ? new Uint8Array(W * H) : null;
+    const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => xfBoxPoint(st, a, b));
+    const bx0 = Math.max(0, Math.floor(Math.min(...pts.map(p => p[0])) - 2)), bx1 = Math.min(W - 1, Math.ceil(Math.max(...pts.map(p => p[0])) + 2));
+    const by0 = Math.max(0, Math.floor(Math.min(...pts.map(p => p[1])) - 2)), by1 = Math.min(H - 1, Math.ceil(Math.max(...pts.map(p => p[1])) + 2));
+    const a = -st.rot * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), kx = sw / st.w, ky = sh / st.h;
+    const px = (ix, iy, k) => (ix < 0 || iy < 0 || ix >= sw || iy >= sh) ? 0 : src[(iy * sw + ix) * 4 + k];
+    const taps = interp === 'bicubic' ? 2 : 1;
+    for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+        const dx = x + 0.5 - st.cx, dy = y + 0.5 - st.cy;
+        let lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+        if (st.fh) lx = -lx; if (st.fv) ly = -ly;
+        const u = (lx + st.w / 2) * kx, v = (ly + st.h / 2) * ky;
+        const o = (y * W + x) * 4;
+        if (mask) { const iu = Math.floor(u), iv = Math.floor(v); if (iu >= 0 && iv >= 0 && iu < sw && iv < sh && mask[iv * sw + iu]) outMask[y * W + x] = 1; }
+        if (interp === 'nearest') {
+            const iu = Math.floor(u), iv = Math.floor(v);
+            if (iu < 0 || iv < 0 || iu >= sw || iv >= sh) continue;
+            const i = (iv * sw + iu) * 4; out[o] = src[i]; out[o + 1] = src[i + 1]; out[o + 2] = src[i + 2]; out[o + 3] = src[i + 3];
+            continue;
+        }
+        const fu = u - 0.5, fv = v - 0.5, iu = Math.floor(fu), iv = Math.floor(fv), tu = fu - iu, tv = fv - iv;
+        if (iu + 1 + taps - 1 < 0 || iv + 1 + taps - 1 < 0 || iu - taps + 1 > sw - 1 || iv - taps + 1 > sh - 1) continue;
+        let r = 0, g = 0, b = 0, al = 0;
+        for (let j = 1 - taps; j <= taps; j++) {
+            const wy = interp === 'bicubic' ? xfCubic(j - tv) : (j === 0 ? 1 - tv : tv);
+            if (!wy) continue;
+            for (let i = 1 - taps; i <= taps; i++) {
+                const wx = interp === 'bicubic' ? xfCubic(i - tu) : (i === 0 ? 1 - tu : tu);
+                if (!wx) continue;
+                const w = wx * wy, A = px(iu + i, iv + j, 3) / 255;
+                if (!A) continue;
+                r += px(iu + i, iv + j, 0) * A * w; g += px(iu + i, iv + j, 1) * A * w; b += px(iu + i, iv + j, 2) * A * w; al += A * w;
+            }
+        }
+        if (al <= 0.0005) continue;
+        const A = Math.min(1, al);
+        out[o] = r / al; out[o + 1] = g / al; out[o + 2] = b / al; out[o + 3] = Math.round(A * 255);
+    }
+    return { data: out, mask: outMask };
+}
+function xfDone() {
+    if (!XF.open) return;
+    const layer = XF.layer, st = XF.st;
+    if (XF.kind === 'reference') {
+        const before = { gx: layer.gx, gy: layer.gy, gw: layer.gw, gh: layer.gh, rotation: layer.rotation || 0, flipH: !!layer.flipH, flipV: !!layer.flipV };
+        const after = { gx: st.cx - st.w / 2, gy: st.cy - st.h / 2, gw: st.w, gh: st.h, rotation: st.rot, flipH: st.fh, flipV: st.fv };
+        xfClose();
+        if (JSON.stringify(before) === JSON.stringify(after)) return;
+        Object.assign(layer, after); layer.layoutCSS();
+        pushUndo({ type: 'layerTransform', kind: 'reference', frameIndex: activeFrameIndex, layerId: layer.id, refBefore: before, refAfter: after });
+        renderLayersPanel();
+        return;
+    }
+    const W = gridW, H = gridH;
+    // Whole-cell placement when unrotated, so nearest copies stay exact.
+    const s = { ...st };
+    // At 90/270 the on-screen extents swap, so snap the rotated box's edges.
+    if (s.rot % 90 === 0) {
+        s.w = Math.max(1, Math.round(s.w)); s.h = Math.max(1, Math.round(s.h));
+        const swap = s.rot % 180 !== 0, ex = swap ? s.h : s.w, ey = swap ? s.w : s.h;
+        s.cx = Math.round(s.cx - ex / 2) + ex / 2; s.cy = Math.round(s.cy - ey / 2) + ey / 2;
+    }
+    const res = xfResample(s, XF.srcData, XF.srcW, XF.srcH, xfPrefs.interp, XF.srcMask);
+    // Transformed piece over what stays behind (source-over).
+    const out = new Uint8ClampedArray(XF.baseData);
+    for (let i = 0; i < out.length; i += 4) {
+        const sa = res.data[i + 3]; if (!sa) continue;
+        const A = sa / 255, B = out[i + 3] / 255, oa = A + B * (1 - A);
+        out[i] = (res.data[i] * A + out[i] * B * (1 - A)) / oa; out[i + 1] = (res.data[i + 1] * A + out[i + 1] * B * (1 - A)) / oa;
+        out[i + 2] = (res.data[i + 2] * A + out[i + 2] * B * (1 - A)) / oa; out[i + 3] = Math.round(oa * 255);
+    }
+    const hadSel = XF.hadSelection, selBefore = XF.selBefore;
+    xfClose();
+    let selAfter = null;
+    if (hadSel) {
+        let count = 0; for (let i = 0; i < res.mask.length; i++) if (res.mask[i]) count++;
+        selAfter = { mask: res.mask, count, rect: count ? selectionBoundsFromMask(res.mask) : null };
+    }
+    const entry = { type: 'layerTransform', kind: layer instanceof ImageLayer ? 'image' : 'pixel', frameIndex: activeFrameIndex, layerId: layer.id, selBefore, selAfter };
+    if (layer instanceof ImageLayer) {
+        entry.before = new Uint8ClampedArray(layer.imageData.data);
+        entry.after = out;
+        if (entry.before.every((v, i) => v === out[i]) && !hadSel) return;
+        layer.imageData = new ImageData(new Uint8ClampedArray(out), W, H);
+        layer.redrawFromData();
+    } else {
+        const mapart = selectedProfile === 'mapart' && layer.type === 'pixel';
+        const changes = [];
+        for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) {
+            const i = (y * W + x) * 4, A = out[i + 3] / 255;
+            let v = A <= 0.0005 ? null : A >= 0.9995 ? rgbToHexBytes(out[i], out[i + 1], out[i + 2]) : 'rgba(' + out[i] + ',' + out[i + 1] + ',' + out[i + 2] + ',' + A.toFixed(4) + ')';
+            if (mapart && v != null) v = mapartSnapColor(v);
+            const old = layer.pixelData[x][y];
+            if ((old == null ? null : old) !== v) { changes.push(x, y, old == null ? null : old, v); layer.pixelData[x][y] = v; }
+        }
+        if (!changes.length && !hadSel) return;
+        entry.changes = changes;
+        layer.redrawFromData();
+    }
+    if (hadSel) setSelectionRaw(selAfter.mask ? selAfter.mask.slice() : null, selAfter.count, selAfter.rect ? { ...selAfter.rect } : null);
+    pushUndo(entry);
+    refreshHookedComposites();
+    renderLayersPanel();
+}
+// Layer settings row: opens the Transform screen.
+function buildTransformOpenRow() {
+    const row = document.createElement('div'); row.className = 'row';
+    const b = document.createElement('button'); b.className = 'btn'; b.id = 'layerTransformOpenBtn';
+    b.textContent = '⤡ TRANSFORM' + (hasWandSelection() || selection ? ' SELECTION' : '');
+    b.onclick = (e) => { e.stopPropagation(); uiAction(xfOpen); };
+    row.appendChild(b);
+    return row;
+}
+(function setupTransformScreen() {
+    const init = () => {
+        const c = document.getElementById('xfCanvas'); if (!c) return;
+        c.addEventListener('pointerdown', xfPointerDown);
+        c.addEventListener('pointermove', xfPointerMove);
+        c.addEventListener('pointerup', xfPointerUp);
+        c.addEventListener('pointercancel', xfPointerUp);
+        c.addEventListener('wheel', xfWheel, { passive: false });
+        ['xfX', 'xfY', 'xfW', 'xfH', 'xfR', 'xfMoveStep', 'xfSizeStep', 'xfRotStep'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', () => uiAction(() => xfFieldChanged(id))); });
+        window.addEventListener('resize', () => { if (XF.open) xfResizeCanvas(); });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
 
 // ── Thumbnail privacy (V2_5) ────────────────────────────────
 // True if any layer/group in any frame has a thumbnail opacity below 100%.
