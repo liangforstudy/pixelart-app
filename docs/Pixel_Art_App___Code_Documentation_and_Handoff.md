@@ -38,6 +38,7 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
 - **V1_47** -- IndexedDB gallery (section 3.4); one save format for file and gallery; Fix List 1, 2, 7 fixed; autosave on page hide.
 - **V2_2** -- Mapart profile (section 3.11): whole-map canvases (128 px maps, up to 7x7), locked Minecraft map palette, staircase toggle, import snapping.
 - **V2_3** -- Grid lines moved to the View panel; Mapart adds 16 px chunk and 128 px map lines (section 3.11); grid on/off saved per project. Solid background fill (roadmap 9, section 3.13).
+- **V2_4** -- Hold Space to pan (every profile, any tool, from anywhere in the viewport; `spacePanHeld`, ignored in text fields). Fixed Pan-tool mouse drags (window mousemove now forwards `g.manualPan`).
 
 **Known open**
 - Option B (drop PixelLayer's Proxy, keep both classes) decided, not implemented. A full-canvas PixelLayer bulk edit still builds a large string-keyed history Map + changes array (slow and memory-heavy on iOS near 999x999; won't hang).

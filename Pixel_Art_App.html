@@ -86,6 +86,7 @@
         .layer-canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; display: block; pointer-events: none; }
         .layer-canvas.reference-canvas { image-rendering: auto; }
         #palette.mapart-locked .delete-badge { display: none !important; }
+        #viewport.space-pan, #viewport.space-pan * { cursor: grab !important; }
         /* Background fill swatches (roadmap 9). .bg-none = no background (checker). */
         .bg-swatch { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 8px; border: 2px solid #555; box-sizing: border-box; }
         .bg-swatch.bg-none, .bg-mini.bg-none { background-color: #fff; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0; }
@@ -1488,7 +1489,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_3';
+const BUILD_VERSION = 'V2_4';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -7161,15 +7162,43 @@ function deleteVectorPoint(layer, hit) {
     pushUndo({ type: 'editSplinePoints', frameIndex: activeFrameIndex, layerId: layer.id, spline: sp, before, after: sp.points.map(p => ({ x: p.x, y: p.y })) });
 }
 
+// Hold Space = temporary Pan tool (Photoshop/CSP style), every profile.
+// Read by the canvas onStart; a drag started while held keeps panning
+// until release even if Space is let go mid-drag.
+let spacePanHeld = false;
+// True when typing in a field, where Space must type a space.
+function keyTargetIsTextField(t) {
+    if (!t) return false;
+    const tag = (t.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || !!t.isContentEditable;
+}
+function setSpacePanHeld(on) {
+    if (spacePanHeld === on) return;
+    spacePanHeld = on;
+    if (viewport) viewport.classList.toggle('space-pan', on);
+}
 // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y for undo/redo (desktop convenience; touch users use the on-screen buttons).
 function setupKeyboardShortcuts() {
     window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && !e.ctrlKey && !e.metaKey && !e.altKey && !keyTargetIsTextField(e.target)) {
+            // preventDefault also stops Space "clicking" a focused button or scrolling the page.
+            e.preventDefault();
+            setSpacePanHeld(true);
+            return;
+        }
         if (!(e.ctrlKey || e.metaKey)) return;
         const k = e.key.toLowerCase();
         if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
         else if (k === 'y') { e.preventDefault(); redo(); }
         else if (k === 'k') { e.preventDefault(); openGlobalCommandPalette(); }
     });
+    window.addEventListener('keyup', (e) => {
+        if (e.code !== 'Space' || !spacePanHeld) return;
+        if (!keyTargetIsTextField(e.target)) e.preventDefault();
+        setSpacePanHeld(false);
+    });
+    // Losing focus while Space is down never delivers its keyup.
+    window.addEventListener('blur', () => setSpacePanHeld(false));
     // Scroll wheel zooms in/out. Ctrl+scroll is the standard browser pinch-
     // zoom shortcut on desktop (browsers intercept it for page zoom by default
     // -- preventDefault stops that). Plain scroll without Ctrl also zooms since
@@ -10411,6 +10440,13 @@ function setupDrawingEvents() {
 
         const cx = touches ? touches[0].clientX : e.clientX;
         const cy = touches ? touches[0].clientY : e.clientY;
+        // Space held: pan from anywhere in the viewport, ahead of every tool
+        // and of transform drags (like Photoshop / Clip Studio).
+        if (spacePanHeld) {
+            g.manualPan = { x: cx, y: cy, startX: cx, startY: cy, moved: false, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop, viaSpace: true };
+            if (touches) e.preventDefault();
+            return;
+        }
         if (!isInsideCanvas(cx, cy)) return;
 
         if (transformActive()) {
@@ -10555,7 +10591,7 @@ function setupDrawingEvents() {
         g.manualPan = null;
         // A stationary tap with the Pan tool is still useful in Portrait mode:
         // it changes the active 40×40 tile without changing the camera.
-        if (finishedManualPan && !finishedManualPan.moved && selectedProfile === 'portrait') {
+        if (finishedManualPan && !finishedManualPan.moved && !finishedManualPan.viaSpace && selectedProfile === 'portrait') {
             const ct = e.changedTouches && e.changedTouches[0];
             const fx = ct ? ct.clientX : e.clientX;
             const fy = ct ? ct.clientY : e.clientY;
@@ -10637,7 +10673,8 @@ function setupDrawingEvents() {
     // be a ~25-line duplicate of onMove's drawing dispatch that had to be
     // hand-kept in sync every time a tool was added; it drifted at least
     // twice before being collapsed to this.
-    window.addEventListener('mousemove', (e) => { if (isDrawing || g.xform) onMove(e); });
+    // g.manualPan too: without it a mouse drag with the Pan tool (or Space) never moved.
+    window.addEventListener('mousemove', (e) => { if (isDrawing || g.xform || g.manualPan) onMove(e); });
     window.addEventListener('mouseup', onEnd);
     window.addEventListener('touchend', onEnd, {passive: false});
     window.addEventListener('touchcancel', onEnd, {passive: false});

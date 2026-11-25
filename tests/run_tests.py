@@ -47,6 +47,8 @@ GROUPS = {
                       ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
+    'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
+                  ['test_space_pan']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
     'layout': ('Floating bars, top-left #topBar, bottom #floatingBar, panels/drawers opening (togglePanel, closePanel).',
@@ -808,6 +810,31 @@ async def test_background_mapart(pg):
     await pg.evaluate("() => setBackgroundColor('#DC0000', false)")
     await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(300)
     check('bg mapart: older mapart save without the field opens on white carpet', await pg.evaluate("() => backgroundColor === '#DCDCDC'"))
+
+async def test_space_pan(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(40); scale = 40; layoutAll(); handleToolBtn('pencil'); selectedColor = '#FF0000'; }")
+    await pg.wait_for_timeout(200)
+    x, y = await grid_point(pg, 10, 10)
+    before = await pg.evaluate("() => [viewport.scrollLeft, viewport.scrollTop]")
+    await pg.keyboard.down('Space')
+    check('space pan: holding Space shows the grab cursor', await pg.evaluate("() => spacePanHeld && viewport.classList.contains('space-pan')"))
+    await pg.mouse.move(x, y); await pg.mouse.down(); await pg.mouse.move(x - 120, y - 90, steps=6); await pg.mouse.up()
+    await pg.keyboard.up('Space')
+    after = await pg.evaluate("() => [viewport.scrollLeft, viewport.scrollTop]")
+    check('space pan: Space + drag pans the view', after[0] > before[0] + 50 and after[1] > before[1] + 40, [before, after])
+    check('space pan: nothing drawn while panning', await pg.evaluate("() => activeLayer().pixelData.every(c => c.every(v => v == null))"))
+    check('space pan: releasing Space ends it', await pg.evaluate("() => !spacePanHeld && !viewport.classList.contains('space-pan')"))
+    await tap(pg, 10, 10)
+    check('space pan: the pencil draws again after release', await px(pg, 10, 10) == '#FF0000')
+    await pg.evaluate("() => handleToolBtn('pan')")
+    b2 = await pg.evaluate("() => viewport.scrollLeft")
+    x, y = await grid_point(pg, 12, 12)
+    await pg.mouse.move(x, y); await pg.mouse.down(); await pg.mouse.move(x + 100, y, steps=5); await pg.mouse.up()
+    check('space pan: Pan tool mouse drag pans too (was broken)', await pg.evaluate("() => viewport.scrollLeft") < b2 - 50)
+    ok = await pg.evaluate("""() => { const i = document.createElement('input'); document.body.appendChild(i); i.focus();
+        i.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true })); const held = spacePanHeld; i.remove(); return held; }""")
+    check('space pan: Space in a text field types instead of panning', ok is False)
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''
