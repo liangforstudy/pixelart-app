@@ -46,6 +46,7 @@ Docs describe the code; the HTML is ground truth. LLM-written docs (these includ
   Thumbnail privacy (gallery long-press): 🕶️ Thumbnail Opacity sheet (`openThumbPrivacySheet`): per layer/group `thumbOpacity` (saved only when < 100%; new layers 100%) used only by `generateThumbnailDataURL` via `flattenTreeToCanvas(..., thumb)`; reminder toast once per project per page load (`thumbPrivacyToastShown`). 🙈 Hide Thumbnail: `thumbHidden` in meta and save data; the card is just the name strip (no thumbnail area, `.thumb-hidden-card`), the image is still generated and stored.
   Eyedropper sample size (Tools drawer while the eyedropper is on, `pixelArtEyedropSample`): Point or N x N average (alpha-weighted, mostly-transparent = transparent); the cursor shows the square.
 - **V2_6** -- Transform screen (section 3.14): Default mode for one layer or its selected pixels.
+  Wheel zoom anchors on the mouse (`zoomAtClientPoint`, reuses `reanchorCameraPanAfterZoomSnap`); +/- buttons still zoom about the centre. System mouse pointer hidden only in `.pixel-cursor-mode` (drawing tool on a pixel-like layer); with a mouse the pixel cursor stays while hovering (the 500 ms fade is touch-only) and hides on mouseleave.
 
 **Known open**
 - Option B (drop PixelLayer's Proxy, keep both classes) decided, not implemented. A full-canvas PixelLayer bulk edit still builds a large string-keyed history Map + changes array (slow and memory-heavy on iOS near 999x999; won't hang).

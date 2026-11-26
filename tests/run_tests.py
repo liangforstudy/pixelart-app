@@ -52,7 +52,7 @@ GROUPS = {
     'eyedrop': ('Eyedropper sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
                 ['test_eyedrop_sample_size']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
-                  ['test_space_pan']),
+                  ['test_space_pan', 'test_wheel_zoom_anchor', 'test_mouse_cursor_visibility']),
     'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load.',
                   ['test_reference_layer']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
@@ -1098,6 +1098,42 @@ async def test_transform_selection_and_kinds(pg):
     ok = await pg.evaluate("() => { xfPrefs.interp = 'bilinear'; xfOpen(); XF.st.rot = 20; xfDone(); const allowed = new Set(mapartAllowedHexes()); let n = 0; for (let x = 0; x < gridW; x++) for (let y = 0; y < gridH; y++) { const v = activeLayer().pixelData[x][y]; if (v != null) { n++; if (!allowed.has(v)) return 'bad ' + v; } } return n; }")
     check('xf: mapart results snap to map colours', isinstance(ok, int) and ok > 50, ok)
     check('xf: Vector layers are not offered yet', await pg.evaluate("() => { addVectorLayer(); return xfOpen() === false && !XF.open; }"))
+
+GRID_AT = "([x, y]) => { const r = container.getBoundingClientRect(); return [(x - r.left) / (r.width / gridW), (y - r.top) / (r.height / gridH)]; }"
+
+async def test_wheel_zoom_anchor(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(10); scale = 10; resetCameraPanZoom(); layoutAll(); handleToolBtn('pencil'); }")
+    await pg.wait_for_timeout(200)
+    x, y = await grid_point(pg, 16, 16)
+    await pg.keyboard.down('Space')
+    await pg.mouse.move(x, y); await pg.mouse.down(); await pg.mouse.move(x - 140, y - 100, steps=6); await pg.mouse.up()
+    await pg.keyboard.up('Space')
+    mx, my = await grid_point(pg, 6, 9)
+    before = await pg.evaluate(GRID_AT, [mx, my])
+    await pg.mouse.move(mx, my); await pg.mouse.wheel(0, -100); await pg.wait_for_timeout(200)
+    after = await pg.evaluate(GRID_AT, [mx, my])
+    check('wheel zoom: after a Space pan, zooming in keeps the point under the mouse', await pg.evaluate("() => scale") == 12 and abs(before[0] - after[0]) < 0.3 and abs(before[1] - after[1]) < 0.3, [before, after])
+    await pg.mouse.wheel(0, 100); await pg.wait_for_timeout(200)
+    after2 = await pg.evaluate(GRID_AT, [mx, my])
+    check('wheel zoom: zooming out is anchored too', await pg.evaluate("() => scale") == 10 and abs(before[0] - after2[0]) < 0.3 and abs(before[1] - after2[1]) < 0.3, [before, after2])
+
+async def test_mouse_cursor_visibility(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(10); scale = 10; resetCameraPanZoom(); layoutAll(); handleToolBtn('pencil'); }")
+    x, y = await grid_point(pg, 10, 10)
+    await pg.mouse.move(x, y); await pg.mouse.move(x + 3, y + 3)
+    check('cursor: pencil on a pixel layer uses the pixel cursor (system pointer hidden)', await pg.evaluate("() => container.classList.contains('pixel-cursor-mode') && getComputedStyle(container).cursor === 'none'"))
+    await pg.wait_for_timeout(800)
+    check('cursor: with a mouse the pixel cursor stays while hovering', await pg.evaluate("() => pixelCursor.classList.contains('visible')"))
+    import base64
+    png = base64.b64decode(await pg.evaluate(REF_PNG))
+    await pg.locator('#refInput').set_input_files({'name': 'ref.png', 'mimeType': 'image/png', 'buffer': png}); await pg.wait_for_timeout(700)
+    await pg.mouse.move(x + 6, y + 6)
+    check('cursor: over a reference layer the system pointer shows', await pg.evaluate("() => !container.classList.contains('pixel-cursor-mode') && getComputedStyle(container).cursor !== 'none'"))
+    await pg.evaluate("() => { setActiveLayer(0); handleToolBtn('pan'); }")
+    await pg.mouse.move(x + 9, y + 9)
+    check('cursor: a tool without a pixel cursor shows the system pointer', await pg.evaluate("() => !container.classList.contains('pixel-cursor-mode')"))
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''

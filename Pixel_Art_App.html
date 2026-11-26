@@ -60,8 +60,12 @@
         .canvas-container {
             position: relative; border: 2px solid #333; flex-shrink: 0;
             touch-action: none; border-radius: 8px; overflow: hidden;
-            cursor: none;
         }
+        /* The system mouse pointer hides only while the app draws its own
+           pixel cursor (drawing tool on a pixel-like layer). V2_6: it used
+           to be hidden always, so over a reference layer or with tools that
+           have no pixel cursor the mouse vanished. */
+        .canvas-container.pixel-cursor-mode { cursor: none; }
         /* Checkerboard profile system (Roadmap item 10): built-in profiles
            set --checker-a/--checker-b (and optionally --checker-solid) as
            CSS custom properties on the element itself via
@@ -6135,6 +6139,26 @@ function updateRotationLabel() {
     if (el) el.innerText = Math.round(((cameraRotation % 360) + 360) % 360) + '\u00B0';
 }
 
+// Wheel zoom (V2_6): one ZOOM_STEPS step, keeping the canvas point under
+// the mouse in place -- same anchoring the two-finger pinch uses
+// (reanchorCameraPanAfterZoomSnap). The +/- buttons still zoom about the
+// centre. Before, the wheel went through zoomIn/zoomOut, which re-centre,
+// so after panning (e.g. Space + drag) the zoom jumped to the middle.
+function zoomAtClientPoint(clientX, clientY, dir) {
+    const next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, zoomIndex + dir));
+    if (next === zoomIndex || !container) return;
+    const r = container.getBoundingClientRect();
+    const dx = clientX - (r.left + r.width / 2), dy = clientY - (r.top + r.height / 2);
+    const rad = -cameraRotation * Math.PI / 180;
+    const gesture = { localOffX: (dx * Math.cos(rad) - dy * Math.sin(rad)) / cameraScale, localOffY: (dx * Math.sin(rad) + dy * Math.cos(rad)) / cameraScale,
+        startCanvasScale: scale, lastMidX: clientX, lastMidY: clientY };
+    zoomIndex = next; scale = ZOOM_STEPS[zoomIndex];
+    cameraScale = 1;
+    layoutAll();
+    reanchorCameraPanAfterZoomSnap(gesture);
+    applyCameraTransform();
+    if (typeof updatePortraitTileOverlay === 'function') updatePortraitTileOverlay();
+}
 // Steps zoom up to the next value in ZOOM_STEPS (integer scales only, so pixels always stay crisp).
 function zoomIn() { if (zoomIndex < ZOOM_STEPS.length - 1) { zoomIndex++; scale = ZOOM_STEPS[zoomIndex]; resetCameraPanZoom(); layoutAll(); } }
 // Steps zoom down to the previous value in ZOOM_STEPS.
@@ -7675,7 +7699,7 @@ function setupKeyboardShortcuts() {
     // this is a canvas app with nothing else for the wheel to scroll.
     viewport.addEventListener('wheel', (e) => {
         e.preventDefault();
-        if (e.deltaY < 0) zoomIn(); else if (e.deltaY > 0) zoomOut();
+        if (e.deltaY) zoomAtClientPoint(e.clientX, e.clientY, e.deltaY < 0 ? 1 : -1);
     }, { passive: false });
 }
 
@@ -9747,7 +9771,9 @@ function setupDrawingEvents() {
         clearTimeout(cursorTimer);
         const layer = activeLayer();
         const showsCursor = ['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha','vgradient'].includes(currentTool);
-        if (isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer)) { hideCursor(); return; }
+        const usesPixelCursor = !(isEditing || isConfirmingClear || transformActive() || !showsCursor || !isPixelLike(layer));
+        container.classList.toggle('pixel-cursor-mode', usesPixelCursor && !spacePanHeld);
+        if (!usesPixelCursor) { hideCursor(); return; }
         const [x, y] = getEventPos(e);
         if(currentTool==='brush'||currentTool==='hardEraser'||currentTool==='softEraser'||currentTool==='bucket'||currentTool==='line'||currentTool==='rect'||currentTool==='ellipse'||currentTool==='wand'||currentTool==='lasso'||currentTool==='eyedrop'||currentTool==='colorToAlpha') syncPortraitPaletteForPoint(x,y);
         // Mid-stroke, the cursor must agree with where the stroke itself
@@ -9767,7 +9793,11 @@ function setupDrawingEvents() {
             pixelCursor.style.backgroundColor = currentTool === 'eyedrop' ? 'rgba(255,255,255,0.4)' : ((currentTool === 'colorToAlpha') ? 'rgba(255,220,120,0.45)' : (selectedColor || 'rgba(255,255,255,0.2)'));
             pixelCursor.classList.toggle('active', isDrawing);
             if (cursorTimer) { clearTimeout(cursorTimer); cursorTimer = null; }
-            if (!isDrawing) cursorTimer = setTimeout(hideCursor, 500);
+            // Touch: flash briefly. Mouse: stay while hovering (hidden on
+            // mouseleave) -- with the system pointer hidden, a timed-out pixel
+            // cursor left no cursor at all.
+            const isMouse = e && !e.touches && /^(mouse|pointer)/.test(e.type || '') && e.pointerType !== 'touch' && e.pointerType !== 'pen';
+            if (!isDrawing && !isMouse) cursorTimer = setTimeout(hideCursor, 500);
         } else { hideCursor(); }
     };
 
@@ -11145,6 +11175,7 @@ function setupDrawingEvents() {
     viewport.addEventListener('mousedown', onStart);
     viewport.addEventListener('touchstart', onStart, {passive: false});
     viewport.addEventListener('mousemove', updateCursor);
+    viewport.addEventListener('mouseleave', () => { hideCursor(); container.classList.remove('pixel-cursor-mode'); });
     viewport.addEventListener('touchmove', onMove, {passive: false});
     // onMove already fully supports mouse events (e.touches is simply
     // undefined for a MouseEvent, and every branch already accounts for
