@@ -537,6 +537,7 @@
             background: rgba(0,0,0,.55);
         }
         #swatchEditBackdrop.open { display: block; }
+        #paletteDoneBtn { position: sticky; top: 0; z-index: 20; }
 
         /* Edge-swipe zones for Tools (left) / Debug+Log (right) drawers.
            Invisible, sit above the canvas so a swipe starting right at the
@@ -9461,8 +9462,15 @@ function createSwatch(color) {
         if (isConfirmingClear) return;
         if (isEditing) {
             if (wrapper.id !== 'pickerContainer' && wrapper.id !== 'transparencyWrapper') {
-                dragTarget = wrapper;
-                wrapper.classList.add('dragging');
+                const pt = e.touches ? e.touches[0] : e;
+                clearTimeout(swatchDragHold.timer);
+                swatchDragHold.wrapper = wrapper; swatchDragHold.x = pt.clientX; swatchDragHold.y = pt.clientY;
+                swatchDragHold.timer = setTimeout(() => {
+                    if (swatchDragHold.wrapper !== wrapper || !isEditing) return;
+                    swatchDragHold.wrapper = null;
+                    dragTarget = wrapper;
+                    wrapper.classList.add('dragging');
+                }, SWATCH_DRAG_HOLD_MS);
             }
         } else startHold(() => handleManageClick());
     };
@@ -9481,11 +9489,20 @@ function createSwatch(color) {
 // dragged colour trades places with the one it is dropped on, and every
 // other swatch stays where it was.
 let swatchSwapTarget = null, swatchDragGhost = null;
+const SWATCH_DRAG_HOLD_MS = 220;
+const swatchDragHold = { timer: null, wrapper: null, x: 0, y: 0 };
+function cancelSwatchDragHold() { clearTimeout(swatchDragHold.timer); swatchDragHold.wrapper = null; }
 function setupPaletteDragEvents() {
     const pal = document.getElementById('palette');
     const clearSwapTarget = () => { if (swatchSwapTarget) swatchSwapTarget.classList.remove('swap-target'); swatchSwapTarget = null; };
     const onMove = (e) => {
-        if (!dragTarget) return;
+        if (!dragTarget) {
+            if (swatchDragHold.wrapper) {
+                const pt = e.touches ? e.touches[0] : e;
+                if (Math.hypot(pt.clientX - swatchDragHold.x, pt.clientY - swatchDragHold.y) > 8) cancelSwatchDragHold();
+            }
+            return;
+        }
         e.preventDefault();
         const cx = e.touches ? e.touches[0].clientX : e.clientX;
         const cy = e.touches ? e.touches[0].clientY : e.clientY;
@@ -9510,6 +9527,7 @@ function setupPaletteDragEvents() {
     };
     const onEnd = () => {
         clearHold();
+        cancelSwatchDragHold();
         if (swatchDragGhost) { swatchDragGhost.remove(); swatchDragGhost = null; }
         if (dragTarget) {
             dragTarget.classList.remove('dragging');
@@ -9543,6 +9561,7 @@ function setupPaletteDragEvents() {
     window.addEventListener('touchmove', onMove, {passive: false});
     window.addEventListener('mouseup', onEnd);
     window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
 }
 
 let toolBeforeEyedrop = 'brush';
