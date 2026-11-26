@@ -49,8 +49,8 @@ GROUPS = {
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
                   ['test_transform_basics', 'test_transform_selection_and_kinds', 'test_transform_live_preview']),
-    'eyedrop': ('Eyedropper sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
-                ['test_eyedrop_sample_size', 'test_eyedrop_faded_reference']),
+    'eyedrop': ('Eyedropper (Colours drawer #coloursEyedropBtn, startEyedropFromColours, #currentColourChip) and sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
+                ['test_eyedrop_sample_size', 'test_eyedrop_faded_reference', 'test_eyedrop_from_colours']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
                   ['test_space_pan', 'test_wheel_zoom_anchor', 'test_mouse_cursor_visibility']),
     'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load. Mapart colours on references: see the mapart group.',
@@ -1031,6 +1031,28 @@ async def test_mapart_pencil_after_empty_pick(pg):
     await pg.evaluate("() => handleToolBtn('pencil')")
     c = await pg.evaluate("() => selectedColor")
     check('mapart empty pick: pencil goes back to the last real colour, not the last palette swatch', c == '#DC0000', c)
+
+async def test_eyedrop_from_colours(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { handleToolBtn('pencil'); handleSwatchClick('#FF0000'); }")
+    await pg.evaluate(DRAW, [[[4, 4]], '#FF0000'])
+    await pg.evaluate("() => { handleSwatchClick('#00FF00'); setBackgroundColor('#0000FF', false); openPanel('colors'); }"); await pg.wait_for_timeout(200)
+    chip = await pg.evaluate("() => getComputedStyle(document.getElementById('currentColourChip')).backgroundColor")
+    check('colours: drawing colour chip shows the selected colour, not the background', chip == 'rgb(0, 255, 0)', chip)
+    check('colours: background swatch is labelled BG', await pg.evaluate("() => getComputedStyle(document.getElementById('bgSwatchColours'), '::after').content") == '"BG"')
+    await pg.locator('#coloursEyedropBtn').click(); await pg.wait_for_timeout(200)
+    check('colours: EYEDROPPER closes the drawer and arms the eyedropper', await pg.evaluate("() => currentTool === 'eyedrop' && openPanelName === null"))
+    await tap(pg, 4, 4)
+    check('colours: pick sets the colour, returns to the pencil and reopens Colours', await pg.evaluate("() => selectedColor === '#FF0000' && currentTool === 'pencil' && openPanelName === 'colors'"), await pg.evaluate("() => [selectedColor, currentTool, openPanelName]"))
+    check('colours: chip updates to the picked colour', await pg.evaluate("() => getComputedStyle(document.getElementById('currentColourChip')).backgroundColor") == 'rgb(255, 0, 0)')
+    await pg.evaluate("() => { closePanel(); openDrawer('tools'); }"); await pg.wait_for_timeout(200)
+    await pg.locator('#toolsDrawer .tool-btn[data-tool="eyedrop"]').click(); await pg.wait_for_timeout(200)
+    check('tools: Select a colour closes the Tools drawer at once', await pg.evaluate("() => currentTool === 'eyedrop' && drawerOpenName === null && !document.getElementById('toolsDrawer').classList.contains('open')"))
+    await tap(pg, 4, 4)
+    check('colours: eyedropper from the Tools drawer does not open Colours', await pg.evaluate("() => openPanelName === null"))
+    await pg.evaluate("() => openDrawer('tools')"); await pg.wait_for_timeout(200)
+    await pg.locator('#toolsDrawer .tool-btn[data-tool="pencil"]').click(); await pg.wait_for_timeout(100)
+    check('tools: other tools still leave the drawer open', await pg.evaluate("() => drawerOpenName === 'tools'"))
 
 async def test_mapart_colour_methods(pg):
     await mapart_canvas(pg)

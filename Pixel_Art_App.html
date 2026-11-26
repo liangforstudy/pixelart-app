@@ -92,7 +92,10 @@
         #palette.mapart-locked .delete-badge { display: none !important; }
         #viewport.space-pan, #viewport.space-pan * { cursor: grab !important; }
         /* Background fill swatches (roadmap 9). .bg-none = no background (checker). */
-        .bg-swatch { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 8px; border: 2px solid #555; box-sizing: border-box; }
+        .bg-swatch { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 6px; border: 2px dashed #777; box-sizing: border-box; position: relative; }
+        .bg-swatch::after { content: 'BG'; position: absolute; left: 0; right: 0; bottom: -1px; font-size: 9px; font-weight: 700; line-height: 12px; text-align: center; color: #fff; background: rgba(0,0,0,.55); border-radius: 0 0 4px 4px; }
+        .current-colour-chip { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; box-sizing: border-box; border: 2px solid #fff; outline: 2px solid #0078d4; outline-offset: 2px; margin: 0 4px; }
+        .current-colour-chip.none { background-color: #fff; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0; }
         .bg-swatch.bg-none, .bg-mini.bg-none { background-color: #fff; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0; }
         .bg-mini { display: inline-block; width: 18px; height: 18px; border-radius: 4px; border: 1px solid #888; box-sizing: border-box; }
         #bgPickHint { font-size: 11px; color: #74c7ec; text-align: center; padding: 2px 4px 6px; }
@@ -1321,7 +1324,12 @@
                     <div class="row"><button class="btn" onclick="uiAction(()=>resolveMapartStaircaseOff('cancel'))">CANCEL</button></div>
                 </div>
             </div>
-            <div class="panel-subtitle">BACKGROUND</div>
+            <div class="panel-subtitle">DRAWING COLOUR</div>
+            <div class="row" id="currentColourRow" style="align-items:center;">
+                <div id="currentColourChip" class="current-colour-chip" title="Drawing colour"></div>
+                <button id="coloursEyedropBtn" class="btn" onclick="uiAction(startEyedropFromColours)">💧 EYEDROPPER</button>
+            </div>
+            <div class="panel-subtitle">BACKGROUND (CANVAS FILL)</div>
             <div class="row" id="bgRow" style="align-items:center;">
                 <div id="bgSwatchColours" class="bg-swatch bg-none"></div>
                 <button id="bgPickBtn" class="btn" onclick="uiAction(toggleBackgroundPickMode)">PICK FROM SWATCHES</button>
@@ -2354,7 +2362,7 @@ function renderToolButtons() {
             btn.dataset.tool = t.id;
             btn.dataset.category = t.category;
             btn.textContent = t.label;
-            btn.onclick = () => uiAction(() => handleToolBtn(t.id));
+            btn.onclick = () => uiAction(() => { handleToolBtn(t.id); if (t.id === 'eyedrop' && drawerOpenName === 'tools') closeDrawer(); });
             container.appendChild(btn);
         });
     });
@@ -9644,6 +9652,7 @@ function handleToolBtn(t) {
     // tools inside selectPixelTool; colorToAlpha isn't one of those (it's
     // not size/softness-based), so it needs its own check here.
     if ((selectedProfile === 'portrait' || selectedProfile === 'mapart') && t === 'colorToAlpha') t = 'pencil';
+    if (t !== 'eyedrop') eyedropReturnToColours = false;
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
     // Remember the tool actually being switched to, per type, so a later
     // pixel<->vector layer switch can restore it (see lastPixelTool/
@@ -9679,6 +9688,13 @@ function handleToolBtn(t) {
 }
 
 // Refreshes which swatch/tool button shows as "selected" to match current state.
+let eyedropReturnToColours = false;
+function startEyedropFromColours() {
+    exitBackgroundPickMode();
+    handleToolBtn('eyedrop');
+    eyedropReturnToColours = true;
+    closePanel();
+}
 function updateUI() {
     document.querySelectorAll('.swatch').forEach(el => {
         const isSel = (selectedColor === null && el.id === 'transparencyBtn') ||
@@ -9686,6 +9702,9 @@ function updateUI() {
         el.classList.toggle('selected', isSel);
     });
     updateSwatchValueDisplay();
+    const chip = document.getElementById('currentColourChip');
+    if (chip) { chip.classList.toggle('none', selectedColor == null); chip.style.background = selectedColor == null ? '' : selectedColor; }
+    const edb = document.getElementById('coloursEyedropBtn'); if (edb) edb.classList.toggle('active', currentTool === 'eyedrop');
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
     applyCanvasSizeToolGating();
     if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
@@ -10033,6 +10052,7 @@ function setupDrawingEvents() {
             // switch-to-dropper logic after every single tap.
             if (!activeL || activeL.type !== 'reference') currentTool = toolBeforeEyedrop;
             updateUI();
+            if (eyedropReturnToColours) { eyedropReturnToColours = false; openPanel('colors'); }
             g.suppressStroke = true;
             return;
         }
