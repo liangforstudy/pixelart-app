@@ -45,8 +45,8 @@ GROUPS = {
                        ['test_zoom_indicator']),
     'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
                       ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drawer_closes_after_three_strokes', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone', 'test_layers_duplicate_reachable']),
-    'colour-triangle': ('Colour triangle in the Colours panel (V2_9): krt state, krtHsvToRgb/krtRgbToHsv, krtBuildRing/krtBuildTriangle/krtDraw, krtPointerDown/Move/End, krtEmit, krtSyncFromSelected, krtRefreshUI, krtAddSwatch, #krtCanvas, #krtReadout, #krtAddBtn; snaps to the map colours in Mapart via mapartSnapColor.',
-                        ['test_colour_triangle_layout', 'test_colour_triangle_free_colour', 'test_colour_triangle_mapart_snaps', 'test_colour_triangle_syncs_from_drawing_colour', 'test_colour_triangle_one_pointer_and_background_pick']),
+    'colour-triangle': ('Colour triangle in the Colours panel (V2_9): krt state, krtHsvToRgb/krtRgbToHsv, krtBuildRing/krtBuildTriangle/krtDraw, krtPointerDown/Move/End, krtEmit, krtSyncFromSelected, krtRefreshUI, krtAddSwatch, krtMapPoints/krtDrawMapPoints/krtDrawSnapMarker (map dots, hue ticks, snap marker, DOTS toggle), krtNearest/krtRenderSuggest/krtPickSuggestion (6 suggested map colours), #krtCanvas, #krtReadout, #krtAddBtn; snaps to the map colours in Mapart via mapartSnapColor.',
+                        ['test_colour_triangle_layout', 'test_colour_triangle_free_colour', 'test_colour_triangle_mapart_snaps', 'test_colour_triangle_syncs_from_drawing_colour', 'test_colour_triangle_one_pointer_and_background_pick', 'test_colour_triangle_suggestions', 'test_colour_triangle_map_dots']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
@@ -235,6 +235,45 @@ async def test_colour_triangle_one_pointer_and_background_pick(pg):
     after = await pg.evaluate("() => [backgroundColor, selectedColor, backgroundPickMode]")
     check('colour triangle: while picking a background it changes nothing', after[0] == before[0] and after[1] == before[1] and after[2] is True, [before, after])
     await pg.evaluate("() => exitBackgroundPickMode()")
+
+async def test_colour_triangle_suggestions(pg):
+    await pg.evaluate("() => openPanel('colors')")
+    check('colour triangle: suggestions and dots toggle hidden outside Mapart', await pg.evaluate("() => document.getElementById('krtSuggest').style.display === 'none' && document.getElementById('krtDotsBtn').style.display === 'none'"))
+    await mapart_canvas(pg)
+    await pg.evaluate("() => openPanel('colors')")
+    await krt_drag(pg, 'ring', 30); await krt_drag(pg, 'tri', 0.7, 0.8)
+    info = await pg.evaluate("() => ({ n: document.querySelectorAll('#krtSuggest .krt-chip').length, hexes: krt.suggest, ok: krt.suggest.every(h => mapartAllowedHexes().includes(h)), sel: selectedColor, h: document.querySelector('#krtSuggest .krt-chip').getBoundingClientRect().height })")
+    check('colour triangle: six suggested map colours, all real', info['n'] == 6 and len(set(info['hexes'])) == 6 and info['ok'], info)
+    check('colour triangle: first suggestion is the colour it snapped to', info['hexes'][0] == info['sel'], info)
+    check('colour triangle: chips are at least 44 px tall', info['h'] >= 44, info['h'])
+    order = info['hexes']
+    pick = order[3]
+    await pg.locator('#krtSuggest .krt-chip').nth(3).click(); await pg.wait_for_timeout(80)
+    after = await pg.evaluate("() => ({ sel: selectedColor, raw: krtRawHex(), order: krt.suggest, selected: [...document.querySelectorAll('#krtSuggest .krt-chip')].map(b => b.classList.contains('selected')) })")
+    check('colour triangle: tapping a suggestion picks it', after['sel'] == pick and after['raw'] == pick, after)
+    check('colour triangle: the chips stay put after a tap and the tapped one is marked', after['order'] == order and after['selected'] == [False, False, False, True, False, False], after)
+    await pg.evaluate("() => { toggleMapartStaircase(); openPanel('colors'); }")
+    await krt_drag(pg, 'ring', 0); await krt_drag(pg, 'tri', 0.9, 0.9)
+    check('colour triangle: with staircase on the suggestions come from the 183 colours', await pg.evaluate("() => krt.suggest.length === 6 && krt.suggest.every(h => mapartAllowedHexes().includes(h)) && mapartAllowedHexes().length === 183"))
+
+async def test_colour_triangle_map_dots(pg):
+    await mapart_canvas(pg)
+    await pg.evaluate("() => { localStorage.removeItem('pixelAppKrtDots'); krt.dots = true; openPanel('colors'); krt.h = 0; krt.s = 1; krt.v = 1; krtRefreshUI(); }")
+    vis = await pg.evaluate("() => krtVisibleMapPoints().map(p => [p.s, krtHueGap(p.h, 0)])")
+    greys = await pg.evaluate("() => krtMapPoints().filter(p => p.s <= KRT_GREY_SAT).length")
+    check('map dots: near-hue colours and every grey are shown, nothing else', len(vis) > greys and all(s <= 0.08 or g <= 8 for s, g in vis), [len(vis), greys])
+    check('map dots: only a handful at once', len(vis) < 25, len(vis))
+    on = await pg.evaluate("() => krt.canvas.toDataURL()")
+    await pg.locator('#krtDotsBtn').click(); await pg.wait_for_timeout(80)
+    off = await pg.evaluate("() => krt.canvas.toDataURL()")
+    check('map dots: DOTS toggle removes them from the wheel', on != off and await pg.locator('#krtDotsBtn').text_content() == 'DOTS: OFF')
+    check('map dots: the toggle is remembered', await pg.evaluate("() => localStorage.getItem('pixelAppKrtDots') === '0'"))
+    await pg.locator('#krtDotsBtn').click(); await pg.wait_for_timeout(80)
+    check('map dots: toggling back restores them', await pg.evaluate("() => krt.canvas.toDataURL()") == on)
+    await pg.evaluate("() => { krt.h = 0; krt.s = 0.9; krt.v = 0.8; krtEmit(); }")
+    lone = await pg.evaluate("() => { const s = mapartSnapColor(krtRawHex()); return [s, krtRawHex(), krtMapPoints().some(p => p.hex === s)]; }")
+    check('map dots: the snapped colour is one of the dots', lone[2], lone)
+    await pg.evaluate("() => { localStorage.removeItem('pixelAppKrtDots'); }")
 
 async def test_zoom_indicator(pg):
     txt = lambda: pg.evaluate("() => document.getElementById('zoomIndicator').textContent")

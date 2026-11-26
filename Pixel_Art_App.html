@@ -98,6 +98,8 @@
         #krtWrap { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 2px 0 6px; }
         #krtCanvas { width: 220px; max-width: 100%; height: auto; aspect-ratio: 1 / 1; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
         #krtReadout { font-size: 11px; color: #ccc; text-align: center; min-height: 14px; }
+        .krt-chip { flex: 1; min-width: 0; height: 44px; border-radius: 10px; border: 2px solid rgba(255,255,255,0.25); padding: 0; cursor: pointer; }
+        .krt-chip.selected { border-color: #fff; outline: 2px solid #0078d4; outline-offset: 1px; }
         .current-colour-chip.none { background-color: #fff; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0; }
         .bg-swatch.bg-none, .bg-mini.bg-none { background-color: #fff; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0; }
         .bg-mini { display: inline-block; width: 18px; height: 18px; border-radius: 4px; border: 1px solid #888; box-sizing: border-box; }
@@ -1363,7 +1365,9 @@
                 <div class="row" style="align-items:center;">
                     <div id="krtReadout" style="flex:1;"></div>
                     <button id="krtAddBtn" class="btn" style="flex:none; padding:0 12px;" onclick="uiAction(krtAddSwatch)">+ SWATCH</button>
+                    <button id="krtDotsBtn" class="btn" style="flex:none; padding:0 12px; display:none;" onclick="uiAction(krtToggleDots)">DOTS: ON</button>
                 </div>
+                <div class="row" id="krtSuggest" style="display:none; gap:6px;"></div>
             </div>
             <div id="mapartPaletteRow" style="display:none;">
                 <div class="row"><button id="mapartStaircaseBtn" class="btn" onclick="uiAction(toggleMapartStaircase)">STAIRCASE: OFF</button></div>
@@ -9783,7 +9787,11 @@ const KRT_SIZE = 220;
 const KRT_OUTER = 0.96;
 const KRT_INNER = 0.77;
 const KRT_GAP = 0.025;
-const krt = { h: 217, s: 0.76, v: 0.96, emitted: null, drag: null, pointerId: null, dpr: 1, px: 220, ready: false, canvas: null, ctx: null, ring: null, triCache: null, triHue: null };
+const KRT_DOT_HUE = 8;
+const KRT_GREY_SAT = 0.08;
+const KRT_SNAP_LINK_HUE = 20;
+const KRT_SUGGEST_COUNT = 6;
+const krt = { dots: true, suggest: [], suggestKey: '', keepSuggest: false, dotCache: null, h: 217, s: 0.76, v: 0.96, emitted: null, drag: null, pointerId: null, dpr: 1, px: 220, ready: false, canvas: null, ctx: null, ring: null, triCache: null, triHue: null };
 
 function krtHsvToRgb(h, s, v) {
     h = ((h % 360) + 360) % 360;
@@ -9878,6 +9886,106 @@ function krtBuildTriangle() {
     tx.putImageData(img, minX, minY);
     krt.triHue = krt.h;
 }
+
+function krtMapPoints() {
+    const pal = mapartAllowedHexes();
+    if (krt.dotCache && krt.dotCache.src === pal) return krt.dotCache.list;
+    const list = pal.map(hex => {
+        const q = krtRgbToHsv(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+        return { hex, h: q.h, s: q.s, v: q.v };
+    });
+    krt.dotCache = { src: pal, list };
+    return list;
+}
+function krtHueGap(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+function krtSvPoint(s, v, A, B, C) {
+    const wA = s * v, wB = (1 - s) * v, wC = 1 - v;
+    return { x: wA * A.x + wB * B.x + wC * C.x, y: wA * A.y + wB * B.y + wC * C.y };
+}
+function krtVisibleMapPoints() {
+    return krtMapPoints().filter(p => p.s <= KRT_GREY_SAT || krtHueGap(p.h, krt.h) <= KRT_DOT_HUE);
+}
+function krtDrawMapPoints(ctx, m, A, B, C) {
+    const dpr = krt.dpr, ticks = [];
+    krtMapPoints().forEach(p => {
+        if (p.s > KRT_GREY_SAT && p.v >= 0.15 && !ticks.some(t => krtHueGap(t, p.h) < 1.5)) ticks.push(p.h);
+    });
+    ctx.save();
+    ticks.forEach(h => {
+        const t = h * Math.PI / 180, r = m.innerR + 3.5 * dpr;
+        ctx.beginPath(); ctx.arc(m.cx + r * Math.cos(t), m.cy + r * Math.sin(t), 1.7 * dpr, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff'; ctx.fill();
+        ctx.lineWidth = 1 * dpr; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.stroke();
+    });
+    krtVisibleMapPoints().forEach(p => {
+        const grey = p.s <= KRT_GREY_SAT, gap = grey ? 0 : krtHueGap(p.h, krt.h);
+        const q = krtSvPoint(p.s, p.v, A, B, C);
+        ctx.globalAlpha = grey ? 1 : 1 - 0.7 * gap / KRT_DOT_HUE;
+        ctx.beginPath(); ctx.arc(q.x, q.y, 2.6 * dpr, 0, Math.PI * 2);
+        ctx.fillStyle = p.hex; ctx.fill();
+        ctx.lineWidth = 1.25 * dpr; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+        ctx.lineWidth = 0.75 * dpr; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.stroke();
+    });
+    ctx.restore();
+}
+function krtDrawSnapMarker(ctx, A, B, C, from) {
+    const snapped = mapartSnapColor(krtRawHex());
+    const p = snapped && krtMapPoints().find(q => q.hex === snapped);
+    if (!p || snapped === krtRawHex()) return;
+    if (p.s > KRT_GREY_SAT && krtHueGap(p.h, krt.h) > KRT_SNAP_LINK_HUE) return;
+    const q = krtSvPoint(p.s, p.v, A, B, C), dpr = krt.dpr;
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(q.x, q.y);
+    ctx.lineWidth = 2.5 * dpr; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.stroke();
+    ctx.lineWidth = 1 * dpr; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(q.x, q.y - 5 * dpr); ctx.lineTo(q.x + 5 * dpr, q.y); ctx.lineTo(q.x, q.y + 5 * dpr); ctx.lineTo(q.x - 5 * dpr, q.y); ctx.closePath();
+    ctx.fillStyle = snapped; ctx.fill();
+    ctx.lineWidth = 2 * dpr; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    ctx.lineWidth = 1 * dpr; ctx.strokeStyle = '#000000'; ctx.stroke();
+    ctx.restore();
+}
+function krtNearest(hex, n) {
+    const pal = mapartAllowedHexes();
+    const v = mapartMetric(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+    const de = mapartColourMethod === 'ciede2000-d65' || mapartColourMethod === 'ciede2000-d50';
+    const scored = pal.map((hx, i) => {
+        const q = mapartAllowedLab[i];
+        const d = de ? colourDeltaE2000(v, q) : (v[0] - q[0]) ** 2 + (v[1] - q[1]) ** 2 + (v[2] - q[2]) ** 2;
+        return { hx, d };
+    });
+    scored.sort((a, b) => a.d - b.d);
+    return scored.slice(0, n).map(x => x.hx);
+}
+function krtRenderSuggest(raw) {
+    const box = document.getElementById('krtSuggest');
+    if (!box) return;
+    const mapart = selectedProfile === 'mapart';
+    box.style.display = mapart ? '' : 'none';
+    if (!mapart) return;
+    const key = raw + '|' + mapartStaircase + '|' + mapartColourMethod + '|' + mapartPaletteVersion;
+    if (key !== krt.suggestKey) {
+        if (!krt.keepSuggest) krt.suggest = krtNearest(raw, KRT_SUGGEST_COUNT);
+        krt.suggestKey = key;
+    }
+    box.replaceChildren(...krt.suggest.map(hx => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'krt-chip' + (hx === selectedColor ? ' selected' : '');
+        b.style.background = hx;
+        b.title = hx + ' \u00B7 ' + mapartColourName(hx);
+        b.onclick = () => uiAction(() => krtPickSuggestion(hx));
+        return b;
+    }));
+}
+function krtPickSuggestion(hex) {
+    krt.keepSuggest = true;
+    try { handleSwatchClick(hex); } finally { krt.keepSuggest = false; }
+}
+function krtToggleDots() {
+    krt.dots = !krt.dots;
+    try { localStorage.setItem('pixelAppKrtDots', krt.dots ? '1' : '0'); } catch (e) {}
+    krtRefreshUI();
+}
 function krtDraw() {
     if (!krt.ready) return;
     if (!krt.ring) krtBuildRing();
@@ -9916,6 +10024,7 @@ function krtDraw() {
     ctx.restore();
     const wA = krt.s * krt.v, wB = (1 - krt.s) * krt.v, wC = 1 - krt.v;
     const sx = wA * A.x + wB * B.x + wC * C.x, sy = wA * A.y + wB * B.y + wC * C.y;
+    if (selectedProfile === 'mapart' && krt.dots) { krtDrawMapPoints(ctx, m, A, B, C); krtDrawSnapMarker(ctx, A, B, C, { x: sx, y: sy }); }
     const rgb = krtHsvToRgb(krt.h, krt.s, krt.v), light = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255 > 0.55;
     ctx.save();
     ctx.beginPath(); ctx.arc(sx, sy, 6.5 * dpr, 0, Math.PI * 2);
@@ -9998,6 +10107,8 @@ function krtRefreshUI() {
     const mapart = selectedProfile === 'mapart';
     const addBtn = document.getElementById('krtAddBtn');
     if (addBtn) addBtn.style.display = mapart ? 'none' : '';
+    const dotsBtn = document.getElementById('krtDotsBtn');
+    if (dotsBtn) { dotsBtn.style.display = mapart ? '' : 'none'; dotsBtn.textContent = krt.dots ? 'DOTS: ON' : 'DOTS: OFF'; dotsBtn.classList.toggle('active', krt.dots); }
     const panel = document.getElementById('panel-colors');
     if (!panel || !panel.classList.contains('open')) return;
     krtDraw();
@@ -10009,6 +10120,7 @@ function krtRefreshUI() {
     }
     const out = document.getElementById('krtReadout');
     if (out) out.textContent = text;
+    krtRenderSuggest(raw);
 }
 function krtAddSwatch() { createSwatch(krtRawHex()); }
 function krtInit() {
@@ -10018,6 +10130,7 @@ function krtInit() {
     krt.px = Math.round(KRT_SIZE * krt.dpr);
     c.width = krt.px; c.height = krt.px;
     krt.canvas = c; krt.ctx = c.getContext('2d');
+    try { krt.dots = localStorage.getItem('pixelAppKrtDots') !== '0'; } catch (e) {}
     c.addEventListener('pointerdown', krtPointerDown);
     c.addEventListener('pointermove', krtPointerMove);
     c.addEventListener('pointerup', krtPointerEnd);
