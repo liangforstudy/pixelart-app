@@ -13694,7 +13694,6 @@ document.getElementById('ctx-delete').addEventListener('click', () => {
 });
 
 const CLOUD_TOKEN_KEY = 'pixelAppCloudToken', CLOUD_REPO_KEY = 'pixelAppCloudRepo', CLOUD_STATE_KEY = 'pixelAppCloudState';
-const CLOUD_DEFAULT_REPO = 'pixelart-saves';
 const SHARE_LINK_MAX = 60000, DISCORD_MSG_MAX = 2000;
 const cloudLsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const cloudLsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
@@ -14053,8 +14052,9 @@ async function cloudSync() {
 }
 
 async function cloudConnect(token, repoInput) {
-    let repo = String(repoInput || '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '') || CLOUD_DEFAULT_REPO;
-    if (!/^[\w.-]+(\/[\w.-]+)?$/.test(repo)) throw new Error('Repo should look like pixelart-saves or yourname/pixelart-saves.');
+    let repo = String(repoInput || '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+    if (!repo) throw new Error("Type your repo's name.");
+    if (!/^[\w.-]+(\/[\w.-]+)?$/.test(repo)) throw new Error('Type just the repo name, or yourname/repo-name.');
     if (!repo.includes('/')) {
         const u = await cloudApi('/user', { token });
         repo = u.login + '/' + repo;
@@ -14149,17 +14149,17 @@ function renderCloudSettings(box) {
         off.addEventListener('click', () => elementTapTwiceConfirm(off, 'DISCONNECT THIS DEVICE', 'TAP AGAIN: FORGET TOKEN HERE', () => { cloudDisconnect(); renderCloudSheet(); }, 5000));
         box.append(off, cloudEl('div', { className: 'cloud-hint', textContent: 'Disconnecting forgets the token on this device only. Projects stay here and on GitHub.' }));
     } else {
-        const tokenUrl = 'https://github.com/settings/personal-access-tokens/new?name=' + encodeURIComponent('Pixel Art App sync') + '&description=' + encodeURIComponent('Saves Pixel Art App projects to my ' + CLOUD_DEFAULT_REPO + ' repo') + '&expires_in=366&contents=write&gists=write';
+        const tokenUrl = 'https://github.com/settings/personal-access-tokens/new?name=' + encodeURIComponent('Pixel Art App sync') + '&description=' + encodeURIComponent('Saves Pixel Art App projects to the pixel-app folder in my repo') + '&expires_in=366&contents=write&gists=write';
         box.append(
-            cloudEl('div', { className: 'cloud-hint', textContent: 'Save chosen projects to a private GitHub repo of your own (in a pixel-app folder), then carry on from any device that has the token. Nobody else sees your projects: each person uses their own GitHub account and repo, and the token stays in this browser.' }),
+            cloudEl('div', { className: 'cloud-hint', textContent: 'Save the projects you choose to a private GitHub repo of your own (they go in a pixel-app folder inside it), then carry on from any device that has the token. Nobody else sees your projects: each person uses their own GitHub account and repo, and the token stays in this browser.' }),
             cloudEl('ol', { className: 'cloud-steps' }, [
-                cloudEl('li', {}, [cloudLink('https://github.com/new?name=' + CLOUD_DEFAULT_REPO + '&visibility=private&description=' + encodeURIComponent('My Pixel Art App projects'), 'Make a private repo'), ' called ' + CLOUD_DEFAULT_REPO + '.']),
-                cloudEl('li', {}, [cloudLink(tokenUrl, 'Make a fine-grained token'), '. Under Repository access pick Only select repositories › ' + CLOUD_DEFAULT_REPO + '. Contents (read and write) is already ticked; Gists lets you make share links.']),
-                cloudEl('li', { textContent: 'Paste the token here. Do the same on your other devices with the same token (or another one for the same repo).' })
+                cloudEl('li', {}, [cloudLink('https://github.com/new?visibility=private', 'Create a private repo'), ', give it any name (or use one you already have). The app makes a folder called pixel-app inside it, and that is where your cloud saves go.']),
+                cloudEl('li', {}, [cloudLink(tokenUrl, 'Make a fine-grained token'), '. Under Repository access pick Only select repositories › your repo. Contents (read and write) is already ticked; Gists lets you make share links.']),
+                cloudEl('li', { textContent: "Paste the token and your repo's name here. Do the same on your other devices with the same token (or another one for the same repo)." })
             ])
         );
         const tokIn = cloudEl('input', { className: 'cloud-input', type: 'password', placeholder: 'github_pat_…', autocomplete: 'off', spellcheck: false });
-        const repoIn = cloudEl('input', { className: 'cloud-input', type: 'text', placeholder: CLOUD_DEFAULT_REPO, value: cloudState.repo || '', autocomplete: 'off', spellcheck: false });
+        const repoIn = cloudEl('input', { className: 'cloud-input', type: 'text', placeholder: 'your-repo-name', value: cloudState.repo || '', autocomplete: 'off', spellcheck: false });
         repoIn.setAttribute('autocapitalize', 'off'); tokIn.setAttribute('autocapitalize', 'off');
         const err = cloudEl('div', { className: 'cloud-err' });
         const go = cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: 'CONNECT' });
