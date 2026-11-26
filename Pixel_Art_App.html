@@ -1674,7 +1674,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8';
+const BUILD_VERSION = 'V2_8_1';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -5717,6 +5717,23 @@ function reanchorCameraPanAfterZoomSnap(gesture) {
     const rad = cameraRotation * Math.PI / 180;
     cameraPanX = gesture.lastMidX - centerX - (offX * Math.cos(rad) - offY * Math.sin(rad));
     cameraPanY = gesture.lastMidY - centerY - (offX * Math.sin(rad) + offY * Math.cos(rad));
+}
+
+const LIVE_PINCH_REBASE_MIN = 0.7, LIVE_PINCH_REBASE_MAX = 1.45;
+function rebaseLivePinchScale(gesture, effectiveScale) {
+    let idx = 0, best = Infinity;
+    ZOOM_STEPS.forEach((z, i) => { const d = Math.abs(z - effectiveScale); if (d < best) { best = d; idx = i; } });
+    const next = ZOOM_STEPS[idx];
+    if (next === scale) return;
+    const k = next / scale;
+    gesture.localOffX *= k;
+    gesture.localOffY *= k;
+    gesture.startCanvasScale = next;
+    zoomIndex = idx;
+    scale = next;
+    cameraScale = effectiveScale / scale;
+    layoutAll();
+    if (typeof updatePortraitTileOverlay === 'function') updatePortraitTileOverlay();
 }
 
 // How close to a multiple of 90 degrees a two-finger twist has to get
@@ -11088,6 +11105,14 @@ function setupDrawingEvents() {
             endBucketGesture(false);
             if (g.currentEditSnapshot) { commitEdit(g.currentEditSnapshot); g.currentEditSnapshot = null; }
         }
+        if (g.shapeStart) { g.shapeStart = null; hideShapePreview(); }
+        if (g.currentEditSnapshot && !g.moveBuffer) {
+            commitEdit(g.currentEditSnapshot);
+            g.currentEditSnapshot = null;
+            if (openPanelName === 'layers') renderLayersPanel();
+        }
+        g.lastBrushPos = null;
+        portraitStrokeColor = null;
         isDrawing = false;
         hideCursor();
         const fab = document.getElementById('rotationResetFab');
@@ -11117,7 +11142,7 @@ function setupDrawingEvents() {
             // startCanvasScale is the document `scale` (not cameraScale) at gesture
             // start; reanchorCameraPanAfterZoomSnap needs it to convert localOff
             // back into scale-independent grid units on release.
-            g.cameraGesture = { dist: touchDistance(t0, t1), startScale: cameraScale, startRotation: cameraRotation, startAngle: touchAngle(t0, t1), localOffX, localOffY, startCanvasScale: scale, lastMidX: null, lastMidY: null };
+            g.cameraGesture = { dist: touchDistance(t0, t1), startEffectiveScale: scale * cameraScale, startRotation: cameraRotation, startAngle: touchAngle(t0, t1), localOffX, localOffY, startCanvasScale: scale, lastMidX: null, lastMidY: null };
         }
     };
     const updateRefLayerTransformDrag = (cx, cy) => {
@@ -11147,7 +11172,9 @@ function setupDrawingEvents() {
         const [t0, t1] = touches;
         const m = touchMidpoint(t0, t1);
         const ratio = g.cameraGesture.dist > 0 ? touchDistance(t0, t1) / g.cameraGesture.dist : 1;
-        cameraScale = Math.max(0.05, Math.min(64, g.cameraGesture.startScale * ratio));
+        const effectiveScale = Math.max(ZOOM_STEPS[0], Math.min(ZOOM_STEPS[ZOOM_STEPS.length - 1], g.cameraGesture.startEffectiveScale * ratio));
+        cameraScale = effectiveScale / scale;
+        if (cameraScale < LIVE_PINCH_REBASE_MIN || cameraScale > LIVE_PINCH_REBASE_MAX) rebaseLivePinchScale(g.cameraGesture, effectiveScale);
         cameraRotation = g.cameraGesture.startRotation + normalizeAngleDelta(touchAngle(t0, t1) - (g.cameraGesture.startAngle || touchAngle(t0, t1)));
         // Snap while the fingers are still down, within 3 degrees of any
         // multiple of 90, so square lands cleanly without the rotation
@@ -11161,12 +11188,9 @@ function setupDrawingEvents() {
         // Re-anchor: find where the gesture's fixed local point (captured in
         // startTwoFingerGesture, relative to the container's untransformed
         // center) lands at the *new* scale/rotation, then set cameraPanX/Y so
-        // it sits exactly under the current finger midpoint. Because the
-        // container's own center never moves on screen (transform-origin:
-        // center center, and layoutAll() isn't called mid-gesture), the
-        // container's bounding-rect center is stable through the whole
-        // gesture, so we only need to solve for the pan offset here --
-        // no per-frame drift.
+        // it sits exactly under the current finger midpoint. The centre is
+        // re-read from the rect every move, so a mid-gesture rebase (which
+        // resizes and re-centres the container) is absorbed into the pan.
         const r = container.getBoundingClientRect();
         // r already reflects the *previous* frame's transform (including the
         // old cameraPanX/Y), so back that out to get the untransformed center.
@@ -11184,7 +11208,7 @@ function setupDrawingEvents() {
         // midpoint must stay under it once `scale` snaps.
         g.cameraGesture.lastMidX = m.x;
         g.cameraGesture.lastMidY = m.y;
-        // This is presentation-only: do not call layoutAll(), resize layers, change ImageData, or touch history.
+        // Presentation-only apart from rebaseLivePinchScale: never change ImageData or touch history here.
         applyCameraTransform();
     };
 

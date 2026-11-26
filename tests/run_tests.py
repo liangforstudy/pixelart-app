@@ -55,6 +55,8 @@ GROUPS = {
                   ['test_space_pan', 'test_wheel_zoom_anchor', 'test_mouse_cursor_visibility']),
     'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load. Mapart colours on references: see the mapart group.',
                   ['test_reference_layer']),
+    'pinch': ('Two-finger camera gesture: startTwoFingerGesture (ends an in-progress stroke as an undo step), updateCanvasPanZoomRotate, rebaseLivePinchScale (live zoom rebase so the transformed container never stays huge), reanchorCameraPanAfterZoomSnap.',
+              ['test_pinch_after_stroke_is_undoable', 'test_pinch_rebases_live']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
     'layout': ('Floating bars, top-left #topBar, bottom #floatingBar, panels/drawers opening (togglePanel, closePanel).',
@@ -154,6 +156,43 @@ async def test_zoom_indicator(pg):
     check('zoom-indicator: live during pinch', await txt() == await pg.evaluate("() => formatZoom(scale * 1.5)"))
     await pg.evaluate("() => { cameraScale = 1; applyCameraTransform(); }")
     check('zoom-indicator: below 1x shows percent', await pg.evaluate("() => formatZoom(0.25) === '25%'"))
+
+async def touch_session(pg):
+    cdp = await pg.context.new_cdp_session(pg)
+    await cdp.send('Emulation.setTouchEmulationEnabled', {'enabled': True, 'maxTouchPoints': 5})
+    async def t(kind, pts):
+        await cdp.send('Input.dispatchTouchEvent', {'type': kind, 'touchPoints': [{'x': x, 'y': y, 'id': i} for i, (x, y) in enumerate(pts)]})
+    return t
+
+async def test_pinch_after_stroke_is_undoable(pg):
+    await pg.evaluate("() => { handleToolBtn('pencil'); selectedColor = '#112233'; }")
+    t = await touch_session(pg)
+    x0, y0 = await grid_point(pg, 2, 10)
+    u0 = await pg.evaluate("() => undoStack.length")
+    await t('touchStart', [(x0, y0)]); await pg.wait_for_timeout(100)
+    for k in range(1, 8):
+        await t('touchMove', [(x0 + k * 25, y0)]); await pg.wait_for_timeout(16)
+    await t('touchStart', [(x0 + 175, y0), (x0 + 100, y0 + 150)]); await pg.wait_for_timeout(30)
+    for k in range(1, 4):
+        await t('touchMove', [(x0 + 175 - k * 10, y0), (x0 + 100 + k * 10, y0 + 150)]); await pg.wait_for_timeout(16)
+    await t('touchEnd', []); await pg.wait_for_timeout(200)
+    check('pinch: stroke ended by a second finger is one undo step', await pg.evaluate("() => undoStack.length") == u0 + 1)
+    check('pinch: the stroke pixels are there', await px(pg, 2, 10) == '#112233')
+    await pg.evaluate("() => undo()")
+    check('pinch: undo removes the stroke', await px(pg, 2, 10) is None)
+
+async def test_pinch_rebases_live(pg):
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(12); scale = 12; resetCameraPanZoom(); layoutAll(); }")
+    t = await touch_session(pg)
+    await t('touchStart', [(300, 200), (700, 600)])
+    seen = []
+    for k in range(1, 8):
+        await t('touchMove', [(300 + k * 25, 200 + k * 25), (700 - k * 25, 600 - k * 25)]); await pg.wait_for_timeout(16)
+        seen.append(await pg.evaluate("() => [scale, cameraScale]"))
+    check('pinch: zooming out lowers the real scale mid-gesture', seen[-1][0] < 12, seen)
+    check('pinch: camera scale stays near 1 while pinching', all(0.6 <= c <= 1.6 for _, c in seen), seen)
+    await t('touchEnd', []); await pg.wait_for_timeout(200)
+    check('pinch: release snaps to a zoom step with camera scale 1', await pg.evaluate("() => ZOOM_STEPS.includes(scale) && cameraScale === 1"))
 
 async def test_boot_and_canvas(pg):
     check('boot: 32x32 pixel canvas created', await pg.evaluate("() => gridW === 32 && gridH === 32 && activeLayer().type === 'pixel'"))
