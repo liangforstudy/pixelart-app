@@ -687,8 +687,8 @@
         }
 
         #palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; padding: 5px 0; }
-        .swatch-wrapper { position: relative; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 50%; transition: transform 0.1s, opacity 0.1s; }
-        .swatch { width: 90%; height: 90%; border-radius: 50%; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; z-index: 1; }
+        .swatch-wrapper { position: relative; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 22%; transition: transform 0.1s, opacity 0.1s; }
+        .swatch { width: 90%; height: 90%; border-radius: 20%; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; z-index: 1; }
 
         .swatch.transparent-swatch {
             background-color: #eee;
@@ -715,7 +715,7 @@
         .delete-badge { display: none; position: absolute; top: -2px; right: -2px; background: #FF3B30; color: white; width: 18px; height: 18px; border-radius: 50%; font-size: 13px; text-align: center; line-height: 16px; font-weight: bold; z-index: 10; border: 1.5px solid #121212; }
         .editing .delete-badge { display: block; }
 
-        .picker-wrapper { background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red); width: 100%; height: 100%; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; position: relative; }
+        .picker-wrapper { background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red); width: 100%; height: 100%; border-radius: 22%; display: flex; align-items: center; justify-content: center; font-weight: bold; position: relative; }
         #colorPicker { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 
         #layersList { display: flex; flex-direction: column; gap: 4px; }
@@ -4079,6 +4079,7 @@ function togglePanel(name) {
 // Shows one floating panel and hides the others. Sets openPanelName BEFORE running any panel-specific setup, so an error building panel contents can't strand the panel-switching state.
 function openPanel(name) {
     if (isConfirmingClear) cancelClear();
+    if (name === 'layers') layersStrokesSinceOpen = 0;
     if (backgroundPickMode && name !== 'colors') { backgroundPickMode = false; backgroundPickReturnPanel = null; updateBackgroundUI(); }
     if (drawerOpenName !== 'debug') closeDrawer();
     document.querySelectorAll('.floating-panel').forEach(p => p.classList.remove('open'));
@@ -7263,14 +7264,16 @@ function layersHeaderAction(){ if(layerSelectionMode) toggleLayerSelectionMode()
 // Re-renders so thumbnails are redrawn at the new mode's size (72px strip vs 28/64px full).
 function setLayersDrawerMode(mode){ const next = mode==='full' ? 'full' : 'strip'; const changed = layersDrawerPrefs.mode !== next; layersDrawerPrefs.mode = next; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); if (changed && openPanelName==='layers') { try { renderLayersPanel(); } catch(_){} } }
 function toggleLayersDrawerWidth(){ setLayersDrawerMode(isLayersStrip() ? 'full' : 'strip'); }
+const LAYERS_AUTO_CLOSE_STROKES = 3;
+let layersStrokesSinceOpen = 0;
 function toggleLayersReturnPref(){ layersDrawerPrefs.returnAfterStroke = !layersDrawerPrefs.returnAfterStroke; saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); }
 (function setupLayersDrawerBehaviour(){
     const init=()=>{
         const panel=document.getElementById('panel-layers'), vp=document.getElementById('viewport'); if(!panel||!vp) return;
         applyLayersDrawerPrefs();
-        const strokePointers=new Set(); let hiddenForStroke=false;
-        vp.addEventListener('pointerdown', e=>{ strokePointers.add(e.pointerId); if(openPanelName==='layers' && !hiddenForStroke){ hiddenForStroke=true; panel.classList.add('stroke-hidden'); } }, true);
-        const end=e=>{ strokePointers.delete(e.pointerId); if(!hiddenForStroke || strokePointers.size) return; hiddenForStroke=false; if(layersDrawerPrefs.mode!=='strip') setLayersDrawerMode('strip'); if(openPanelName!=='layers'){ panel.classList.remove('stroke-hidden'); return; } if(layersDrawerPrefs.returnAfterStroke){ panel.classList.remove('stroke-hidden'); try{ renderLayersPanel(); }catch(_){} } else closePanel(); };
+        const strokePointers=new Set(); let hiddenForStroke=false, strokeMaxPointers=0;
+        vp.addEventListener('pointerdown', e=>{ strokePointers.add(e.pointerId); if(openPanelName==='layers' && !hiddenForStroke){ hiddenForStroke=true; strokeMaxPointers=0; panel.classList.add('stroke-hidden'); } strokeMaxPointers=Math.max(strokeMaxPointers, strokePointers.size); }, true);
+        const end=e=>{ strokePointers.delete(e.pointerId); if(!hiddenForStroke || strokePointers.size) return; hiddenForStroke=false; if(layersDrawerPrefs.mode!=='strip') setLayersDrawerMode('strip'); if(openPanelName!=='layers'){ panel.classList.remove('stroke-hidden'); return; } if(strokeMaxPointers===1 && ++layersStrokesSinceOpen>=LAYERS_AUTO_CLOSE_STROKES){ closePanel(); return; } if(layersDrawerPrefs.returnAfterStroke){ panel.classList.remove('stroke-hidden'); try{ renderLayersPanel(); }catch(_){} } else closePanel(); };
         window.addEventListener('pointerup', end, true); window.addEventListener('pointercancel', end, true);
         let sw=null;
         panel.addEventListener('pointerdown', e=>{ if(treeDragState) return; sw={id:e.pointerId,x:e.clientX,y:e.clientY,done:false}; });
@@ -10106,7 +10109,7 @@ function setupDrawingEvents() {
             // switch-to-dropper logic after every single tap.
             if (!activeL || activeL.type !== 'reference') currentTool = toolBeforeEyedrop;
             updateUI();
-            if (eyedropReturnToColours) { eyedropReturnToColours = false; openPanel('colors'); }
+            eyedropReturnToColours = false;
             g.suppressStroke = true;
             return;
         }

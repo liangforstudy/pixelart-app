@@ -44,7 +44,7 @@ GROUPS = {
     'zoom-indicator': ('On-screen zoom readout: #zoomIndicator, formatZoom, updateZoomIndicator, live during pinch (applyCameraTransform).',
                        ['test_zoom_indicator']),
     'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
-                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone', 'test_layers_duplicate_reachable']),
+                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drawer_closes_after_three_strokes', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone', 'test_layers_duplicate_reachable']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
@@ -539,6 +539,20 @@ async def test_layers_drawer_hides_while_drawing(pg):
     await pg.mouse.move(x3, y3); await pg.mouse.down(); await pg.mouse.up(); await pg.wait_for_timeout(50)
     check('layers drawer: with the setting off it stays closed', await pg.evaluate("() => openPanelName === null"))
 
+async def test_layers_drawer_closes_after_three_strokes(pg):
+    await open_layers_full(pg, 0)
+    open_ = "() => openPanelName === 'layers' && !document.getElementById('panel-layers').classList.contains('stroke-hidden')"
+    async def stroke(i):
+        x, y = await grid_point(pg, 3 + i * 3, 4)
+        await pg.mouse.move(x, y); await pg.mouse.down(); await pg.mouse.move(x + 10, y + 10); await pg.mouse.up(); await pg.wait_for_timeout(50)
+    await stroke(0); await stroke(1)
+    check('layers drawer: still comes back after 2 strokes', await pg.evaluate(open_))
+    await stroke(2)
+    check('layers drawer: fully closes after the 3rd stroke', await pg.evaluate("() => openPanelName === null"))
+    await pg.evaluate("() => openPanel('layers')"); await pg.wait_for_timeout(300)
+    await stroke(3)
+    check('layers drawer: reopening resets the count', await pg.evaluate(open_))
+
 async def test_layers_drag_reorder(pg):
     await open_layers_full(pg, 2)
     before = await pg.evaluate(LAYER_ORDER)
@@ -659,6 +673,8 @@ async def test_palette_drag_swaps(pg):
     i1, i2 = before.index('#111111'), before.index('#444444')
     await pg.evaluate("() => handleManageClick()"); await pg.wait_for_timeout(100)
     check('palette: edit mode shows delete badges', await pg.locator('#palette .swatch-wrapper .delete-badge').first.is_visible())
+    shape = await pg.evaluate("() => { const w = document.querySelector('#palette .swatch-wrapper'); const cs = getComputedStyle(w); return [cs.borderTopLeftRadius, getComputedStyle(w.querySelector('.swatch')).borderTopLeftRadius, cs.animationName]; }")
+    check('palette: swatches are rounded squares that wiggle in edit mode', shape == ['22%', '20%', 'wiggle'], shape)
     w = pg.locator('#palette .swatch-wrapper')
     a = await w.nth(i1).bounding_box(); b = await w.nth(i2).bounding_box()
     await pg.mouse.move(a['x'] + a['width'] / 2, a['y'] + a['height'] / 2); await pg.mouse.down()
@@ -1366,7 +1382,7 @@ async def test_eyedrop_from_colours(pg):
     await pg.locator('#coloursEyedropBtn').click(); await pg.wait_for_timeout(200)
     check('colours: EYEDROPPER closes the drawer and arms the eyedropper', await pg.evaluate("() => currentTool === 'eyedrop' && openPanelName === null"))
     await tap(pg, 4, 4)
-    check('colours: pick sets the colour, returns to the pencil and reopens Colours', await pg.evaluate("() => selectedColor === '#FF0000' && currentTool === 'pencil' && openPanelName === 'colors'"), await pg.evaluate("() => [selectedColor, currentTool, openPanelName]"))
+    check('colours: pick sets the colour, returns to the pencil and leaves Colours closed', await pg.evaluate("() => selectedColor === '#FF0000' && currentTool === 'pencil' && openPanelName !== 'colors'"), await pg.evaluate("() => [selectedColor, currentTool, openPanelName]"))
     check('colours: chip updates to the picked colour', await pg.evaluate("() => getComputedStyle(document.getElementById('currentColourChip')).backgroundColor") == 'rgb(255, 0, 0)')
     await pg.evaluate("() => { closePanel(); openDrawer('tools'); }"); await pg.wait_for_timeout(200)
     await pg.locator('#toolsDrawer .tool-btn[data-tool="eyedrop"]').click(); await pg.wait_for_timeout(200)
