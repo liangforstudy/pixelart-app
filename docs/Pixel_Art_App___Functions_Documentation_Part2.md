@@ -69,7 +69,7 @@
 - `hasWandSelection()` Returns whether a non-empty Wand/pixel-mask selection currently exists (`wandSelection` is set.
 - `performDeleteSelection()` Clears the rectangular selection on the active layer inside bulkPixelWrite; one undo transaction.
 - `performLassoSelection(points)` Converts a freehand lasso point-path into a rectangular-bitmask selection.
-- `performWandSelection(x,y)` Executes an actual Wand-tool selection at a tapped point.
+- `performWandSelection(x,y)` Executes an actual Wand-tool selection at a tapped point. On a reference layer delegates to `performReferenceWandSelection(layer,x,y)`, which samples the reference as drawn on the grid. Reference layers expose only Select/Wand/Lasso (`REF_SELECTION_TOOL_IDS`, `#pixelToolsSection.ref-mode` CSS); selections persist across layer switches. `buildBucketSample` ALL LAYERS mode includes visible reference layers.
 - `recordSelectionUndo(before, after)` Pushes a selection-type undo entry, but only if `before`/`after` are both present.
 - `renderWandSelection()` Thin alias that just calls `updateSelectionOverlay()`.
 - `resampleRotatedBuffer(buf, angle)` Rotates a cut buffer by angle: grows bounds to fit, inverse-rotates each cell, nearest-neighbour. Returns {out, offsetX, offsetY}.

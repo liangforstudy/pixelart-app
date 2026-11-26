@@ -748,6 +748,11 @@
         #layersEdgeSlider { position: absolute; left: 0; top: 56px; bottom: 0; width: 18px; z-index: 5; touch-action: none; cursor: col-resize; }
         #layersEdgeSlider::before { content: ''; position: absolute; left: 4px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: rgba(255,255,255,0.35); transition: background .15s, height .15s, margin .15s; }
         #layersEdgeSlider.dragging::before { background: #4da3ff; height: 64px; margin-top: -32px; }
+        #pixelToolsSection.ref-mode #toolRow-raster1, #pixelToolsSection.ref-mode #toolRow-raster2, #pixelToolsSection.ref-mode #toolRow-bucket,
+        #pixelToolsSection.ref-mode #pixelToolControls, #pixelToolsSection.ref-mode #bucketControls, #pixelToolsSection.ref-mode #colorToAlphaControls,
+        #pixelToolsSection.ref-mode #wandDeleteBtn, #pixelToolsSection.ref-mode #moveSelBtn, #pixelToolsSection.ref-mode #deleteSelBtn,
+        #pixelToolsSection.ref-mode #selectionTransformRow, #pixelToolsSection.ref-mode #selectionResampleRow,
+        #pixelToolsSection.ref-mode .tool-btn:not([data-tool="select"]):not([data-tool="wand"]):not([data-tool="lasso"]) { display: none !important; }
         #panel-layers.strip #layersEdgeSlider { top: 108px; }
         #panel-layers.layers-drawer.edge-dragging { transition: none !important; }
         .layers-drawer-header { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
@@ -2398,6 +2403,7 @@ const VECTOR_ONLY_TOOL_IDS = TOOL_REGISTRY.filter(t => t.category === 'vector' &
 // hand-typed pixelOnlyTools array (V1_38 fix, Fix List item 8) -- a tool
 // added to TOOL_REGISTRY under 'raster'/'fill'/'selection'/'effects' is
 // now automatically included here with no second list to remember.
+const REF_SELECTION_TOOL_IDS = ['select','wand','lasso'];
 const PIXEL_ONLY_TOOL_IDS = TOOL_REGISTRY.filter(t => ['raster','fill','selection','effects'].includes(t.category)).map(t => t.id).concat(['line','rect','ellipse']);
 
 // Generates every Tools-drawer tool-btn element from TOOL_REGISTRY and
@@ -6575,7 +6581,9 @@ function updateToolVisibility() {
     const type = layer ? layer.type : 'pixel';
     const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
 
-    show('pixelToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip');
+    show('pixelToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip' || type === 'reference');
+    // Reference layers get the selection tools only (Select/Wand/Lasso); the selection persists across layer switches.
+    { const pts = document.getElementById('pixelToolsSection'); if (pts) pts.classList.toggle('ref-mode', type === 'reference'); }
     show('vectorToolsSection', type === 'vector');
     // A gradient's dedicated holder layer only ever has one purpose --
     // holding that one gradient spline -- so drawing new, arbitrary vector
@@ -6586,7 +6594,7 @@ function updateToolVisibility() {
     show('vpenToolBtn', !isGradientLayer);
     show('vshapeToolBtn', !isGradientLayer);
     show('flipToolsSection', type === 'pixel' || type === 'image' || type === 'mask' || type === 'clip' || type === 'reference');
-    const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(layer)) ? '' : 'none';
+    const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && (isPixelLike(layer) || type === 'reference')) ? '' : 'none';
     const bc = document.getElementById('bucketControls'); if (bc) bc.style.display = (currentTool === 'bucket' && isPixelLike(layer)) ? '' : 'none';
     const ec = document.getElementById('eyedropControls'); if (ec) { ec.style.display = currentTool === 'eyedrop' ? '' : 'none'; if (currentTool === 'eyedrop') renderEyedropSampleRow(); }
     updateSelectionToolsVisibility();
@@ -6599,7 +6607,7 @@ function updateToolVisibility() {
     // their own, so those still fall back to the eyedropper.
     if (type === 'vector' && pixelOnlyTools.includes(currentTool)) handleToolBtn(lastVectorTool);
     else if ((type === 'pixel' || type === 'mask' || type === 'clip') && vectorOnlyTools.includes(currentTool)) handleToolBtn(lastPixelTool);
-    else if (type === 'reference' && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
+    else if (type === 'reference' && !REF_SELECTION_TOOL_IDS.includes(currentTool) && (pixelOnlyTools.includes(currentTool) || vectorOnlyTools.includes(currentTool))) handleToolBtn('eyedrop');
     // A gradient layer hides Pen/Shape's buttons (see isGradientLayer
     // above) -- if one of them was already the active tool when landing
     // here, redirect to Edit Points rather than leaving an invisible
@@ -8339,7 +8347,8 @@ function buildBucketSample(layer){
     const W=gridW, H=gridH, out=new Uint8ClampedArray(W*H*4);
     if (bucketSampleAll) {
         try {
-            const comp=flattenToCanvas();
+            // Include visible reference layers so ALL LAYERS fills against what's on screen.
+            const comp=flattenTreeToCanvas(frames[activeFrameIndex].layerTree, W, H, false, undefined, true);
             const d=comp.getContext('2d').getImageData(0,0,W,H).data;
             out.set(d.subarray(0,out.length));
             return out;
@@ -8504,8 +8513,25 @@ function fillWholeSelection(){
     if (openPanelName === 'layers') renderLayersPanel();
 }
 
+// Wand on a reference layer: samples the reference image as drawn on the grid (RGB distance, alpha must also be near).
+function performReferenceWandSelection(layer,x,y){
+    const c=document.createElement('canvas'); c.width=gridW; c.height=gridH; const cx=c.getContext('2d');
+    try{ layer.drawInto(cx, !(layer.isPixelated && layer.isPixelated())); }catch(_){ return; }
+    const d=cx.getImageData(0,0,gridW,gridH).data, W=gridW, H=gridH, ti=(y*W+x)*4;
+    const tr=d[ti],tg=d[ti+1],tb=d[ti+2],ta=d[ti+3];
+    const maxD=wandFuzzy ? (wandTolerance/100)*Math.sqrt(255*255*3) : 0;
+    const match=i=>{ const a=d[i+3]; if(ta<8||a<8) return (ta<8)===(a<8); if(Math.abs(a-ta)>Math.max(8,maxD)) return false; const dr=d[i]-tr,dg=d[i+1]-tg,db=d[i+2]-tb; return Math.sqrt(dr*dr+dg*dg+db*db)<=maxD; };
+    const out=new Uint8Array(W*H);
+    if(wandGlobal){ for(let p=0;p<W*H;p++) if(match(p*4)) out[p]=1; }
+    else { const stack=[y*W+x]; const seen=new Uint8Array(W*H); while(stack.length){ const p=stack.pop(); if(seen[p]) continue; seen[p]=1; if(!match(p*4)) continue; out[p]=1; const px=p%W, py=(p-px)/W; if(px>0)stack.push(p-1); if(px<W-1)stack.push(p+1); if(py>0)stack.push(p-W); if(py<H-1)stack.push(p+W); } }
+    const before=selectionSnapshot();
+    applySelectionMask(out,pixelSelectionMode);
+    recordSelectionUndo(before,selectionSnapshot());
+}
 function performWandSelection(x,y){
-    const layer=activeLayer(); if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
+    const layer=activeLayer();
+    if(layer && layer.type==='reference'){ if(x>=0&&y>=0&&x<gridW&&y<gridH) performReferenceWandSelection(layer,x,y); return; }
+    if(!isPixelLike(layer) || x<0||y<0||x>=gridW||y>=gridH)return;
     const target=layer.pixelData[x][y];
     const out=new Uint8Array(gridW * gridH);
     let count=0;
@@ -10154,7 +10180,7 @@ function updateUI() {
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === currentTool));
     applyCanvasSizeToolGating();
     if (!['pencil','brush','softBrush','hardEraser','softEraser','eyedrop','wand','lasso','colorToAlpha'].includes(currentTool)) hideCursor();
-    const wc = document.getElementById('wandControls'); if (wc) wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && isPixelLike(activeLayer())) ? '' : 'none';
+    const wc = document.getElementById('wandControls'); if (wc) { const al = activeLayer(); wc.style.display = ((currentTool === 'wand' || currentTool === 'lasso') && (isPixelLike(al) || (al && al.type === 'reference'))) ? '' : 'none'; }
     const ca = document.getElementById('colorToAlphaControls'); if (ca) ca.style.display = (currentTool === 'colorToAlpha' && isPixelLike(activeLayer())) ? '' : 'none';
     const wr = document.getElementById('wandTolerance'); if (wr) wr.disabled = !wandFuzzy;
     const br = document.getElementById('bucketTolerance'); if (br) br.disabled = !bucketFuzzy;
@@ -10513,6 +10539,7 @@ function setupDrawingEvents() {
             return;
         }
         const layer = activeLayer();
+        if (layer && layer.type === 'reference' && currentTool === 'wand') { performWandSelection(x,y); g.suppressStroke = true; return; }
         if (!isPixelLike(layer)) return;
         if (['pencil','brush','softBrush','hardEraser','softEraser'].includes(currentTool)) { applyPixelToolAt(x,y); return; }
         if (currentTool === 'wand') {
