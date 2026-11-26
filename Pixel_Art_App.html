@@ -458,6 +458,12 @@
         }
 
         #galleryCloudBar { flex: none; padding: 8px 12px 0; }
+        .card-cloud { font-size: 11px; }
+        .cloud-choice-row { display: flex; gap: 10px; }
+        .cloud-choice-side { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; }
+        .cloud-choice-thumb { width: 100%; aspect-ratio: 1; border-radius: 10px; overflow: hidden; }
+        .cloud-choice-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; image-rendering: pixelated; }
+        .cloud-choice-label { font-size: 13px; font-weight: 700; color: #eee; }
         .cloud-bar-btn { width: 100%; min-height: 44px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; background: #1a1a1c; border: 1px solid #2c2c2e; border-radius: 10px; color: #ddd; text-align: left; padding: 7px 12px; cursor: pointer; touch-action: manipulation; box-sizing: border-box; }
         .cloud-bar-btn.warn { border-color: #7a4a00; background: #2a1e0a; }
         .cloud-bar-main { font-size: 13px; font-weight: 600; }
@@ -1005,6 +1011,7 @@
         <div class="ctx-item" id="ctx-export">🖼️ Export PNG</div>
         <div class="ctx-item" id="ctx-save-file">💾 Export Project</div>
         <div class="ctx-item" id="ctx-share">🔗 Share Link</div>
+        <div class="ctx-item" id="ctx-cloud">☁️ Save to Cloud</div>
         <div class="ctx-divider"></div>
         <div class="ctx-item" id="ctx-thumb-privacy">🕶️ Thumbnail Opacity</div>
         <div class="ctx-item" id="ctx-thumb-hide">🙈 Hide Thumbnail</div>
@@ -12546,6 +12553,7 @@ let currentProjectId = null;
 let currentProjectName = 'Untitled';
 
 // ── Gallery render ───────────────────────────────────────────
+function cardInCloud(id) { try { return cloudIsLinked(id); } catch (_) { return false; } }
 function renderGallery() {
     renderStorageStatus();
     const grid = document.getElementById('gallery-grid');
@@ -12598,7 +12606,7 @@ function renderGallery() {
 
         const info = document.createElement('div');
         info.className = 'card-info';
-        info.innerHTML = '<div class="card-name">' + escapeHtml(proj.name) + '</div>' +
+        info.innerHTML = '<div class="card-name">' + (cardInCloud(proj.id) ? '<span class="card-cloud" title="In the cloud">\u2601\uFE0F</span> ' : '') + escapeHtml(proj.name) + '</div>' +
                          '<div class="card-dims">' + proj.gridW + ' \u00D7 ' + proj.gridH + 'px &middot; ' + (proj.profile || 'standard') + '</div>';
 
         if (!proj.thumbHidden) card.appendChild(thumbWrap);
@@ -12913,6 +12921,8 @@ function openGalleryCtxMenu(id, e) {
     if (ctxResize) ctxResize.classList.toggle('ctx-gated', !!(resizePrefs.both && ctxProj && !resizeScreenAllowed(ctxProj.profile)));
     const ctxHide = document.getElementById('ctx-thumb-hide');
     if (ctxHide) ctxHide.textContent = ctxProj && ctxProj.thumbHidden ? '\u{1F441}\uFE0F Show Thumbnail' : '\u{1F648} Hide Thumbnail';
+    const ctxCloud = document.getElementById('ctx-cloud');
+    if (ctxCloud) ctxCloud.textContent = cloudIsLinked(id) ? '\u2601\uFE0F Unlink from Cloud' : '\u2601\uFE0F Save to Cloud';
     const backdrop = document.getElementById('gallery-ctx-backdrop');
     menu.classList.add('open');
     backdrop.classList.add('open');
@@ -13688,29 +13698,49 @@ const CLOUD_DEFAULT_REPO = 'pixelart-saves';
 const SHARE_LINK_MAX = 60000, DISCORD_MSG_MAX = 2000;
 const cloudLsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const cloudLsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
-const cloud = { token: cloudLsGet(CLOUD_TOKEN_KEY), repo: cloudLsGet(CLOUD_REPO_KEY), branch: null, status: 'idle', error: '', lastSync: 0, running: false, again: false, timer: 0, suppress: 0, progress: '' };
-function cloudFreshState(repo) { return { repo: repo || null, items: {}, dirty: {}, tomb: {} }; }
+const cloud = { token: cloudLsGet(CLOUD_TOKEN_KEY), repo: cloudLsGet(CLOUD_REPO_KEY), branch: null, status: 'idle', error: '', lastSync: 0, running: false, again: false, timer: 0, suppress: 0, progress: '', choices: [], awaiting: new Set() };
+const CLOUD_DIR = 'pixel-app';
+function cloudFreshState(repo) { return { repo: repo || null, items: {}, dirty: {}, tomb: {}, linked: {}, unlink: {}, ask: {} }; }
 let cloudState = (() => {
-    try { const s = JSON.parse(cloudLsGet(CLOUD_STATE_KEY) || 'null'); if (s && typeof s === 'object') return { ...cloudFreshState(s.repo), ...s, items: s.items || {}, dirty: s.dirty || {}, tomb: s.tomb || {} }; } catch (e) {}
+    try { const s = JSON.parse(cloudLsGet(CLOUD_STATE_KEY) || 'null'); if (s && typeof s === 'object') return { ...cloudFreshState(s.repo), ...s, items: s.items || {}, dirty: s.dirty || {}, tomb: s.tomb || {}, linked: s.linked || {}, unlink: s.unlink || {}, ask: s.ask || {} }; } catch (e) {}
     return cloudFreshState(null);
 })();
 function cloudSaveState() { cloudLsSet(CLOUD_STATE_KEY, JSON.stringify(cloudState)); }
 function cloudConnected() { return !!(cloud.token && cloud.repo); }
 function cloudEditorOpenId() { const s = document.getElementById('pixel-canvas-screen'); return s && s.style.display === 'block' ? currentProjectId : null; }
 
+function cloudIsLinked(id) { return !!cloudState.linked[id]; }
+function cloudLinkedCount() { return Object.keys(cloudState.linked).length; }
+function cloudPendingCount() { return Object.keys(cloudState.dirty).filter(k => !cloud.awaiting.has(k)).length + Object.keys(cloudState.tomb).length + Object.keys(cloudState.unlink).length; }
 function cloudMarkDirty(id) {
-    if (cloud.suppress || id == null) return;
+    if (cloud.suppress || id == null || !cloudState.linked[id]) return;
     cloudState.dirty[id] = Date.now();
     delete cloudState.tomb[id];
     cloudSaveState();
     cloudScheduleSync(4000);
 }
 function cloudMarkDeleted(id) {
-    if (cloud.suppress || id == null) return;
-    delete cloudState.dirty[id];
+    if (cloud.suppress || id == null || !cloudState.linked[id]) return;
+    delete cloudState.dirty[id]; delete cloudState.linked[id]; delete cloudState.unlink[id];
     if (cloudState.items[id]) cloudState.tomb[id] = 1;
     cloudSaveState();
     cloudScheduleSync(1500);
+}
+function cloudLinkProject(id) {
+    cloudState.linked[id] = 1;
+    cloudState.ask[id] = 1;
+    delete cloudState.unlink[id]; delete cloudState.tomb[id];
+    cloudState.dirty[id] = Date.now();
+    cloudSaveState();
+    if (isGalleryVisible()) renderGallery();
+    cloudScheduleSync(0);
+}
+function cloudUnlinkProject(id) {
+    delete cloudState.linked[id]; delete cloudState.dirty[id]; delete cloudState.ask[id];
+    if (cloudState.items[id]) cloudState.unlink[id] = 1;
+    cloudSaveState();
+    if (isGalleryVisible()) renderGallery();
+    cloudScheduleSync(0);
 }
 function cloudScheduleSync(ms) {
     if (!cloudConnected()) { renderCloudBar(); return; }
@@ -13777,19 +13807,21 @@ function saveDataLooksValid(data) {
     }
     return true;
 }
-function cloudPaths(id) { return { m: 'projects/' + id + '/meta.json', d: 'projects/' + id + '/project.json' }; }
+function cloudPaths(id) { return { m: CLOUD_DIR + '/projects/' + id + '/meta.json', d: CLOUD_DIR + '/projects/' + id + '/project.json' }; }
+const CLOUD_DELETED_PATH = CLOUD_DIR + '/deleted.json';
 
 async function cloudFindHead() {
     if (!cloud.branch) cloud.branch = (await cloudApi('/repos/' + cloud.repo)).default_branch || 'main';
     try { return (await cloudApi('/repos/' + cloud.repo + '/git/ref/heads/' + cloud.branch)).object.sha; }
     catch (e) {
         if (e.status !== 409 && e.status !== 404) throw e;
-        await cloudApi('/repos/' + cloud.repo + '/contents/README.md', { method: 'PUT', body: { message: 'Set up Pixel Art App saves', content: cloudTextToB64('# Pixel Art App saves\n\nProjects synced from Pixel_Art_App.html. Each folder in projects/ is one project.\n'), branch: cloud.branch } });
+        await cloudApi('/repos/' + cloud.repo + '/contents/' + CLOUD_DIR + '/README.md', { method: 'PUT', body: { message: 'Set up Pixel Art App saves', content: cloudTextToB64('# Pixel Art App saves\n\nProjects saved to the cloud from Pixel_Art_App.html. Each folder in projects/ is one project.\n'), branch: cloud.branch } });
         return (await cloudApi('/repos/' + cloud.repo + '/git/ref/heads/' + cloud.branch)).object.sha;
     }
 }
 
 function cloudStoreLocally(id, meta, data) {
+    cloudState.linked[id] = 1;
     const entry = { ...projectMetaOf({ ...meta, id }), id };
     const idx = projectStore.findIndex(p => p.id === id);
     if (idx !== -1) projectStore[idx] = entry; else projectStore.push(entry);
@@ -13799,6 +13831,7 @@ function cloudStoreLocally(id, meta, data) {
     return entry;
 }
 function cloudRemoveLocally(id) {
+    delete cloudState.linked[id];
     const idx = projectStore.findIndex(p => p.id === id);
     if (idx !== -1) projectStore.splice(idx, 1);
     cloud.suppress++;
@@ -13812,18 +13845,28 @@ async function cloudSyncOnce() {
     const commit = await cloudApi('/repos/' + R + '/git/commits/' + head);
     const tree = await cloudApi('/repos/' + R + '/git/trees/' + commit.tree.sha + '?recursive=1');
     const remote = {};
+    let deletedSha = null;
+    const projRe = new RegExp('^' + CLOUD_DIR + '/projects/(\\d+)/(meta|project)\\.json$');
     (tree.tree || []).forEach(t => {
-        const m = t.type === 'blob' && /^projects\/(\d+)\/(meta|project)\.json$/.exec(t.path);
+        if (t.type !== 'blob') return;
+        if (t.path === CLOUD_DELETED_PATH) { deletedSha = t.sha; return; }
+        const m = projRe.exec(t.path);
         if (!m) return;
         const r = remote[m[1]] || (remote[m[1]] = {});
         r[m[2] === 'meta' ? 'm' : 'd'] = t.sha;
     });
     Object.keys(remote).forEach(id => { if (!remote[id].m || !remote[id].d) delete remote[id]; });
+    let deletedIds = [];
+    if (deletedSha) { try { const j = JSON.parse(await cloudReadBlob(deletedSha)); if (Array.isArray(j.ids)) deletedIds = j.ids.map(String); } catch (_) {} }
+    const deletedSet = new Set(deletedIds);
+    let deletedChanged = false;
 
     const editingId = cloudEditorOpenId();
-    const items = cloudState.items, dirty = cloudState.dirty, tomb = cloudState.tomb;
+    const items = cloudState.items, dirty = cloudState.dirty, tomb = cloudState.tomb, linked = cloudState.linked, unlink = cloudState.unlink, ask = cloudState.ask;
+    const choices = [];
     const changes = [], uploads = new Set(), afterCommit = [];
     const sameAsSynced = (r, s) => !!(s && r.m === s.m && r.d === s.d);
+    const dropRemote = key => { const p = cloudPaths(key); changes.push({ path: p.m, sha: null }, { path: p.d, sha: null }); delete remote[key]; };
     let downloaded = 0, removed = 0, conflicts = 0;
 
     const download = async (key, asCopy) => {
@@ -13844,14 +13887,17 @@ async function cloudSyncOnce() {
         downloaded++;
     };
 
+    for (const key of Object.keys(unlink)) {
+        if (remote[key]) dropRemote(key);
+        afterCommit.push(() => { delete unlink[key]; delete items[key]; });
+    }
     for (const key of Object.keys(tomb)) {
         const r = remote[key];
         if (!r) { delete tomb[key]; delete items[key]; continue; }
         if (sameAsSynced(r, items[key])) {
-            const p = cloudPaths(key);
-            changes.push({ path: p.m, sha: null }, { path: p.d, sha: null });
+            dropRemote(key);
+            if (!deletedSet.has(key)) { deletedSet.add(key); deletedChanged = true; }
             afterCommit.push(() => { delete tomb[key]; delete items[key]; });
-            delete remote[key];
         } else delete tomb[key];
     }
 
@@ -13860,12 +13906,15 @@ async function cloudSyncOnce() {
         const key = keys[i], r = remote[key], id = Number(key), s = items[key];
         cloud.progress = 'Checking ' + (i + 1) + ' of ' + keys.length;
         renderCloudBar();
+        if (deletedSet.has(key)) { deletedSet.delete(key); deletedChanged = true; }
         const local = projectStore.find(p => p.id === id);
-        if (!local) { if (!tomb[key]) await download(key, false); continue; }
+        if (!local) { await download(key, false); continue; }
+        if (!linked[key]) continue;
         const remoteChanged = !sameAsSynced(r, s), localChanged = !!dirty[key];
         if (!s) {
             const meta = JSON.parse(await cloudReadBlob(r.m));
-            if (meta.updatedAt === local.updatedAt && meta.name === local.name) { items[key] = { m: r.m, d: r.d }; if (!localChanged) continue; uploads.add(id); continue; }
+            if (meta.updatedAt === local.updatedAt && meta.name === local.name) { items[key] = { m: r.m, d: r.d }; delete ask[key]; if (localChanged) uploads.add(id); continue; }
+            if (ask[key]) { choices.push({ id, key, r, meta }); cloud.awaiting.add(key); continue; }
             if (id === editingId) continue;
             await download(key, true); conflicts++;
             uploads.add(id);
@@ -13881,11 +13930,17 @@ async function cloudSyncOnce() {
 
     projectStore.slice().forEach(p => {
         const key = String(p.id);
-        if (remote[key] || tomb[key]) return;
+        if (!linked[key] || remote[key] || tomb[key]) return;
         if (items[key] && !dirty[key]) {
-            if (p.id === editingId) return;
-            cloudRemoveLocally(p.id); delete items[key]; removed++;
-        } else uploads.add(p.id);
+            if (deletedSet.has(key)) {
+                if (p.id === editingId) return;
+                cloudRemoveLocally(p.id); removed++;
+            } else { delete linked[key]; removed++; }
+            delete items[key];
+        } else {
+            uploads.add(p.id);
+            if (deletedSet.has(key)) { deletedSet.delete(key); deletedChanged = true; }
+        }
     });
 
     const ups = [...uploads];
@@ -13902,22 +13957,68 @@ async function cloudSyncOnce() {
         const dSha = await cloudWriteBlob(JSON.stringify(data));
         const p = cloudPaths(key);
         changes.push({ path: p.m, sha: mSha }, { path: p.d, sha: dSha });
-        afterCommit.push(() => { items[key] = { m: mSha, d: dSha }; if (dirty[key] === mark) delete dirty[key]; });
+        afterCommit.push(() => { items[key] = { m: mSha, d: dSha }; delete ask[key]; if (dirty[key] === mark) delete dirty[key]; });
     }
 
+    if (deletedChanged) changes.push({ path: CLOUD_DELETED_PATH, sha: await cloudWriteBlob(JSON.stringify({ ids: [...deletedSet] })) });
     if (changes.length) {
         cloud.progress = 'Saving to GitHub';
         renderCloudBar();
         const newTree = await cloudApi('/repos/' + R + '/git/trees', { method: 'POST', body: { base_tree: commit.tree.sha, tree: changes.map(c => ({ path: c.path, mode: '100644', type: 'blob', sha: c.sha })) } });
-        const ups2 = changes.filter(c => c.sha && /meta\.json$/.test(c.path)).length, dels = changes.filter(c => !c.sha && /meta\.json$/.test(c.path)).length;
-        const msg = [ups2 ? 'Save ' + ups2 + ' project' + (ups2 > 1 ? 's' : '') : '', dels ? 'delete ' + dels : ''].filter(Boolean).join(', ') + ' (Pixel Art App)';
+        const metaCh = changes.filter(c => /meta\.json$/.test(c.path));
+        const ups2 = metaCh.filter(c => c.sha).length, dels = metaCh.filter(c => !c.sha).length;
+        const msg = ([ups2 ? 'save ' + ups2 + ' project' + (ups2 > 1 ? 's' : '') : '', dels ? 'remove ' + dels : ''].filter(Boolean).join(', ') || 'update deleted list') + ' (Pixel Art App)';
         const newCommit = await cloudApi('/repos/' + R + '/git/commits', { method: 'POST', body: { message: msg.charAt(0).toUpperCase() + msg.slice(1), tree: newTree.sha, parents: [head] } });
         await cloudApi('/repos/' + R + '/git/refs/heads/' + cloud.branch, { method: 'PATCH', body: { sha: newCommit.sha, force: false } });
         afterCommit.forEach(f => f());
-    }
+    } else afterCommit.forEach(f => f());
     cloudSaveState();
     if ((downloaded || removed) && isGalleryVisible()) renderGallery();
     if (conflicts) showAppToast(conflicts + (conflicts > 1 ? ' projects were' : ' project was') + ' changed on two devices. Both versions are kept: look for “(other device)”.', 8000);
+    cloud.choices = choices;
+}
+function cloudOfferNextChoice() {
+    if (!cloud.choices || !cloud.choices.length) return;
+    if (document.getElementById('cloud-modal').classList.contains('open')) return;
+    const c = cloud.choices.shift();
+    if (!projectStore.some(p => p.id === c.id) || !cloudState.ask[c.key]) { cloudOfferNextChoice(); return; }
+    openCloudSheet('choice', c);
+}
+function cloudResolveChoice(c, how) {
+    const key = c.key, st = cloudState;
+    delete st.ask[key];
+    cloud.awaiting.delete(key);
+    if (how === 'later') { delete st.linked[key]; delete st.dirty[key]; }
+    else if (how === 'mine') { st.items[key] = { m: c.r.m, d: c.r.d }; st.dirty[key] = Date.now(); }
+    else if (how === 'cloud') { st.items[key] = { m: '', d: '' }; delete st.dirty[key]; }
+    else { st.items[key] = { m: '', d: '' }; st.dirty[key] = Date.now(); }
+    cloudSaveState();
+    closeCloudSheet();
+    if (isGalleryVisible()) renderGallery();
+    cloudScheduleSync(0);
+}
+function renderChoiceSheet(box) {
+    const c = cloudSheetArg, local = projectStore.find(p => p.id === c.id) || {};
+    const when = t => t ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
+    const side = (title, m) => {
+        const wrap = cloudEl('div', { className: 'cloud-choice-thumb checkerboard-bg' });
+        if (m.thumbnailDataURL && !m.thumbHidden) wrap.append(cloudEl('img', { src: m.thumbnailDataURL, alt: '' }));
+        return cloudEl('div', { className: 'cloud-choice-side' }, [wrap, cloudEl('div', { className: 'cloud-choice-label', textContent: title }), cloudEl('div', { className: 'cloud-hint', textContent: (m.name || 'Untitled') + ' · ' + (m.gridW || '?') + '×' + (m.gridH || '?') + ' · edited ' + when(m.updatedAt) })]);
+    };
+    const newer = (c.meta.updatedAt || 0) > (local.updatedAt || 0) ? 'The cloud one was edited more recently.' : (c.meta.updatedAt || 0) < (local.updatedAt || 0) ? 'The one on this device was edited more recently.' : '';
+    box.append(
+        cloudEl('div', { className: 'cloud-title', textContent: '☁️ Two versions of “' + (local.name || c.meta.name || 'Untitled') + '”' }),
+        cloudEl('div', { className: 'cloud-hint', textContent: 'The cloud already has this project, and it is different from the copy on this device (it was changed while unlinked). ' + newer }),
+        cloudEl('div', { className: 'cloud-choice-row' }, [side('This device', local), side('Cloud', c.meta)]),
+        cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: "KEEP THIS DEVICE'S", onclick: () => cloudResolveChoice(c, 'mine') }),
+        cloudEl('div', { className: 'cloud-hint', textContent: "Replaces the cloud's version. Your other devices get this one." }),
+        cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: "USE THE CLOUD'S", onclick: () => cloudResolveChoice(c, 'cloud') }),
+        cloudEl('div', { className: 'cloud-hint', textContent: 'Replaces the copy on this device.' }),
+        cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'KEEP BOTH', onclick: () => cloudResolveChoice(c, 'both') }),
+        cloudEl('div', { className: 'cloud-hint', textContent: 'This device keeps its copy; the cloud one comes in as “(other device)”. Both stay in the cloud.' }),
+        cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'NOT NOW', onclick: () => cloudResolveChoice(c, 'later') }),
+        cloudEl('div', { className: 'cloud-hint', textContent: 'Leaves it unlinked. Nothing changes.' })
+    );
 }
 
 async function cloudSync() {
@@ -13938,6 +14039,7 @@ async function cloudSync() {
         renderCloudBar();
         if (document.getElementById('cloud-modal').classList.contains('open') && cloudSheetMode === 'settings') renderCloudSheet();
         if (cloud.again) { cloud.again = false; cloudScheduleSync(500); }
+        else if (cloud.status === 'idle' && isGalleryVisible()) cloudOfferNextChoice();
     }
 }
 
@@ -13975,12 +14077,13 @@ function renderCloudBar() {
     const el = document.getElementById('galleryCloudBar');
     if (!el) return;
     let main, sub = '', warn = false;
-    const pending = Object.keys(cloudState.dirty).length + Object.keys(cloudState.tomb).length;
+    const pending = cloudPendingCount(), n = cloudLinkedCount();
+    const inCloud = n ? n + ' project' + (n > 1 ? 's' : '') + ' in the cloud' : 'Long-press a project › Save to Cloud';
     if (!cloudConnected()) { main = '☁️ Sync with GitHub'; sub = 'Carry on from your other devices'; }
     else if (cloud.status === 'syncing') { main = '☁️ Syncing…'; sub = cloud.progress || cloud.repo; }
     else if (cloud.status === 'error') { main = '☁️ Sync problem'; sub = cloud.error; warn = true; }
     else if (cloud.status === 'waiting') { main = '☁️ Waiting for browser storage'; sub = cloud.repo; }
-    else { main = cloud.lastSync ? '☁️ Synced ' + cloudTimeAgo(cloud.lastSync) : '☁️ ' + cloud.repo; sub = pending ? pending + ' change' + (pending > 1 ? 's' : '') + ' waiting to sync' : cloud.repo; }
+    else { main = cloud.lastSync ? '☁️ Synced ' + cloudTimeAgo(cloud.lastSync) : '☁️ ' + cloud.repo; sub = pending ? pending + ' change' + (pending > 1 ? 's' : '') + ' waiting to sync' : inCloud; }
     el.innerHTML = '';
     const b = document.createElement('button');
     b.type = 'button';
@@ -13999,8 +14102,10 @@ function openCloudSheet(mode, arg) {
     renderCloudSheet();
 }
 function closeCloudSheet() {
+    const wasChoice = cloudSheetMode === 'choice';
     document.getElementById('cloud-modal').classList.remove('open');
     cloudSheetMode = null; cloudSheetArg = null;
+    if (!wasChoice) setTimeout(() => { if (isGalleryVisible()) cloudOfferNextChoice(); }, 300);
 }
 function cloudEl(tag, props, kids) {
     const e = document.createElement(tag);
@@ -14015,17 +14120,19 @@ function renderCloudSheet() {
     if (cloudSheetMode === 'settings') renderCloudSettings(box);
     else if (cloudSheetMode === 'share') renderShareSheet(box);
     else if (cloudSheetMode === 'incoming') renderIncomingSheet(box);
+    else if (cloudSheetMode === 'choice') renderChoiceSheet(box);
     box.scrollTop = 0;
 }
 
 function renderCloudSettings(box) {
     box.append(cloudEl('div', { className: 'cloud-title', textContent: '☁️ Cloud Sync' }));
     if (cloudConnected()) {
-        const pending = Object.keys(cloudState.dirty).length + Object.keys(cloudState.tomb).length;
+        const pending = cloudPendingCount(), n = cloudLinkedCount();
         box.append(
-            cloudEl('div', { className: 'cloud-hint' }, ['Your projects sync with ', cloudLink('https://github.com/' + cloud.repo, cloud.repo), '. Open this app on another device with a token for the same repo and they show up there too.']),
+            cloudEl('div', { className: 'cloud-hint' }, ['Connected to ', cloudLink('https://github.com/' + cloud.repo + '/tree/HEAD/' + CLOUD_DIR, cloud.repo + '/' + CLOUD_DIR), '. ' + (n ? n + ' project' + (n > 1 ? 's are' : ' is') + ' in the cloud.' : 'No projects in the cloud yet.')]),
+            cloudEl('div', { className: 'cloud-hint', textContent: 'Projects stay on this device until you long-press one › ☁️ Save to Cloud. Cloud projects show up on every device connected to the same repo. Long-press › Unlink from Cloud takes one out of the cloud again; it stays on this device.' }),
             cloudEl('div', { className: 'cloud-hint', textContent: cloud.status === 'syncing' ? 'Syncing now…' : cloud.status === 'error' ? 'Last try failed: ' + cloud.error : cloud.lastSync ? 'Last synced ' + cloudTimeAgo(cloud.lastSync) + (pending ? ' · ' + pending + ' waiting' : '') + '.' : 'Not synced yet this visit.' }),
-            cloudEl('div', { className: 'cloud-hint', textContent: 'Syncs when you open the gallery, after saving, and when you come back to the app. A project changed on two devices keeps both versions. The project open in the editor is never replaced while you draw.' }),
+            cloudEl('div', { className: 'cloud-hint', textContent: 'Cloud projects sync when you open the gallery, after saving, and when you come back to the app. A project changed on two devices keeps both versions. The project open in the editor is never replaced while you draw.' }),
             cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: cloud.status === 'syncing' ? 'SYNCING…' : 'SYNC NOW', disabled: cloud.status === 'syncing', onclick: () => { cloudSync(); renderCloudSheet(); } })
         );
         const off = cloudEl('button', { className: 'cloud-btn danger', type: 'button', textContent: 'DISCONNECT THIS DEVICE' });
@@ -14034,7 +14141,7 @@ function renderCloudSettings(box) {
     } else {
         const tokenUrl = 'https://github.com/settings/personal-access-tokens/new?name=' + encodeURIComponent('Pixel Art App sync') + '&description=' + encodeURIComponent('Saves Pixel Art App projects to my ' + CLOUD_DEFAULT_REPO + ' repo') + '&expires_in=366&contents=write&gists=write';
         box.append(
-            cloudEl('div', { className: 'cloud-hint', textContent: 'Keep your projects in a private GitHub repo of your own, then carry on from any device that has the token. Nobody else sees your projects: each person uses their own GitHub account and repo, and the token stays in this browser.' }),
+            cloudEl('div', { className: 'cloud-hint', textContent: 'Save chosen projects to a private GitHub repo of your own (in a pixel-app folder), then carry on from any device that has the token. Nobody else sees your projects: each person uses their own GitHub account and repo, and the token stays in this browser.' }),
             cloudEl('ol', { className: 'cloud-steps' }, [
                 cloudEl('li', {}, [cloudLink('https://github.com/new?name=' + CLOUD_DEFAULT_REPO + '&visibility=private&description=' + encodeURIComponent('My Pixel Art App projects'), 'Make a private repo'), ' called ' + CLOUD_DEFAULT_REPO + '.']),
                 cloudEl('li', {}, [cloudLink(tokenUrl, 'Make a fine-grained token'), '. Under Repository access pick Only select repositories › ' + CLOUD_DEFAULT_REPO + '. Contents (read and write) is already ticked; Gists lets you make share links.']),
@@ -14052,6 +14159,8 @@ function renderCloudSettings(box) {
             go.disabled = true; go.textContent = 'CHECKING…'; err.textContent = '';
             try {
                 const info = await cloudConnect(t, repoIn.value);
+                const pend = cloudSheetArg && cloudSheetArg.linkAfter;
+                if (pend != null && projectStore.some(p => p.id === pend)) cloudLinkProject(pend);
                 renderCloudSheet();
                 if (!info.private) showAppToast(cloud.repo + ' is public: anyone can see the projects in it. Make it private on GitHub (Settings › Danger Zone) if you want them hidden.', 9000);
                 cloudSync();
@@ -14218,7 +14327,18 @@ function renderIncomingSheet(box) {
 }
 window.addEventListener('hashchange', () => { incomingShareHandled = false; checkIncomingShare(); });
 
-document.getElementById('cloud-modal').addEventListener('click', e => { if (e.target.id === 'cloud-modal') closeCloudSheet(); });
+document.getElementById('cloud-modal').addEventListener('click', e => { if (e.target.id === 'cloud-modal' && cloudSheetMode !== 'choice') closeCloudSheet(); });
+document.getElementById('ctx-cloud').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    if (cloudIsLinked(id)) {
+        cloudUnlinkProject(id);
+        showAppToast('“' + proj.name + '” is out of the cloud. It stays on this device, and other devices keep their copy (no longer synced).', 7000);
+    } else if (!cloudConnected()) openCloudSheet('settings', { linkAfter: id });
+    else { cloudLinkProject(id); showAppToast('Saving “' + proj.name + '” to the cloud…', 3000); }
+});
 document.getElementById('ctx-share').addEventListener('click', () => {
     const id = galleryCtxTargetId;
     closeGalleryCtxMenu();
@@ -14226,7 +14346,7 @@ document.getElementById('ctx-share').addEventListener('click', () => {
 });
 document.addEventListener('visibilitychange', () => {
     if (!cloudConnected()) return;
-    if (document.visibilityState === 'hidden') { if (Object.keys(cloudState.dirty).length || Object.keys(cloudState.tomb).length) cloudSync(); }
+    if (document.visibilityState === 'hidden') { if (cloudPendingCount()) cloudSync(); }
     else cloudScheduleSync(400);
 });
 setInterval(() => { if (isGalleryVisible() && cloud.status === 'idle') renderCloudBar(); }, 30000);

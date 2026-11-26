@@ -78,7 +78,7 @@ GROUPS = {
                 'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods', 'test_mapart_reference_match', 'test_mapart_pencil_after_empty_pick']),
     'background': ('Background fill (roadmap 9): backgroundColor, setBackgroundColor, updateBackgroundFill/UI, background pick mode (Colours + Layers), flattenTreeToCanvas bg argument, saveImage, save/load, mapart default and snapping.',
                    ['test_background_fill', 'test_background_mapart']),
-    'cloud': ('Cloud Sync and share links (V2_8): cloud, cloudState, cloudSync/cloudSyncOnce, cloudConnect, cloudMarkDirty/cloudMarkDeleted (hooked into persistProject/deleteProjectRecord), #galleryCloudBar, #cloud-modal sheets, openShareSheet, shareCompress, checkIncomingShare, saveDataLooksValid, #ctx-share.',
+    'cloud': ('Cloud Sync and share links (V2_8): opt-in per project (#ctx-cloud, cloudLinkProject/cloudUnlinkProject, relink choice sheet cloudResolveChoice), pixel-app/ folder, cloud, cloudState, cloudSync/cloudSyncOnce, cloudConnect, cloudMarkDirty/cloudMarkDeleted (hooked into persistProject/deleteProjectRecord), #galleryCloudBar, #cloud-modal sheets, openShareSheet, shareCompress, checkIncomingShare, saveDataLooksValid, #ctx-share.',
               ['test_cloud_sync_two_devices', 'test_cloud_share_links']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
                 ['test_resize_from_gallery', 'test_gallery_thumbnail_privacy']),
@@ -177,10 +177,14 @@ class FakeGitHub:
         return dict(self.trees[self.commits[self.head]]) if self.head else {}
     def remote_projects(self):
         import re as _re
-        return sorted({_re.match(r'projects/(\d+)/', p).group(1) for p in self.tree_of_head() if p.startswith('projects/')})
+        return sorted({_re.match(r'pixel-app/projects/(\d+)/', p).group(1) for p in self.tree_of_head() if p.startswith('pixel-app/projects/')})
+    def deleted_ids(self):
+        import json as _j
+        t = self.tree_of_head()
+        return _j.loads(self.blobs[t['pixel-app/deleted.json']])['ids'] if 'pixel-app/deleted.json' in t else []
     def project_data(self, pid):
         import json as _j
-        return _j.loads(self.blobs[self.tree_of_head()['projects/%s/project.json' % pid]])
+        return _j.loads(self.blobs[self.tree_of_head()['pixel-app/projects/%s/project.json' % pid]])
     async def handle(self, route):
         import json as _j, base64 as _b, re as _re
         req = route.request
@@ -206,9 +210,9 @@ class FakeGitHub:
         rest = path[len('/repos/tester/saves/'):]
         if rest == 'git/ref/heads/main':
             return await (ok({'object': {'sha': self.head}}) if self.head else err(409, 'Git Repository is empty.'))
-        if rest == 'contents/README.md' and m == 'PUT':
+        if rest == 'contents/pixel-app/README.md' and m == 'PUT':
             data = _b.b64decode(body['content']); bs = self.h(data); self.blobs[bs] = data.decode()
-            ts = self.h(b'tree' + bs.encode()); self.trees[ts] = {'README.md': bs}
+            ts = self.h(b'tree' + bs.encode()); self.trees[ts] = {'pixel-app/README.md': bs}
             cs = self.h(b'c0'); self.commits[cs] = ts; self.head = cs
             return await ok({'content': {}}, 201)
         if rest.startswith('git/commits/'): return await ok({'sha': rest[12:], 'tree': {'sha': self.commits[rest[12:]]}})
@@ -236,19 +240,24 @@ class FakeGitHub:
             return await ok({'object': {'sha': self.head}})
         return await err(404, 'Not Found ' + rest)
 
-async def cloud_connect_ui(pg, token='good-token'):
-    await pg.locator('#galleryCloudBar .cloud-bar-btn').click(); await pg.wait_for_timeout(200)
+async def cloud_connect_ui(pg, token='good-token', open_sheet=True):
+    if open_sheet: await pg.locator('#galleryCloudBar .cloud-bar-btn').click(); await pg.wait_for_timeout(200)
     await pg.locator('#cloud-box input[type=password]').fill(token)
     await pg.locator('#cloud-box input[type=text]').fill('saves')
     await pg.locator('#cloud-box button', has_text='CONNECT').click()
 
 async def cloud_wait_idle(pg, timeout=8000):
-    await pg.wait_for_function("() => typeof cloud !== 'undefined' && !cloud.running && !cloud.timer && (cloud.status === 'idle' || cloud.status === 'error') && !Object.keys(cloudState.dirty).length && !Object.keys(cloudState.tomb).length", timeout=timeout)
+    await pg.wait_for_function("() => typeof cloud !== 'undefined' && !cloud.running && !cloud.timer && (cloud.status === 'idle' || cloud.status === 'error') && !cloudPendingCount()", timeout=timeout)
     await pg.wait_for_timeout(150)
 
 async def cloud_sync(pg):
     await pg.evaluate("() => cloudSync()")
     await cloud_wait_idle(pg)
+
+async def ctx_cloud(pg, pid):
+    await pg.evaluate("() => closeCloudSheet()")
+    await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", pid)
+    await pg.locator('#ctx-cloud').click(); await pg.wait_for_timeout(150)
 
 async def second_device(pg, gh):
     ctx = await pg.context.browser.new_context(viewport={'width': 1000, 'height': 800})
@@ -275,11 +284,26 @@ async def test_cloud_sync_two_devices(pg):
     check('cloud: a bad token shows an in-page error and stays disconnected', 'rejected the token' in await pg.locator('#cloud-box .cloud-err').inner_text() and not await pg.evaluate("() => cloudConnected()"))
     check('cloud: token and repo inputs are 16px (no iOS zoom)', await pg.evaluate("() => [...document.querySelectorAll('#cloud-box input')].every(i => getComputedStyle(i).fontSize === '16px')"))
     await pg.evaluate("() => closeCloudSheet()")
-    await cloud_connect_ui(pg); await cloud_wait_idle(pg)
     pid = await pg.evaluate("() => projectStore[0].id")
-    check('cloud: connecting an empty repo uploads the project', gh.remote_projects() == [str(pid)], gh.remote_projects())
-    check('cloud: repo got a README so the empty repo works', 'README.md' in gh.tree_of_head())
+    await cloud_connect_ui(pg); await cloud_wait_idle(pg)
+    check('cloud: connecting does not upload anything by itself', gh.remote_projects() == [] and await pg.evaluate("() => cloudLinkedCount() === 0"), gh.remote_projects())
+    check('cloud: repo setup file goes in the pixel-app folder, not the root', list(gh.tree_of_head()) == ['pixel-app/README.md'], list(gh.tree_of_head()))
+    await pg.evaluate("() => { cloudDisconnect(); closeCloudSheet(); }")
+    await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", pid)
+    check('cloud: long-press offers Save to Cloud', 'Save to Cloud' in await pg.locator('#ctx-cloud').inner_text())
+    await pg.locator('#ctx-cloud').click(); await pg.wait_for_timeout(200)
+    check('cloud: Save to Cloud while disconnected opens the connect sheet', await pg.evaluate("() => cloudSheetMode === 'settings' && !!document.querySelector('#cloud-box input[type=password]')"))
+    await cloud_connect_ui(pg, open_sheet=False); await cloud_wait_idle(pg)
+    check('cloud: after connecting, that project is saved to the cloud', gh.remote_projects() == [str(pid)], gh.remote_projects())
+    check('cloud: files live under pixel-app/', all(p.startswith('pixel-app/') for p in gh.tree_of_head()), list(gh.tree_of_head()))
+    check('cloud: card shows a cloud badge', await pg.locator('.gallery-card[data-id="%s"] .card-cloud' % pid).count() == 1)
     check('cloud: token is stored only in this browser (localStorage)', await pg.evaluate("() => localStorage.getItem('pixelAppCloudToken') === 'good-token' && cloud.repo === 'tester/saves'"))
+    await pg.evaluate("() => closeCloudSheet()")
+    await pg.evaluate("() => { const n = projectStore.length; saveCurrentStateToStore(null, 'Local only'); }"); await pg.wait_for_timeout(200)
+    await cloud_sync(pg)
+    check('cloud: projects not saved to the cloud stay local', gh.remote_projects() == [str(pid)] and await pg.evaluate("() => projectStore.length === 2"), gh.remote_projects())
+    local_only = await pg.evaluate("() => projectStore.find(p => p.name === 'Local only').id")
+    await pg.evaluate("(id) => { const i = projectStore.findIndex(p => p.id === id); projectStore.splice(i, 1); deleteProjectRecord(id); renderGallery(); }", local_only)
     ctx2, p2, errs2 = await second_device(pg, gh)
     try:
         await cloud_connect_ui(p2); await cloud_wait_idle(p2)
@@ -306,7 +330,7 @@ async def test_cloud_sync_two_devices(pg):
         await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", copy_id)
         await pg.locator('#ctx-delete').click(); await pg.wait_for_timeout(200)
         await cloud_wait_idle(pg)
-        check('cloud: deleting uploads the delete', str(copy_id) not in gh.remote_projects(), gh.remote_projects())
+        check('cloud: deleting uploads the delete', str(copy_id) not in gh.remote_projects() and str(copy_id) in gh.deleted_ids(), gh.remote_projects())
         await cloud_sync(p2)
         check('cloud: the delete reaches the other device', not await p2.evaluate("(id) => projectStore.some(p => p.id === id)", copy_id))
         await p2.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await p2.wait_for_timeout(300)
@@ -317,12 +341,48 @@ async def test_cloud_sync_two_devices(pg):
         await p2.evaluate("() => goToMainMenu()"); await p2.wait_for_timeout(300); await cloud_wait_idle(p2)
         check('cloud: drawing session ends without losing either side', len(gh.remote_projects()) == 2, gh.remote_projects())
         await cloud_wait_idle(p2)
+        await cloud_sync(pg)
+        other = await pg.evaluate("() => projectStore.find(p => p.name.endsWith('(other device)')).id")
+        await ctx_cloud(pg, other); await cloud_wait_idle(pg)
+        check('cloud: unlink takes it out of the cloud', str(other) not in gh.remote_projects() and str(other) not in gh.deleted_ids(), gh.remote_projects())
+        check('cloud: unlinked project stays on this device without the badge', await pg.evaluate("(id) => projectStore.some(p => p.id === id) && !cloudIsLinked(id)", other) and await pg.locator('.gallery-card[data-id="%s"] .card-cloud' % other).count() == 0)
+        await cloud_sync(p2)
+        check('cloud: other device keeps its copy, no longer synced', await p2.evaluate("(id) => projectStore.some(p => p.id === id) && !cloudIsLinked(id)", other))
+        await p2.evaluate("(id) => { const p = projectStore.find(q => q.id === id); p.name = 'Edited after unlink'; persistProject(p, null); }", other)
+        await cloud_sync(p2)
+        check('cloud: edits to an unlinked project are not uploaded', str(other) not in gh.remote_projects())
+        NAME = "(id) => (projectStore.find(p => p.id === id) || {}).name"
+        pg_name = await pg.evaluate(NAME, other)
+        await ctx_cloud(p2, other); await cloud_wait_idle(p2)
+        check('relink: linking again uploads it when the cloud has no copy', str(other) in gh.remote_projects() and await p2.evaluate("() => cloudSheetMode !== 'choice'"))
+        await cloud_sync(pg)
+        check('relink: another device with an unlinked copy leaves it alone', await pg.evaluate(NAME, other) == pg_name and not await pg.evaluate("(id) => cloudIsLinked(id)", other))
+        await ctx_cloud(pg, other); await cloud_wait_idle(pg); await pg.wait_for_timeout(300)
+        check('relink: different cloud version asks which to keep', await pg.evaluate("() => cloudSheetMode === 'choice' && document.querySelectorAll('#cloud-box .cloud-choice-side img').length === 2"))
+        check('relink: nothing was overwritten while asking', await pg.evaluate(NAME, other) == pg_name and str(other) in gh.remote_projects())
+        small = await pg.evaluate("() => [...document.querySelectorAll('#cloud-box .cloud-btn')].filter(b => b.getBoundingClientRect().height < 44).length")
+        check('relink: choice buttons are 44px+', small == 0, small)
+        await pg.locator('#cloud-box button', has_text="USE THE CLOUD").click(); await pg.wait_for_timeout(200); await cloud_wait_idle(pg)
+        check("relink: Use the cloud's replaces this device's copy", await pg.evaluate(NAME, other) == 'Edited after unlink' and await pg.evaluate("(id) => cloudIsLinked(id)", other))
+        await ctx_cloud(p2, other); await cloud_wait_idle(p2)
+        await p2.evaluate("(id) => { const p = projectStore.find(q => q.id === id); p.name = 'P2 version'; persistProject(p, null); }", other)
+        await cloud_sync(pg)
+        check('relink: unlinking elsewhere unlinks here but keeps the project', not await pg.evaluate("(id) => cloudIsLinked(id)", other) and await pg.evaluate(NAME, other) == 'Edited after unlink')
+        await pg.evaluate("(id) => { const p = projectStore.find(q => q.id === id); p.name = 'PG version'; persistProject(p, null); }", other)
+        await ctx_cloud(pg, other); await cloud_wait_idle(pg)
+        await ctx_cloud(p2, other); await cloud_wait_idle(p2); await p2.wait_for_timeout(300)
+        check('relink: the other device gets asked too', await p2.evaluate("() => cloudSheetMode === 'choice'"))
+        await p2.locator('#cloud-box button', has_text='KEEP BOTH').click(); await p2.wait_for_timeout(200); await cloud_wait_idle(p2)
+        names = await p2.evaluate("() => projectStore.map(p => p.name).sort()")
+        check('relink: Keep both keeps this one and brings the cloud one in as a copy', 'P2 version' in names and 'PG version (other device)' in names, names)
+        check('relink: both versions end up in the cloud', await p2.evaluate("() => projectStore.filter(p => cloudIsLinked(p.id)).length") == len(gh.remote_projects()), gh.remote_projects())
+        before = await p2.evaluate("() => projectStore.length")
         await p2.evaluate("() => openCloudSheet('settings')")
         off = p2.locator('#cloud-box .cloud-btn.danger')
         await off.click(); await p2.wait_for_timeout(100)
         check('cloud: disconnect needs a second tap', await p2.evaluate("() => cloudConnected()"))
         await off.click(); await p2.wait_for_timeout(100)
-        check('cloud: disconnect forgets the token but keeps projects', await p2.evaluate("() => !cloudConnected() && !localStorage.getItem('pixelAppCloudToken') && projectStore.length === 2"))
+        check('cloud: disconnect forgets the token but keeps projects', await p2.evaluate("() => !cloudConnected() && !localStorage.getItem('pixelAppCloudToken') && projectStore.length === " + str(before) + ""))
         check('cloud: device 2 had no page errors', not errs2, errs2[:3])
     finally:
         await ctx2.close()

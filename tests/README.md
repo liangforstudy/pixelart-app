@@ -39,7 +39,7 @@ Each test prints how long it took, each group (static, browser) prints its total
 | `new-canvas` | New Canvas sheet and Create Canvas → resize screen |
 | `mapart` | Mapart profile: palette lock, snapping, staircase, import, save/load, MAPART COLOURS on reference layers |
 | `gallery` | hub, saving, long-press menu |
-| `cloud` | Cloud Sync against a fake GitHub (two devices: upload, download, edits on both, deletes, the open project left alone, disconnect) and share links (drawing-in-the-link, Gist links, broken and unsafe links) |
+| `cloud` | Cloud Sync against a fake GitHub (two devices): nothing syncs until Save to Cloud, files in `pixel-app/`, upload/download, edits on both, deletes, unlink, relinking with a different cloud version (the choice sheet), the open project left alone, disconnect; share links (drawing-in-the-link, Gist links, broken and unsafe links) |
 
 ## What's covered
 
