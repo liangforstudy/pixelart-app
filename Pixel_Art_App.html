@@ -754,6 +754,25 @@
         #pixelToolsSection.ref-mode #selectionTransformRow, #pixelToolsSection.ref-mode #selectionResampleRow,
         #pixelToolsSection.ref-mode .tool-btn:not([data-tool="select"]):not([data-tool="wand"]):not([data-tool="lasso"]) { display: none !important; }
         #panel-layers.strip #layersEdgeSlider { top: 108px; }
+        #panel-layers.layers-drawer { container-type: inline-size; }
+        /* Free-width drawer: hide what doesn't fit as it narrows (strip mode has its own rules). */
+        @container (max-width: 300px) {
+            #panel-layers:not(.strip) .layer-type-badge, #panel-layers:not(.strip) .layer-settings-title small, #panel-layers:not(.strip) .layer-opacity-caption, #panel-layers:not(.strip) .layer-opacity-row > span { display: none; }
+            #panel-layers:not(.strip) .layers-icon-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        @container (max-width: 240px) {
+            #panel-layers:not(.strip) .layers-drawer-title { display: none; }
+            #panel-layers:not(.strip) .layers-icon-btn { font-size: 0; min-height: 44px; }
+            #panel-layers:not(.strip) .layers-icon-btn span { font-size: 18px; }
+            #panel-layers:not(.strip) .layer-opacity-row { flex-wrap: wrap; }
+            #panel-layers:not(.strip) .layer-opacity-row > * { flex: 1 1 100%; min-width: 0; }
+            #panel-layers:not(.strip) .layer-row .layer-color-tag { display: none; }
+        }
+        @container (max-width: 190px) {
+            #panel-layers:not(.strip) .layers-icon-grid { grid-template-columns: repeat(2, 1fr); }
+            #panel-layers:not(.strip) .layer-settings-actions { flex-wrap: wrap; }
+            #panel-layers:not(.strip) .layer-row .layer-name { font-size: 11px; }
+        }
         #panel-layers.layers-drawer.edge-dragging { transition: none !important; }
         .layers-drawer-header { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
         .layers-drawer-title { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: #eee; }
@@ -7275,8 +7294,10 @@ function renderLayersPanel() {
     const lpn=document.getElementById('panel-layers'); if(lpn) lpn.classList.toggle('selecting', !!layerSelectionMode); if(sa) sa.style.display=layerSelectionMode?'flex':'none'; const sc=document.getElementById('selectionCount'); if(sc) sc.innerText=selectedNodeIds.size+' selected'; if(gb) gb.disabled=selectedNodeIds.size===0; if(ga) ga.disabled=selectedNodeIds.size===0;
 }
 const LAYERS_DRAWER_PREFS_KEY = 'pixelArtLayersDrawerPrefs';
-let layersDrawerPrefs = { mode:'strip', returnAfterStroke:true, glass:82, split:45 };
-try { const v=JSON.parse(localStorage.getItem(LAYERS_DRAWER_PREFS_KEY)||'null'); if(v&&typeof v==='object'){ if(v.mode==='strip'||v.mode==='full') layersDrawerPrefs.mode=v.mode; if(typeof v.returnAfterStroke==='boolean') layersDrawerPrefs.returnAfterStroke=v.returnAfterStroke; if(Number.isFinite(v.glass)&&v.glass>=40&&v.glass<=100) layersDrawerPrefs.glass=v.glass; if(Number.isFinite(v.split)&&v.split>=15&&v.split<=85) layersDrawerPrefs.split=v.split; } } catch(_) {}
+const LAYERS_FREE_MIN_W = 150; // below this a released drag drops to the 96px strip
+let layersDrawerPrefs = { mode:'strip', returnAfterStroke:true, glass:82, split:45, width:340 };
+try { const v=JSON.parse(localStorage.getItem(LAYERS_DRAWER_PREFS_KEY)||'null'); if(v&&typeof v==='object'){ if(v.mode==='strip'||v.mode==='full') layersDrawerPrefs.mode=v.mode; if(typeof v.returnAfterStroke==='boolean') layersDrawerPrefs.returnAfterStroke=v.returnAfterStroke; if(Number.isFinite(v.glass)&&v.glass>=40&&v.glass<=100) layersDrawerPrefs.glass=v.glass; if(Number.isFinite(v.split)&&v.split>=15&&v.split<=85) layersDrawerPrefs.split=v.split; if(Number.isFinite(v.width)&&v.width>=LAYERS_FREE_MIN_W&&v.width<=2000) layersDrawerPrefs.width=v.width; } } catch(_) {}
+function layersFullMaxW(){ return window.innerWidth-16; }
 function saveLayersDrawerPrefs(){ try { localStorage.setItem(LAYERS_DRAWER_PREFS_KEY, JSON.stringify(layersDrawerPrefs)); } catch(_) {} }
 function isLayersStrip(){ const p=document.getElementById('panel-layers'); return !!(p && p.classList.contains('strip')); }
 let layersGlassSliderBuilt = false;
@@ -7284,6 +7305,7 @@ let layersSplit = null;
 function applyLayersDrawerPrefs(){
     const p=document.getElementById('panel-layers'); if(!p) return;
     p.classList.toggle('strip', layersDrawerPrefs.mode==='strip');
+    p.style.width = layersDrawerPrefs.mode==='strip' ? '' : Math.max(LAYERS_FREE_MIN_W, Math.min(layersFullMaxW(), layersDrawerPrefs.width))+'px';
     p.style.setProperty('--layers-glass', String(layersDrawerPrefs.glass/100));
     const wb=document.getElementById('layersWidthBtn'); if(wb){ wb.textContent = layersDrawerPrefs.mode==='strip' ? '⟨' : '⟩'; wb.setAttribute('aria-label', layersDrawerPrefs.mode==='strip' ? 'Show the full layers panel' : 'Show the thumbnail strip'); }
     const rb=document.getElementById('layersReturnPrefBtn'); if(rb){ rb.textContent = 'COMES BACK AFTER A STROKE: ' + (layersDrawerPrefs.returnAfterStroke ? 'ON' : 'OFF'); rb.classList.toggle('active', layersDrawerPrefs.returnAfterStroke); }
@@ -7309,14 +7331,17 @@ function toggleLayersReturnPref(){ layersDrawerPrefs.returnAfterStroke = !layers
         panel.addEventListener('pointerdown', e=>{ if(treeDragState) return; sw={id:e.pointerId,x:e.clientX,y:e.clientY,done:false}; });
         panel.addEventListener('pointermove', e=>{ if(!sw||sw.done||e.pointerId!==sw.id||treeDragState) return; const dx=e.clientX-sw.x, dy=e.clientY-sw.y; if(Math.abs(dy)>30){ sw.done=true; return; } if(isLayersStrip() && dx<-40){ sw.done=true; setLayersDrawerMode('full'); } else if(!isLayersStrip() && dx>70 && e.target.closest && e.target.closest('#layersDrawerHeader')){ sw.done=true; setLayersDrawerMode('strip'); } });
         panel.addEventListener('pointerup', ()=>{ sw=null; });
-        // Left-edge drawer slider: drag to resize between strip and full width, release snaps to nearest mode; tap toggles.
+        // Left-edge drawer slider: drag to any width (kept on release, saved in prefs); below LAYERS_FREE_MIN_W drops to the strip; tap toggles strip/full.
         const edge=document.getElementById('layersEdgeSlider');
-        if(edge){ let ed=null; const STRIP_W=96, fullW=()=>Math.min(340, window.innerWidth-16);
+        if(edge){ let ed=null; const STRIP_W=96, fullW=layersFullMaxW;
             edge.addEventListener('pointerdown', e=>{ e.stopPropagation(); e.preventDefault(); sw=null; ed={id:e.pointerId,x:e.clientX,w:panel.getBoundingClientRect().width,moved:false}; try{edge.setPointerCapture(e.pointerId);}catch(_){} edge.classList.add('dragging'); });
             edge.addEventListener('pointermove', e=>{ if(!ed||e.pointerId!==ed.id) return; const dx=e.clientX-ed.x; if(!ed.moved && Math.abs(dx)<6) return; if(!ed.moved){ ed.moved=true; panel.classList.add('edge-dragging'); panel.classList.remove('strip'); } panel.style.width=Math.max(STRIP_W, Math.min(fullW(), ed.w-dx))+'px'; });
-            const fin=e=>{ if(!ed||e.pointerId!==ed.id) return; const moved=ed.moved, w=panel.getBoundingClientRect().width; ed=null; edge.classList.remove('dragging'); panel.classList.remove('edge-dragging'); panel.style.width='';
+            window.addEventListener('resize', ()=>{ if(!isLayersStrip()) applyLayersDrawerPrefs(); });
+            const fin=e=>{ if(!ed||e.pointerId!==ed.id) return; const moved=ed.moved, w=panel.getBoundingClientRect().width; ed=null; edge.classList.remove('dragging'); panel.classList.remove('edge-dragging');
                 if(!moved){ setLayersDrawerMode(isLayersStrip()?'full':'strip'); return; }
-                const next = w > (STRIP_W+fullW())/2 ? 'full' : 'strip'; panel.classList.toggle('strip', layersDrawerPrefs.mode==='strip'); setLayersDrawerMode(next); };
+                // Stays at the width you let go at; only very narrow drops snap to the strip.
+                if(w < LAYERS_FREE_MIN_W){ panel.style.width=''; panel.classList.toggle('strip', layersDrawerPrefs.mode==='strip'); setLayersDrawerMode('strip'); return; }
+                layersDrawerPrefs.width=Math.round(w); setLayersDrawerMode('full'); saveLayersDrawerPrefs(); applyLayersDrawerPrefs(); };
             edge.addEventListener('pointerup', fin); edge.addEventListener('pointercancel', fin); }
         layersSplit = makeCollapsingSplit({ handleId:'layersSplitHandle', boxId:'layersSplit', topId:'layersTopPane',
             getPct: () => layersDrawerPrefs.split, setPct: v => { layersDrawerPrefs.split = Math.round(v); }, save: saveLayersDrawerPrefs });
