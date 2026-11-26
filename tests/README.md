@@ -37,7 +37,7 @@ Each test prints how long it took, each group (static, browser) prints its total
 | `resize-screen` | the resize screen |
 | `settings` | Customise settings and saved preferences |
 | `new-canvas` | New Canvas sheet and Create Canvas → resize screen |
-| `mapart` | Mapart profile: palette lock, snapping, staircase, import, save/load |
+| `mapart` | Mapart profile: palette lock, snapping, staircase, import, save/load, MAPART COLOURS on reference layers |
 | `gallery` | hub, saving, long-press menu |
 
 ## What's covered

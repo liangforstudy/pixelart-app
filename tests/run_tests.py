@@ -53,7 +53,7 @@ GROUPS = {
                 ['test_eyedrop_sample_size']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
                   ['test_space_pan', 'test_wheel_zoom_anchor', 'test_mouse_cursor_visibility']),
-    'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load.',
+    'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load. Mapart colours on references: see the mapart group.',
                   ['test_reference_layer']),
     'core': ('Boot, New Canvas, pencil, plot(), undo/redo (history). Also run after editing SHARED_CODE.',
              ['test_boot_and_canvas', 'test_pencil_and_undo']),
@@ -72,10 +72,10 @@ GROUPS = {
                  ['test_resize_prefs']),
     'new-canvas': ('New Canvas sheet (openNewCanvasModal, #newCanvasSizeBox, #newCanvasCreateBtn), startNewProjectFromGallery, the resize screen in "new" mode.',
                    ['test_new_canvas_size_on_screen', 'test_new_canvas_discard', 'test_new_canvas_portrait_keeps_fields']),
-    'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load.',
+    'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load, reference layer MAPART COLOURS (ReferenceLayer.mapartMatched, MAPART_REF_SCALINGS, lanczosResizeImage, refreshMapartReferenceLayers, #refMapartMatchBtn, #refMapartScalingRow).',
                ['test_mapart_new_canvas_in_maps', 'test_resize_sheet_no_autoselect_outside_mapart', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
-                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods']),
+                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods', 'test_mapart_reference_match']),
     'background': ('Background fill (roadmap 9): backgroundColor, setBackgroundColor, updateBackgroundFill/UI, background pick mode (Colours + Layers), flattenTreeToCanvas bg argument, saveImage, save/load, mapart default and snapping.',
                    ['test_background_fill', 'test_background_mapart']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
@@ -940,6 +940,50 @@ async def test_reference_layer(pg):
     data = await pg.evaluate("() => { layers.find(l => l.type === 'reference').sampling = 'pixel'; return JSON.parse(JSON.stringify(currentProjectSaveData('r'))); }")
     await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(500)
     check('ref: display mode and 1:1 placement saved with the project', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l && l.sampling === 'pixel' && l.gw === 64 && l.gx === -16; }"))
+
+async def test_mapart_reference_match(pg):
+    import base64
+    await mapart_canvas(pg)
+    png = base64.b64decode(await pg.evaluate(REF_PNG))
+    await pg.locator('#refInput').set_input_files({'name': 'ref.png', 'mimeType': 'image/png', 'buffer': png})
+    await pg.wait_for_timeout(800)
+    await pg.evaluate("() => { openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }"); await pg.wait_for_timeout(200)
+    check('refmatch: MAPART COLOURS button shown on a reference in Mapart, off by default', await pg.locator('#refMapartMatchBtn').count() == 1 and not await pg.evaluate("() => activeLayer().mapartMatch"))
+    await pg.locator('#refMapartMatchBtn').click(); await pg.wait_for_timeout(200)
+    check('refmatch: on = canvas-sized, unrotated, sharp; default scaling pixel', await pg.evaluate("() => { const l = activeLayer(); return l.mapartMatch && l.mapartScaling === 'pixel' && l.el.width === 128 && l.el.height === 128 && l.el.style.transform === 'none' && l.el.style.imageRendering === 'pixelated'; }"))
+    CHECK = """() => { const l = activeLayer(), d = l.el.getContext('2d').getImageData(0, 0, 128, 128).data, ok = new Set(mapartAllowedHexes()); let bad = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { if (!d[i + 3]) continue; n++; if (d[i + 3] !== 255 || !ok.has(rgbToHexBytes(d[i], d[i + 1], d[i + 2]))) bad++; }
+        const at = (x, y) => { const s = l.sampleAt(x, y); return s && s[3] ? rgbToHexBytes(s[0], s[1], s[2]) : null; };
+        return { bad, n, a: at(32, 40), b: at(48, 48), out: at(5, 5), wa: mapartSnapColor('#ABCDEF'), wb: mapartSnapColor('#123456') }; }"""
+    r = await pg.evaluate(CHECK)
+    check('refmatch: every shown pixel is an allowed map colour, fully opaque, 64 x 48 of them', r['bad'] == 0 and r['n'] == 64 * 48, r)
+    check('refmatch: pixel-perfect: each cell is its image pixel snapped', r['a'] == r['wa'] and r['b'] == r['wb'] and r['out'] is None, r)
+    await pg.evaluate("() => toggleMapartStaircase()")
+    r = await pg.evaluate(CHECK)
+    check('refmatch: staircase on re-matches against the 3-shade palette', r['bad'] == 0 and r['a'] == r['wa'] and r['b'] == r['wb'], r)
+    await pg.evaluate("() => setMapartColourMethod('euclidean')")
+    r = await pg.evaluate(CHECK)
+    check('refmatch: colour method change re-matches', r['a'] == r['wa'] and r['b'] == r['wb'], r)
+    await pg.evaluate("() => setMapartColourMethod('mapartcraft')")
+    await pg.evaluate("() => { const l = activeLayer(); l.gx = 0; l.gy = 0; l.gw = 32; l.gh = 24; l.layoutCSS(); renderLayersPanel(); }"); await pg.wait_for_timeout(150)
+    px_mode = await pg.evaluate("() => { const s = activeLayer().sampleAt(0, 0); return rgbToHexBytes(s[0], s[1], s[2]); }")
+    check('refmatch: PIXEL at half size picks one source pixel per cell (nearest)', px_mode in (await pg.evaluate("() => [mapartSnapColor('#ABCDEF'), mapartSnapColor('#123456')]")), px_mode)
+    for mode in ('smooth', 'lanczos'):
+        await pg.locator(f'#refMapartScalingRow button[data-scaling="{mode}"]').click(); await pg.wait_for_timeout(200)
+        r = await pg.evaluate("() => { const l = activeLayer(), d = l.el.getContext('2d').getImageData(0, 0, 128, 128).data, ok = new Set(mapartAllowedHexes()); let bad = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] && !ok.has(rgbToHexBytes(d[i], d[i + 1], d[i + 2]))) bad++; return [l.mapartScaling, bad]; }")
+        check(f'refmatch: {mode.upper()} scaling selected, still only map colours', r == [mode, 0], r)
+    lz = await pg.evaluate("""() => { const c = document.createElement('canvas'); c.width = 8; c.height = 8; const x = c.getContext('2d'); x.fillStyle = '#336699'; x.fillRect(0, 0, 8, 8);
+        const o = lanczosResizeImage(c, 4, 4).getContext('2d').getImageData(0, 0, 4, 4).data; return Array.from(o.slice(20, 24)); }""")
+    check('refmatch: Lanczos keeps a flat colour flat', all(abs(a - b) <= 1 for a, b in zip(lz, [0x33, 0x66, 0x99, 255])), lz)
+    await pg.evaluate("() => { closePanel(); zoomIndex = ZOOM_STEPS.indexOf(4); scale = 4; layoutAll(); handleToolBtn('eyedrop'); }")
+    await tap(pg, 3, 3)
+    picked = await pg.evaluate("() => selectedColor")
+    check('refmatch: eyedropper on it picks the matched map colour', picked == await pg.evaluate("() => { const s = activeLayer().sampleAt(3, 3); return rgbToHexBytes(s[0], s[1], s[2]); }"), picked)
+    data = await pg.evaluate("() => JSON.parse(JSON.stringify(currentProjectSaveData('rm')))")
+    await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(500)
+    check('refmatch: setting and scaling saved with the project', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l && l.mapartMatch && l.mapartScaling === 'lanczos' && l.el.width === 128; }"))
+    await pg.evaluate("() => selectProfile('pixelArt')"); await pg.wait_for_timeout(200)
+    check('refmatch: outside Mapart the reference shows the original image again', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l.el.width === 64 && l.el.height === 48 && l.el.style.transform !== 'none'; }"))
 
 async def test_mapart_colour_methods(pg):
     await mapart_canvas(pg)

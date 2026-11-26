@@ -1627,7 +1627,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_6';
+const BUILD_VERSION = 'V2_7';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -2420,6 +2420,7 @@ let mapartAllowed = null;
 let mapartAllowedSet = null;
 let mapartAllowedLab = null; // per-palette-colour values in the chosen method's space (see mapartMetric)
 const mapartSnapCache = new Map();
+let mapartPaletteVersion = 0;
 const mapartFlatOf = new Map();
 MAPART_DATA.forEach(c => { const n = '#' + c[2]; mapartFlatOf.set('#' + c[1], n); mapartFlatOf.set(n, n); mapartFlatOf.set('#' + c[3], n); });
 function mapartLab(r, g, b) {
@@ -2514,6 +2515,7 @@ function setMapartColourMethod(id) {
     saveMapartPrefs();
     mapartResetPaletteCache();
     syncMapartPrefsUI();
+    refreshMapartReferenceLayers();
 }
 function toggleMapartSnapToasts() { mapartSnapToasts = !mapartSnapToasts; saveMapartPrefs(); syncMapartPrefsUI(); }
 function syncMapartPrefsUI() {
@@ -2735,7 +2737,11 @@ function openBackgroundPickerFromLayers() {
     backgroundPickReturnPanel = 'layers';
     updateBackgroundUI();
 }
-function mapartResetPaletteCache() { mapartAllowed = null; mapartAllowedSet = null; mapartAllowedLab = null; mapartSnapCache.clear(); }
+function mapartResetPaletteCache() { mapartAllowed = null; mapartAllowedSet = null; mapartAllowedLab = null; mapartSnapCache.clear(); mapartPaletteVersion++; }
+function refreshMapartReferenceLayers() {
+    if (typeof frames === 'undefined' || !Array.isArray(frames)) return;
+    frames.forEach(f => (f.layers || []).forEach(l => { if (l && l.type === 'reference' && l.mapartMatch) l.layoutCSS(); }));
+}
 function mapartSnapRGB(r, g, b) {
     const key = (r << 16) | (g << 8) | b;
     const hit = mapartSnapCache.get(key);
@@ -2826,6 +2832,7 @@ function syncMapartPalette(force) {
     }
     updateMapartPaletteUI();
     updateBackgroundUI();
+    refreshMapartReferenceLayers();
 }
 function updateMapartPaletteUI() {
     const on = selectedProfile === 'mapart';
@@ -4459,6 +4466,49 @@ class ClipLayer extends PixelLayer {
 //               (zoomed in), smooth while shrunk;
 //   'pixel'  -- always pixelated;  'smooth' -- always smoothed.
 const REFERENCE_MAX_DIM = 4096;
+const MAPART_REF_SCALINGS = ['pixel', 'smooth', 'lanczos'];
+function lanczosWeights(srcN, dstN) {
+    const R = 3, ratio = srcN / dstN, k = Math.max(1, ratio), reach = R * k, out = [];
+    const L = t => { if (t === 0) return 1; if (t <= -R || t >= R) return 0; const p = Math.PI * t; return R * Math.sin(p) * Math.sin(p / R) / (p * p); };
+    for (let d = 0; d < dstN; d++) {
+        const c = (d + 0.5) * ratio - 0.5, lo = Math.max(0, Math.ceil(c - reach)), hi = Math.min(srcN - 1, Math.floor(c + reach));
+        const idx = [], w = []; let sum = 0;
+        for (let i = lo; i <= hi; i++) { const v = L((i - c) / k); idx.push(i); w.push(v); sum += v; }
+        if (sum) for (let j = 0; j < w.length; j++) w[j] /= sum;
+        out.push([idx, w]);
+    }
+    return out;
+}
+function lanczosResizeImage(img, tw, th) {
+    const nw = img.naturalWidth || img.width || 1, nh = img.naturalHeight || img.height || 1;
+    const pre = Math.min(1, tw * 2 / nw, th * 2 / nh);
+    const sw = Math.max(1, Math.round(nw * pre)), sh = Math.max(1, Math.round(nh * pre));
+    const wc = document.createElement('canvas'); wc.width = sw; wc.height = sh;
+    const wx = wc.getContext('2d', { willReadFrequently: true });
+    wx.imageSmoothingEnabled = pre < 1; wx.imageSmoothingQuality = 'high';
+    try { wx.drawImage(img, 0, 0, sw, sh); } catch (e) {}
+    const src = wx.getImageData(0, 0, sw, sh).data;
+    const hw = lanczosWeights(sw, tw), vw = lanczosWeights(sh, th);
+    const mid = new Float32Array(tw * sh * 4);
+    for (let y = 0; y < sh; y++) for (let x = 0; x < tw; x++) {
+        const [idx, w] = hw[x]; let r = 0, g = 0, b = 0, a = 0;
+        for (let j = 0; j < idx.length; j++) { const p = (y * sw + idx[j]) * 4, pa = src[p + 3] * w[j]; r += src[p] * pa; g += src[p + 1] * pa; b += src[p + 2] * pa; a += pa; }
+        const o = (y * tw + x) * 4;
+        if (a > 0) { mid[o] = r / a; mid[o + 1] = g / a; mid[o + 2] = b / a; }
+        mid[o + 3] = a;
+    }
+    const out = new ImageData(tw, th), od = out.data;
+    for (let y = 0; y < th; y++) { const [idx, w] = vw[y]; for (let x = 0; x < tw; x++) {
+        let r = 0, g = 0, b = 0, a = 0;
+        for (let j = 0; j < idx.length; j++) { const p = (idx[j] * tw + x) * 4, pa = Math.max(0, mid[p + 3]) * w[j]; r += mid[p] * pa; g += mid[p + 1] * pa; b += mid[p + 2] * pa; a += pa; }
+        const o = (y * tw + x) * 4;
+        if (a > 0) { od[o] = r / a; od[o + 1] = g / a; od[o + 2] = b / a; }
+        od[o + 3] = a;
+    } }
+    const c = document.createElement('canvas'); c.width = tw; c.height = th;
+    c.getContext('2d').putImageData(out, 0, 0);
+    return c;
+}
 class ReferenceLayer extends Layer {
     constructor(name, img) {
         super('reference', name);
@@ -4473,6 +4523,9 @@ class ReferenceLayer extends Layer {
         this.flipH = false;
         this.flipV = false;
         this.sampling = 'auto';
+        this.mapartMatch = false;
+        this.mapartScaling = 'pixel';
+        this._mmCanvas = null; this._mmKey = null; this._elShows = null; this._lzCanvas = null; this._lzKey = null;
         this.drawSource();
         traceLog('ReferenceLayer constructed: img=' + img.naturalWidth + '×' + img.naturalHeight + ' canvas=' + gridW + '×' + gridH + ' -> gx=' + this.gx.toFixed(2) + ' gy=' + this.gy.toFixed(2) + ' gw=' + this.gw.toFixed(2) + ' gh=' + this.gh.toFixed(2));
     }
@@ -4489,14 +4542,75 @@ class ReferenceLayer extends Layer {
         try { this.ctx.drawImage(this.image, 0, 0, w, h); }
         catch (err) { console.error('ReferenceLayer drawImage failed:', err && err.message); }
     }
+    mapartMatchActive() { return !!this.mapartMatch && selectedProfile === 'mapart'; }
+    mapartMatched() {
+        const W = gridW, H = gridH, mode = MAPART_REF_SCALINGS.includes(this.mapartScaling) ? this.mapartScaling : 'pixel';
+        const key = [mapartPaletteVersion, mode, W, H, this.gx, this.gy, this.gw, this.gh, this.rotation || 0, this.flipH ? 1 : 0, this.flipV ? 1 : 0].join(',');
+        if (this._mmCanvas && this._mmKey === key) return this._mmCanvas;
+        let src = this.image;
+        if (mode === 'lanczos') {
+            const iw = Math.max(1, Math.round(Math.abs(this.gw))), ih = Math.max(1, Math.round(Math.abs(this.gh)));
+            const lk = iw + 'x' + ih;
+            if (!this._lzCanvas || this._lzKey !== lk) { this._lzCanvas = lanczosResizeImage(this.image, iw, ih); this._lzKey = lk; }
+            src = this._lzCanvas;
+        }
+        const sc = document.createElement('canvas'); sc.width = W; sc.height = H;
+        const sx = sc.getContext('2d', { willReadFrequently: true });
+        sx.imageSmoothingEnabled = mode === 'smooth';
+        sx.imageSmoothingQuality = 'high';
+        sx.translate(this.gx + this.gw / 2, this.gy + this.gh / 2);
+        sx.rotate((this.rotation || 0) * Math.PI / 180);
+        sx.scale(this.flipH ? -1 : 1, this.flipV ? -1 : 1);
+        try { sx.drawImage(src, -this.gw / 2, -this.gh / 2, this.gw, this.gh); } catch (e) { console.error('mapart reference match failed:', e && e.message); }
+        const out = sx.getImageData(0, 0, W, H), o = out.data, memo = new Map();
+        for (let i = 0; i < o.length; i += 4) {
+            if (o[i + 3] < 128) { o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0; continue; }
+            const ck = (o[i] << 16) | (o[i + 1] << 8) | o[i + 2];
+            let pv = memo.get(ck);
+            if (pv === undefined) { pv = parseInt(mapartSnapRGB(o[i], o[i + 1], o[i + 2]).slice(1), 16); memo.set(ck, pv); }
+            o[i] = pv >> 16; o[i + 1] = (pv >> 8) & 255; o[i + 2] = pv & 255; o[i + 3] = 255;
+        }
+        const c = this._mmCanvas || document.createElement('canvas');
+        c.width = W; c.height = H;
+        c.getContext('2d').putImageData(out, 0, 0);
+        this._mmCanvas = c; this._mmKey = key;
+        return c;
+    }
+    setMapartScaling(mode) {
+        if (!MAPART_REF_SCALINGS.includes(mode)) return;
+        this.mapartScaling = mode;
+        this.layoutCSS();
+    }
+    setMapartMatch(on) {
+        this.mapartMatch = !!on;
+        if (!this.mapartMatch) { this._mmCanvas = null; this._mmKey = null; this._lzCanvas = null; this._lzKey = null; }
+        this.layoutCSS();
+    }
     // True when the current zoom shows it pixelated (see sampling above).
     isPixelated() {
+        if (this.mapartMatchActive()) return true;
         if (this.sampling === 'pixel') return true;
         if (this.sampling === 'smooth') return false;
         const dpr = window.devicePixelRatio || 1;
         return (this.gw * scale * dpr) / (this.image.naturalWidth || 1) >= 1;
     }
     layoutCSS() {
+        if (this.mapartMatchActive()) {
+            const c = this.mapartMatched();
+            if (this._elShows !== this._mmKey) {
+                this.el.width = c.width; this.el.height = c.height;
+                this.ctx.clearRect(0, 0, c.width, c.height);
+                this.ctx.drawImage(c, 0, 0);
+                this._elShows = this._mmKey;
+            }
+            this.el.style.left = '0px'; this.el.style.top = '0px';
+            this.el.style.width = (gridW * scale) + 'px';
+            this.el.style.height = (gridH * scale) + 'px';
+            this.el.style.transform = 'none';
+            this.el.style.imageRendering = 'pixelated';
+            return;
+        }
+        if (this._elShows) { this._elShows = null; this.drawSource(); }
         this.el.style.left = (this.gx * scale) + 'px';
         this.el.style.top = (this.gy * scale) + 'px';
         this.el.style.width = (this.gw * scale) + 'px';
@@ -4515,6 +4629,12 @@ class ReferenceLayer extends Layer {
     // Draws this layer into a grid-sized 2D context (gallery thumbnails,
     // eyedropper composite). Caller sets globalAlpha.
     drawInto(ctx, smoothing) {
+        if (this.mapartMatchActive()) {
+            ctx.save(); ctx.imageSmoothingEnabled = false;
+            try { ctx.drawImage(this.mapartMatched(), 0, 0); } catch (e) {}
+            ctx.restore();
+            return;
+        }
         ctx.save();
         ctx.translate(this.gx + this.gw / 2, this.gy + this.gh / 2);
         ctx.rotate((this.rotation || 0) * Math.PI / 180);
@@ -4526,6 +4646,11 @@ class ReferenceLayer extends Layer {
     // Colour [r,g,b,a] of the image under grid point (x+.5, y+.5), undoing
     // rotation/flip; null outside the image.
     sampleAt(x, y) {
+        if (this.mapartMatchActive()) {
+            if (x < 0 || y < 0 || x >= gridW || y >= gridH) return null;
+            const d = this.mapartMatched().getContext('2d').getImageData(x, y, 1, 1).data;
+            return [d[0], d[1], d[2], d[3]];
+        }
         const cx = this.gx + this.gw / 2, cy = this.gy + this.gh / 2;
         const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
         const rad = -(this.rotation || 0) * Math.PI / 180;
@@ -4891,7 +5016,7 @@ function cloneLayer(l) {
     }
     const nl = new ReferenceLayer(l.name, l.image);
     nl.gx = l.gx; nl.gy = l.gy; nl.gw = l.gw; nl.gh = l.gh;
-    nl.rotation = l.rotation; nl.flipH = l.flipH; nl.flipV = l.flipV; nl.sampling = l.sampling || 'auto';
+    nl.rotation = l.rotation; nl.flipH = l.flipH; nl.flipV = l.flipV; nl.sampling = l.sampling || 'auto'; nl.mapartMatch = !!l.mapartMatch; nl.mapartScaling = l.mapartScaling || 'pixel';
     nl.visible = l.visible; nl.opacity = l.opacity;
     return nl;
 }
@@ -7301,6 +7426,37 @@ function buildReferenceTransformUI(layer) {
         sampRow.appendChild(b);
     });
     wrap.appendChild(sampRow);
+    if (selectedProfile === 'mapart') {
+        const mmRow = document.createElement('div');
+        mmRow.className = 'row';
+        const mm = document.createElement('button');
+        mm.id = 'refMapartMatchBtn';
+        mm.className = 'btn' + (layer.mapartMatch ? ' active' : '');
+        mm.style.fontSize = '10px'; mm.style.minHeight = '44px';
+        mm.innerText = '\u{1F5FA}\uFE0F MAPART COLOURS: ' + (layer.mapartMatch ? 'ON' : 'OFF');
+        mm.onclick = (e) => { e.stopPropagation(); layer.setMapartMatch(!layer.mapartMatch); refreshHookedComposites(); renderLayersPanel(); };
+        attachLongPressTooltip(mm, 'Shows this reference as it would come out as a map: one map colour per canvas pixel, using the staircase setting and the colour matching method in Customise');
+        mmRow.appendChild(mm);
+        wrap.appendChild(mmRow);
+        if (layer.mapartMatch) {
+            sampRow.style.opacity = '0.4';
+            const scLabel = document.createElement('div');
+            scLabel.innerText = 'SCALING'; scLabel.style.fontSize = '9px'; scLabel.style.color = '#888'; scLabel.style.textAlign = 'center';
+            wrap.appendChild(scLabel);
+            const scRow = document.createElement('div');
+            scRow.className = 'row'; scRow.id = 'refMapartScalingRow';
+            [['pixel', 'PIXEL', 'Pixel (nearest): one image pixel per map pixel, hard edges. Best for pixel art'], ['smooth', 'SMOOTH', 'Smooth: the browser blends pixels while scaling'], ['lanczos', 'LANCZOS', 'High quality (Lanczos): sharpest scaling for photos, less moire']].forEach(([mode, label, tip]) => {
+                const b = document.createElement('button');
+                b.className = 'btn' + ((layer.mapartScaling || 'pixel') === mode ? ' active' : '');
+                b.style.fontSize = '10px'; b.style.minHeight = '44px'; b.dataset.scaling = mode;
+                b.innerText = label;
+                b.onclick = (e) => { e.stopPropagation(); layer.setMapartScaling(mode); refreshHookedComposites(); renderLayersPanel(); };
+                attachLongPressTooltip(b, tip);
+                scRow.appendChild(b);
+            });
+            wrap.appendChild(scRow);
+        }
+    }
     return wrap;
 }
 
@@ -11714,7 +11870,7 @@ function serializeLayerCore(l) {
     if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', dataURL: l.el.toDataURL() };
     if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
     if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines, gradientHostFor: l.gradientHostFor || null };
-    return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, sampling: l.sampling || 'auto', dataURL: l.image.src };
+    return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, sampling: l.sampling || 'auto', mapartMatch: !!l.mapartMatch, mapartScaling: l.mapartScaling || 'pixel', dataURL: l.image.src };
 }
 
 function serializeLayerTree(nodes, frameLayers) {
@@ -11847,7 +12003,7 @@ function buildFramesFromSaveData(data, onDone) {
                 else if (ld.type === 'image') { l = new ImageLayer(ld.name, w, h); l.loadFromImage(img); }
                 else if (ld.type === 'mask') { l = new MaskLayer(ld.name, w, h); l.loadFromImage(img); }
                 else if (ld.type === 'clip') { l = new ClipLayer(ld.name, w, h); l.loadFromImage(img); }
-                else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; l.sampling = ['auto', 'pixel', 'smooth'].includes(ld.sampling) ? ld.sampling : 'auto'; }
+                else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; l.sampling = ['auto', 'pixel', 'smooth'].includes(ld.sampling) ? ld.sampling : 'auto'; l.mapartMatch = !!ld.mapartMatch; l.mapartScaling = MAPART_REF_SCALINGS.includes(ld.mapartScaling) ? ld.mapartScaling : 'pixel'; }
                 common(l, ld);
             } catch (e) { fail(e && e.message); return; }
             slots[fi][li] = l; done();
@@ -12843,7 +12999,7 @@ function xfOpen() {
     XF.layer = layer; XF.hadSelection = false; XF.selBefore = null; XF.srcMask = null; XF.base = null; XF.baseData = null;
     if (layer.type === 'reference') {
         XF.kind = 'reference';
-        XF.src = layer.el; XF.srcData = null;
+        XF.src = layer.mapartMatchActive() ? layer.image : layer.el; XF.srcData = null;
         XF.st0 = { cx: layer.gx + layer.gw / 2, cy: layer.gy + layer.gh / 2, w: layer.gw, h: layer.gh, rot: layer.rotation || 0, fh: !!layer.flipH, fv: !!layer.flipV };
     } else {
         XF.kind = layer instanceof ImageLayer ? 'image' : 'pixel';
