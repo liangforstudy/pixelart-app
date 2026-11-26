@@ -740,6 +740,11 @@
             transform: translateX(calc(100% + 16px)); opacity: 0; pointer-events: none;
         }
         #panel-layers.layers-drawer.strip { width: 96px; }
+        #layersEdgeSlider { position: absolute; left: 0; top: 56px; bottom: 0; width: 18px; z-index: 5; touch-action: none; cursor: col-resize; }
+        #layersEdgeSlider::before { content: ''; position: absolute; left: 4px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: rgba(255,255,255,0.35); transition: background .15s, height .15s, margin .15s; }
+        #layersEdgeSlider.dragging::before { background: #4da3ff; height: 64px; margin-top: -32px; }
+        #panel-layers.strip #layersEdgeSlider { top: 108px; }
+        #panel-layers.layers-drawer.edge-dragging { transition: none !important; }
         .layers-drawer-header { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
         .layers-drawer-title { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: #eee; }
         .layers-hdr-btn { flex: none; width: 44px; height: 44px; border-radius: 12px; border: none; background: rgba(255,255,255,0.08); color: #fff; font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -1399,6 +1404,7 @@
         </div>
 
         <div class="floating-panel layers-drawer" id="panel-layers">
+            <div id="layersEdgeSlider" aria-label="Drag to resize the layers drawer"></div>
             <div class="layers-drawer-header" id="layersDrawerHeader">
                 <button class="layers-hdr-btn" id="layersWidthBtn" onclick="uiAction(toggleLayersDrawerWidth)" aria-label="Show the full layers panel">⟨</button>
                 <div class="layers-drawer-title">Layers</div>
@@ -7279,6 +7285,15 @@ function toggleLayersReturnPref(){ layersDrawerPrefs.returnAfterStroke = !layers
         panel.addEventListener('pointerdown', e=>{ if(treeDragState) return; sw={id:e.pointerId,x:e.clientX,y:e.clientY,done:false}; });
         panel.addEventListener('pointermove', e=>{ if(!sw||sw.done||e.pointerId!==sw.id||treeDragState) return; const dx=e.clientX-sw.x, dy=e.clientY-sw.y; if(Math.abs(dy)>30){ sw.done=true; return; } if(isLayersStrip() && dx<-40){ sw.done=true; setLayersDrawerMode('full'); } else if(!isLayersStrip() && dx>70 && e.target.closest && e.target.closest('#layersDrawerHeader')){ sw.done=true; setLayersDrawerMode('strip'); } });
         panel.addEventListener('pointerup', ()=>{ sw=null; });
+        // Left-edge drawer slider: drag to resize between strip and full width, release snaps to nearest mode; tap toggles.
+        const edge=document.getElementById('layersEdgeSlider');
+        if(edge){ let ed=null; const STRIP_W=96, fullW=()=>Math.min(340, window.innerWidth-16);
+            edge.addEventListener('pointerdown', e=>{ e.stopPropagation(); e.preventDefault(); sw=null; ed={id:e.pointerId,x:e.clientX,w:panel.getBoundingClientRect().width,moved:false}; try{edge.setPointerCapture(e.pointerId);}catch(_){} edge.classList.add('dragging'); });
+            edge.addEventListener('pointermove', e=>{ if(!ed||e.pointerId!==ed.id) return; const dx=e.clientX-ed.x; if(!ed.moved && Math.abs(dx)<6) return; if(!ed.moved){ ed.moved=true; panel.classList.add('edge-dragging'); panel.classList.remove('strip'); } panel.style.width=Math.max(STRIP_W, Math.min(fullW(), ed.w-dx))+'px'; });
+            const fin=e=>{ if(!ed||e.pointerId!==ed.id) return; const moved=ed.moved, w=panel.getBoundingClientRect().width; ed=null; edge.classList.remove('dragging'); panel.classList.remove('edge-dragging'); panel.style.width='';
+                if(!moved){ setLayersDrawerMode(isLayersStrip()?'full':'strip'); return; }
+                const next = w > (STRIP_W+fullW())/2 ? 'full' : 'strip'; panel.classList.toggle('strip', layersDrawerPrefs.mode==='strip'); setLayersDrawerMode(next); };
+            edge.addEventListener('pointerup', fin); edge.addEventListener('pointercancel', fin); }
         layersSplit = makeCollapsingSplit({ handleId:'layersSplitHandle', boxId:'layersSplit', topId:'layersTopPane',
             getPct: () => layersDrawerPrefs.split, setPct: v => { layersDrawerPrefs.split = Math.round(v); }, save: saveLayersDrawerPrefs });
     };
