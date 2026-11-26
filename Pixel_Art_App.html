@@ -1718,7 +1718,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_1';
+const BUILD_VERSION = 'V2_8_2';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -13811,11 +13811,8 @@ function xfPointerDown(e) {
         const [a, b] = [...XF.ptrs.values()];
         const mid = xfToGrid((a.x + b.x) / 2, (a.y + b.y) / 2);
         XF.drag = null;
-        // Two fingers centred on the piece scale/rotate/move it; anywhere
-        // else they zoom and pan the view.
-        const [mlx, mly] = xfToLocal(XF.st, mid[0], mid[1]);
-        const onPiece = Math.abs(mlx) <= XF.st.w / 2 && Math.abs(mly) <= XF.st.h / 2;
-        XF.pinch = { view: !onPiece, st0: { ...XF.st }, d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, a0: Math.atan2(b.y - a.y, b.x - a.x), mid0: mid, zoom0: XF.view.zoom };
+        // Two fingers always zoom and pan the view (resize with the handles).
+        XF.pinch = { view: true, st0: { ...XF.st }, d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, a0: Math.atan2(b.y - a.y, b.x - a.x), mid0: mid, zoom0: XF.view.zoom };
         return;
     }
     if (XF.ptrs.size > 2) return;
@@ -13852,17 +13849,15 @@ function xfPointerMove(e) {
     else if (d.type === 'rotate') { st.rot = xfNormDeg(s0.rot + (Math.atan2(g[1] - s0.cy, g[0] - s0.cx) - d.a0) * 180 / Math.PI); }
     else if (d.type === 'handle') {
         const [sx, sy] = XF_HANDLES[d.idx], [lx, ly] = xfToLocal(s0, g[0], g[1]);
-        const fx = -sx * s0.w / 2, fy = -sy * s0.h / 2; // opposite side stays put
+        // Centre stays put: the dragged side and its opposite move together.
         let w = s0.w, h = s0.h;
-        if (sx) w = Math.max(1, (lx - fx) * sx);
-        if (sy) h = Math.max(1, (ly - fy) * sy);
+        if (sx) w = Math.max(1, 2 * lx * sx);
+        if (sy) h = Math.max(1, 2 * ly * sy);
         if (xfPrefs.lock) {
             const k = sx && sy ? Math.max(w / s0.w, h / s0.h) : sx ? w / s0.w : h / s0.h;
             w = Math.max(1, s0.w * k); h = Math.max(1, s0.h * k);
         }
-        const clx = sx ? fx + sx * w / 2 : 0, cly = sy ? fy + sy * h / 2 : 0, a = s0.rot * Math.PI / 180;
-        st.w = w; st.h = h;
-        st.cx = s0.cx + clx * Math.cos(a) - cly * Math.sin(a); st.cy = s0.cy + clx * Math.sin(a) + cly * Math.cos(a);
+        st.w = w; st.h = h; st.cx = s0.cx; st.cy = s0.cy;
     }
     xfChanged();
 }
