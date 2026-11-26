@@ -78,6 +78,8 @@ GROUPS = {
                 'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods', 'test_mapart_reference_match', 'test_mapart_pencil_after_empty_pick']),
     'background': ('Background fill (roadmap 9): backgroundColor, setBackgroundColor, updateBackgroundFill/UI, background pick mode (Colours + Layers), flattenTreeToCanvas bg argument, saveImage, save/load, mapart default and snapping.',
                    ['test_background_fill', 'test_background_mapart']),
+    'cloud': ('Cloud Sync and share links (V2_8): cloud, cloudState, cloudSync/cloudSyncOnce, cloudConnect, cloudMarkDirty/cloudMarkDeleted (hooked into persistProject/deleteProjectRecord), #galleryCloudBar, #cloud-modal sheets, openShareSheet, shareCompress, checkIncomingShare, saveDataLooksValid, #ctx-share.',
+              ['test_cloud_sync_two_devices', 'test_cloud_share_links']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
                 ['test_resize_from_gallery', 'test_gallery_thumbnail_privacy']),
 }
@@ -162,6 +164,212 @@ async def test_pencil_and_undo(pg):
     check('pencil: tap draws a pixel', await px(pg, 5, 5) == '#112233', await px(pg, 5, 5))
     await pg.evaluate("() => undo()")
     check('pencil: undo removes it', await px(pg, 5, 5) is None)
+
+class FakeGitHub:
+    """In-memory stand-in for the parts of api.github.com Cloud Sync and share links use."""
+    def __init__(self):
+        import hashlib
+        self.h = lambda b: hashlib.sha1(b).hexdigest()
+        self.blobs, self.trees, self.commits, self.gists = {}, {}, {}, {}
+        self.head = None
+        self.calls = 0
+    def tree_of_head(self):
+        return dict(self.trees[self.commits[self.head]]) if self.head else {}
+    def remote_projects(self):
+        import re as _re
+        return sorted({_re.match(r'projects/(\d+)/', p).group(1) for p in self.tree_of_head() if p.startswith('projects/')})
+    def project_data(self, pid):
+        import json as _j
+        return _j.loads(self.blobs[self.tree_of_head()['projects/%s/project.json' % pid]])
+    async def handle(self, route):
+        import json as _j, base64 as _b, re as _re
+        req = route.request
+        url = req.url.split('api.github.com', 1)[1]
+        path, _, _q = url.partition('?')
+        m, body = req.method, (_j.loads(req.post_data) if req.post_data else None)
+        self.calls += 1
+        def ok(o, status=200): return route.fulfill(status=status, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=_j.dumps(o))
+        def err(status, msg): return route.fulfill(status=status, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=_j.dumps({'message': msg}))
+        if m == 'OPTIONS': return await route.fulfill(status=204, headers={'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*'})
+        if path.startswith('/gists'):
+            if m == 'POST':
+                gid = self.h(_j.dumps(body).encode())[:20]
+                self.gists[gid] = body
+                return await ok({'id': gid}, 201)
+            g = self.gists.get(path.split('/')[2])
+            if not g: return await err(404, 'Not Found')
+            return await ok({'owner': {'login': 'tester'}, 'files': {n: {'filename': n, 'content': f['content'], 'truncated': False} for n, f in g['files'].items()}})
+        if req.headers.get('authorization') != 'Bearer good-token': return await err(401, 'Bad credentials')
+        if path == '/user': return await ok({'login': 'tester'})
+        if path == '/repos/tester/saves': return await ok({'default_branch': 'main', 'private': True})
+        if not path.startswith('/repos/tester/saves/'): return await err(404, 'Not Found')
+        rest = path[len('/repos/tester/saves/'):]
+        if rest == 'git/ref/heads/main':
+            return await (ok({'object': {'sha': self.head}}) if self.head else err(409, 'Git Repository is empty.'))
+        if rest == 'contents/README.md' and m == 'PUT':
+            data = _b.b64decode(body['content']); bs = self.h(data); self.blobs[bs] = data.decode()
+            ts = self.h(b'tree' + bs.encode()); self.trees[ts] = {'README.md': bs}
+            cs = self.h(b'c0'); self.commits[cs] = ts; self.head = cs
+            return await ok({'content': {}}, 201)
+        if rest.startswith('git/commits/'): return await ok({'sha': rest[12:], 'tree': {'sha': self.commits[rest[12:]]}})
+        if rest.startswith('git/trees/') and m == 'GET':
+            return await ok({'tree': [{'path': p, 'type': 'blob', 'sha': s} for p, s in self.trees[rest[10:]].items()], 'truncated': False})
+        if rest == 'git/blobs' and m == 'POST':
+            bs = self.h(body['content'].encode()); self.blobs[bs] = body['content']
+            return await ok({'sha': bs}, 201)
+        if rest.startswith('git/blobs/'):
+            return await ok({'encoding': 'base64', 'content': _b.b64encode(self.blobs[rest[10:]].encode()).decode()})
+        if rest == 'git/trees' and m == 'POST':
+            t = dict(self.trees[body['base_tree']])
+            for e in body['tree']:
+                if e['sha'] is None: t.pop(e['path'], None)
+                else: t[e['path']] = e['sha']
+            ts = self.h(_j.dumps(sorted(t.items())).encode()); self.trees[ts] = t
+            return await ok({'sha': ts}, 201)
+        if rest == 'git/commits' and m == 'POST':
+            cs = self.h((body['tree'] + body['parents'][0] + str(len(self.commits))).encode())
+            self.commits[cs] = body['tree']; self.parent = getattr(self, 'parent', {}); self.parent[cs] = body['parents'][0]
+            return await ok({'sha': cs}, 201)
+        if rest == 'git/refs/heads/main' and m == 'PATCH':
+            if self.parent.get(body['sha']) != self.head: return await err(422, 'Update is not a fast forward')
+            self.head = body['sha']
+            return await ok({'object': {'sha': self.head}})
+        return await err(404, 'Not Found ' + rest)
+
+async def cloud_connect_ui(pg, token='good-token'):
+    await pg.locator('#galleryCloudBar .cloud-bar-btn').click(); await pg.wait_for_timeout(200)
+    await pg.locator('#cloud-box input[type=password]').fill(token)
+    await pg.locator('#cloud-box input[type=text]').fill('saves')
+    await pg.locator('#cloud-box button', has_text='CONNECT').click()
+
+async def cloud_wait_idle(pg, timeout=8000):
+    await pg.wait_for_function("() => typeof cloud !== 'undefined' && !cloud.running && !cloud.timer && (cloud.status === 'idle' || cloud.status === 'error') && !Object.keys(cloudState.dirty).length && !Object.keys(cloudState.tomb).length", timeout=timeout)
+    await pg.wait_for_timeout(150)
+
+async def cloud_sync(pg):
+    await pg.evaluate("() => cloudSync()")
+    await cloud_wait_idle(pg)
+
+async def second_device(pg, gh):
+    ctx = await pg.context.browser.new_context(viewport={'width': 1000, 'height': 800})
+    await ctx.route('https://api.github.com/**', gh.handle)
+    p2 = await ctx.new_page()
+    errs = []
+    p2.on('pageerror', lambda e: errs.append(str(e)))
+    await p2.goto(BASE_URL + 'Pixel_Art_App.html'); await p2.wait_for_timeout(1000)
+    return ctx, p2, errs
+
+STORED_PIXEL = """async ([id, x, y]) => { const d = await getProjectDataP(id); const img = new Image(); img.src = d.frames[0].layers[0].dataURL; await img.decode(); const c = document.createElement('canvas'); c.width = d.gridW; c.height = d.gridH; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return Array.from(g.getImageData(x, y, 1, 1).data).slice(0, 3).join(','); }"""
+
+async def test_cloud_sync_two_devices(pg):
+    gh = FakeGitHub()
+    await pg.context.route('https://api.github.com/**', gh.handle)
+    await pg.evaluate(DRAW, [[[1, 1]], '#FF0000'])
+    await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(500)
+    check('cloud: gallery shows the Sync with GitHub bar', 'Sync with GitHub' in await pg.locator('#galleryCloudBar').inner_text())
+    small = await pg.evaluate("() => document.querySelector('#galleryCloudBar .cloud-bar-btn').getBoundingClientRect().height")
+    check('cloud: bar is a 44px+ touch target', small >= 44, small)
+    await pg.locator('#galleryCloudBar .cloud-bar-btn').click(); await pg.wait_for_timeout(200)
+    await pg.locator('#cloud-box input[type=password]').fill('wrong'); await pg.locator('#cloud-box input[type=text]').fill('saves')
+    await pg.locator('#cloud-box button', has_text='CONNECT').click(); await pg.wait_for_timeout(400)
+    check('cloud: a bad token shows an in-page error and stays disconnected', 'rejected the token' in await pg.locator('#cloud-box .cloud-err').inner_text() and not await pg.evaluate("() => cloudConnected()"))
+    check('cloud: token and repo inputs are 16px (no iOS zoom)', await pg.evaluate("() => [...document.querySelectorAll('#cloud-box input')].every(i => getComputedStyle(i).fontSize === '16px')"))
+    await pg.evaluate("() => closeCloudSheet()")
+    await cloud_connect_ui(pg); await cloud_wait_idle(pg)
+    pid = await pg.evaluate("() => projectStore[0].id")
+    check('cloud: connecting an empty repo uploads the project', gh.remote_projects() == [str(pid)], gh.remote_projects())
+    check('cloud: repo got a README so the empty repo works', 'README.md' in gh.tree_of_head())
+    check('cloud: token is stored only in this browser (localStorage)', await pg.evaluate("() => localStorage.getItem('pixelAppCloudToken') === 'good-token' && cloud.repo === 'tester/saves'"))
+    ctx2, p2, errs2 = await second_device(pg, gh)
+    try:
+        await cloud_connect_ui(p2); await cloud_wait_idle(p2)
+        check('cloud: second device gets the project', await p2.evaluate("(id) => projectStore.some(p => p.id === id)", pid))
+        check('cloud: second device has the same pixels', await p2.evaluate(STORED_PIXEL, [pid, 1, 1]) == '255,0,0')
+        check('cloud: synced card shows in the gallery', await p2.locator('.gallery-card[data-id="%s"]' % pid).count() == 1)
+        await p2.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await p2.wait_for_timeout(400)
+        await p2.evaluate(DRAW, [[[2, 2]], '#0000FF'])
+        await p2.evaluate("() => goToMainMenu()"); await p2.wait_for_timeout(300)
+        await cloud_wait_idle(p2)
+        check('cloud: saving on device 2 uploads the edit', '0,0,255' == await p2.evaluate(STORED_PIXEL, [pid, 2, 2]) and gh.project_data(pid)['frames'] is not None)
+        await cloud_sync(pg)
+        check('cloud: device 1 picks up the edit', await pg.evaluate(STORED_PIXEL, [pid, 2, 2]) == '0,0,255')
+        await pg.evaluate("(id) => { const p = projectStore.find(q => q.id === id); p.name = 'From A'; persistProject(p, null); }", pid)
+        await p2.evaluate("(id) => { const p = projectStore.find(q => q.id === id); p.name = 'From B'; persistProject(p, null); }", pid)
+        await cloud_sync(pg); await cloud_sync(p2)
+        names2 = await p2.evaluate("() => projectStore.map(p => p.name).sort()")
+        check('cloud: edited on both devices keeps both versions', names2 == ['From A (other device)', 'From B'], names2)
+        await cloud_sync(pg)
+        names1 = await pg.evaluate("() => projectStore.map(p => p.name).sort()")
+        check('cloud: both devices end up with the same projects', names1 == names2, names1)
+        copy_id = await pg.evaluate("() => projectStore.find(p => p.name.endsWith('(other device)')).id")
+        await pg.evaluate("() => closeCloudSheet()")
+        await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", copy_id)
+        await pg.locator('#ctx-delete').click(); await pg.wait_for_timeout(200)
+        await cloud_wait_idle(pg)
+        check('cloud: deleting uploads the delete', str(copy_id) not in gh.remote_projects(), gh.remote_projects())
+        await cloud_sync(p2)
+        check('cloud: the delete reaches the other device', not await p2.evaluate("(id) => projectStore.some(p => p.id === id)", copy_id))
+        await p2.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await p2.wait_for_timeout(300)
+        await pg.evaluate("(id) => { const p = projectStore.find(q => q.id === id); p.name = 'Renamed on A'; persistProject(p, null); }", pid)
+        await cloud_wait_idle(pg)
+        await p2.evaluate("() => cloudSync()"); await cloud_wait_idle(p2)
+        check('cloud: the project open in the editor is not replaced mid-drawing', await p2.evaluate("(id) => projectStore.find(p => p.id === id).name === 'From B' && currentProjectId === id", pid))
+        await p2.evaluate("() => goToMainMenu()"); await p2.wait_for_timeout(300); await cloud_wait_idle(p2)
+        check('cloud: drawing session ends without losing either side', len(gh.remote_projects()) == 2, gh.remote_projects())
+        await cloud_wait_idle(p2)
+        await p2.evaluate("() => openCloudSheet('settings')")
+        off = p2.locator('#cloud-box .cloud-btn.danger')
+        await off.click(); await p2.wait_for_timeout(100)
+        check('cloud: disconnect needs a second tap', await p2.evaluate("() => cloudConnected()"))
+        await off.click(); await p2.wait_for_timeout(100)
+        check('cloud: disconnect forgets the token but keeps projects', await p2.evaluate("() => !cloudConnected() && !localStorage.getItem('pixelAppCloudToken') && projectStore.length === 2"))
+        check('cloud: device 2 had no page errors', not errs2, errs2[:3])
+    finally:
+        await ctx2.close()
+
+async def test_cloud_share_links(pg):
+    gh = FakeGitHub()
+    await pg.context.route('https://api.github.com/**', gh.handle)
+    await pg.evaluate(DRAW, [[[3, 4]], '#00FF00'])
+    await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(500)
+    pid = await pg.evaluate("() => projectStore[0].id")
+    await pg.evaluate("(id) => { const p = projectStore.find(q => q.id === id); p.name = 'Green dot'; persistProject(p, null); }", pid)
+    await pg.evaluate("(id) => openGalleryCtxMenu(id, {clientX: 100, clientY: 100})", pid)
+    await pg.locator('#ctx-share').click()
+    await pg.wait_for_function("() => cloudSheetArg && cloudSheetArg.inlineLink")
+    check('share: gist button is off until Cloud Sync is connected', await pg.locator('#cloud-box button', has_text='GITHUB GIST').is_disabled())
+    await pg.locator('#cloud-box button', has_text='DRAWING INSIDE').click(); await pg.wait_for_timeout(100)
+    link = await pg.evaluate("() => cloudSheetArg.link")
+    check('share: inline link holds the drawing', '#p=' in link)
+    check('share: small drawing fits in a Discord message', len(link) <= 2000 and 'Fits in a Discord' in await pg.locator('#cloud-box').inner_text(), len(link))
+    await pg.evaluate("() => closeCloudSheet()")
+    ctx2, p2, errs2 = await second_device(pg, gh)
+    try:
+        await p2.goto(link); await p2.wait_for_timeout(1200)
+        check('share: opening the link shows the shared project', 'Green dot' in await p2.locator('#cloud-box').inner_text())
+        check('share: preview thumbnail is drawn', await p2.locator('#cloud-box .cloud-incoming-thumb img').count() == 1)
+        await p2.locator('#cloud-box button', has_text='OPEN MY COPY').click(); await p2.wait_for_timeout(800)
+        check('share: recipient gets their own copy with the pixels', await px(p2, 3, 4) == '#00FF00' and await p2.evaluate("() => currentProjectId === null && currentProjectName === 'Green dot' && !location.hash"))
+        await p2.evaluate("() => goToMainMenu()"); await p2.wait_for_timeout(500)
+        check('share: the copy joins the recipient gallery', await p2.evaluate("() => projectStore.length === 1 && projectStore[0].name === 'Green dot'"))
+        await p2.goto(BASE_URL + 'Pixel_Art_App.html#p=AAAA'); await p2.wait_for_timeout(900)
+        check('share: a broken or cut-off link shows an in-page message', 'cut off' in (await p2.locator('#cloud-box .cloud-err').inner_text()))
+        bad = '#p=' + await p2.evaluate("async () => shareCompress(JSON.stringify({version: 7, gridW: 2, gridH: 2, frames: [{layers: [{type: 'pixel', dataURL: 'https://example.com/x.png'}]}]}))")
+        await p2.goto(BASE_URL + 'Pixel_Art_App.html' + bad); await p2.wait_for_timeout(900)
+        check('share: links whose images point at other websites are refused', await p2.locator('#cloud-box .cloud-err').count() == 1 and await p2.locator('#cloud-box button', has_text='OPEN MY COPY').count() == 0)
+        await cloud_connect_ui(pg); await cloud_wait_idle(pg)
+        await pg.evaluate("(id) => openShareSheet(id)", pid)
+        await pg.wait_for_function("() => cloudSheetArg && cloudSheetArg.data")
+        await pg.locator('#cloud-box button', has_text='GITHUB GIST').click()
+        await pg.wait_for_function("() => cloudSheetArg.linkKind === 'gist'")
+        glink = await pg.evaluate("() => cloudSheetArg.link")
+        check('share: gist link is short', '#gist=' in glink and len(glink) < 200, glink)
+        await p2.goto('about:blank'); await p2.goto(glink); await p2.wait_for_timeout(1200)
+        txt = await p2.locator('#cloud-box').inner_text()
+        check('share: gist link opens without a token and names the sharer', 'Green dot' in txt and 'shared by tester' in txt)
+        check('share: recipient had no page errors', not errs2, errs2[:3])
+    finally:
+        await ctx2.close()
 
 LAYER_ORDER = "() => [...document.querySelectorAll('#layersList .layer-row')].map(r => r.querySelector('.layer-name') ? r.querySelector('.layer-name').innerText : '?')"
 

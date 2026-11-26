@@ -457,6 +457,32 @@
             color: #aaa; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer;
         }
 
+        #galleryCloudBar { flex: none; padding: 8px 12px 0; }
+        .cloud-bar-btn { width: 100%; min-height: 44px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; background: #1a1a1c; border: 1px solid #2c2c2e; border-radius: 10px; color: #ddd; text-align: left; padding: 7px 12px; cursor: pointer; touch-action: manipulation; box-sizing: border-box; }
+        .cloud-bar-btn.warn { border-color: #7a4a00; background: #2a1e0a; }
+        .cloud-bar-main { font-size: 13px; font-weight: 600; }
+        .cloud-bar-sub { font-size: 11px; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+        #cloud-modal { position: fixed; inset: 0; z-index: 1800; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; }
+        #cloud-modal.open { display: flex; }
+        #cloud-box { background: #1c1c1e; border-radius: 14px; padding: 18px; width: min(380px, 92vw); max-height: 86dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+        .cloud-title { font-size: 16px; font-weight: 700; color: #eee; text-align: center; word-break: break-word; }
+        .cloud-hint { font-size: 12px; color: #999; line-height: 1.45; }
+        .cloud-hint a, .cloud-steps a { color: #4da3ff; }
+        .cloud-steps { margin: 0; padding-left: 20px; font-size: 12px; color: #bbb; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; }
+        .cloud-label { font-size: 12px; color: #888; font-weight: 600; margin-bottom: -6px; }
+        .cloud-input { background: #2a2a2a; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 16px; padding: 10px 12px; width: 100%; min-height: 44px; box-sizing: border-box; }
+        .cloud-err { font-size: 12px; color: #ff6b61; line-height: 1.4; }
+        .cloud-err:empty { display: none; }
+        .cloud-btn { width: 100%; min-height: 44px; border-radius: 10px; border: none; font-weight: 700; font-size: 14px; cursor: pointer; background: #2a2a2a; color: #ddd; touch-action: manipulation; }
+        .cloud-btn.primary { background: #0078d4; color: #fff; }
+        .cloud-btn.danger { color: #ff453a; }
+        .cloud-btn:disabled { opacity: .45; cursor: default; }
+        .cloud-row { display: flex; gap: 8px; }
+        .cloud-row .cloud-btn { flex: 1 1 0; }
+        .cloud-incoming-thumb { width: 160px; height: 160px; margin: 0 auto; border-radius: 10px; overflow: hidden; flex: none; }
+        .cloud-incoming-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; image-rendering: pixelated; }
+        .cloud-incoming-name { font-size: 15px; font-weight: 700; color: #fff; text-align: center; word-break: break-word; }
+
         /* Rename inline overlay */
         #gallery-rename-modal {
             position: fixed; inset: 0; z-index: 1800; pointer-events: none; background: rgba(0,0,0,0.6);
@@ -840,6 +866,7 @@
         </div>
         <!-- Storage state, backup reminder, and recovery actions (renderStorageStatus). -->
         <div id="galleryStorageStatus"></div>
+        <div id="galleryCloudBar"></div>
 
         <div id="gallery-grid">
             <div class="gallery-card new-canvas-card"><div class="new-canvas-card-icon">+</div><div class="new-canvas-card-label">Pixel Art Hub</div><div class="new-canvas-card-hint">Loading gallery…</div></div>
@@ -977,6 +1004,7 @@
         <div class="ctx-divider"></div>
         <div class="ctx-item" id="ctx-export">🖼️ Export PNG</div>
         <div class="ctx-item" id="ctx-save-file">💾 Export Project</div>
+        <div class="ctx-item" id="ctx-share">🔗 Share Link</div>
         <div class="ctx-divider"></div>
         <div class="ctx-item" id="ctx-thumb-privacy">🕶️ Thumbnail Opacity</div>
         <div class="ctx-item" id="ctx-thumb-hide">🙈 Hide Thumbnail</div>
@@ -997,6 +1025,8 @@
             </div>
         </div>
     </div>
+
+    <div id="cloud-modal"><div id="cloud-box"></div></div>
 
     <!-- Rename modal -->
     <div id="gallery-rename-modal">
@@ -1637,7 +1667,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_7';
+const BUILD_VERSION = 'V2_8';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -12266,6 +12296,7 @@ async function initProjectStorage(force) {
     setupProjectChannel();
     refreshStorageEstimate();
     if (isGalleryVisible()) renderGallery(); else renderStorageStatus();
+    try { cloudScheduleSync(0); } catch (_) {}
     // Cleared only after thumbnails have had time to decode, so a crash
     // while painting the gallery still counts as an unfinished start.
     setTimeout(() => updateBootGuard({ bootsUnfinished: 0 }), 2500);
@@ -12289,6 +12320,7 @@ function reportStorageWriteError(err) {
 // Writes meta (and data, if given) in one transaction. data=null means meta-only (e.g. rename).
 function persistProject(entry, data) {
     const meta = projectMetaOf(entry);
+    try { cloudMarkDirty(meta.id); } catch (_) {}
     if (!projectDb) { if (data != null) projectDataMemory.set(meta.id, data); return; }
     try {
         const tx = projectDb.transaction(['meta', 'data'], 'readwrite');
@@ -12309,6 +12341,7 @@ function persistProject(entry, data) {
 }
 function deleteProjectRecord(id) {
     projectDataMemory.delete(id);
+    try { cloudMarkDeleted(id); } catch (_) {}
     if (!projectDb) return;
     try {
         const tx = projectDb.transaction(['meta', 'data'], 'readwrite');
@@ -12603,6 +12636,7 @@ function showGallery() {
     document.getElementById('init-screen').style.display = 'none';
     document.getElementById('pixel-canvas-screen').style.display = 'none';
     renderGallery();
+    try { cloudScheduleSync(300); } catch (_) {}
 }
 function hideGallery() {
     document.getElementById('gallery-screen').style.display = 'none';
@@ -13649,6 +13683,555 @@ document.getElementById('ctx-delete').addEventListener('click', () => {
     renderGallery();
 });
 
+const CLOUD_TOKEN_KEY = 'pixelAppCloudToken', CLOUD_REPO_KEY = 'pixelAppCloudRepo', CLOUD_STATE_KEY = 'pixelAppCloudState';
+const CLOUD_DEFAULT_REPO = 'pixelart-saves';
+const SHARE_LINK_MAX = 60000, DISCORD_MSG_MAX = 2000;
+const cloudLsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const cloudLsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
+const cloud = { token: cloudLsGet(CLOUD_TOKEN_KEY), repo: cloudLsGet(CLOUD_REPO_KEY), branch: null, status: 'idle', error: '', lastSync: 0, running: false, again: false, timer: 0, suppress: 0, progress: '' };
+function cloudFreshState(repo) { return { repo: repo || null, items: {}, dirty: {}, tomb: {} }; }
+let cloudState = (() => {
+    try { const s = JSON.parse(cloudLsGet(CLOUD_STATE_KEY) || 'null'); if (s && typeof s === 'object') return { ...cloudFreshState(s.repo), ...s, items: s.items || {}, dirty: s.dirty || {}, tomb: s.tomb || {} }; } catch (e) {}
+    return cloudFreshState(null);
+})();
+function cloudSaveState() { cloudLsSet(CLOUD_STATE_KEY, JSON.stringify(cloudState)); }
+function cloudConnected() { return !!(cloud.token && cloud.repo); }
+function cloudEditorOpenId() { const s = document.getElementById('pixel-canvas-screen'); return s && s.style.display === 'block' ? currentProjectId : null; }
+
+function cloudMarkDirty(id) {
+    if (cloud.suppress || id == null) return;
+    cloudState.dirty[id] = Date.now();
+    delete cloudState.tomb[id];
+    cloudSaveState();
+    cloudScheduleSync(4000);
+}
+function cloudMarkDeleted(id) {
+    if (cloud.suppress || id == null) return;
+    delete cloudState.dirty[id];
+    if (cloudState.items[id]) cloudState.tomb[id] = 1;
+    cloudSaveState();
+    cloudScheduleSync(1500);
+}
+function cloudScheduleSync(ms) {
+    if (!cloudConnected()) { renderCloudBar(); return; }
+    clearTimeout(cloud.timer);
+    cloud.timer = setTimeout(() => { cloud.timer = 0; cloudSync(); }, ms || 0);
+    renderCloudBar();
+}
+
+async function cloudApi(path, opts) {
+    opts = opts || {};
+    const headers = { 'Accept': 'application/vnd.github+json' };
+    const token = opts.token !== undefined ? opts.token : cloud.token;
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+    let r;
+    try { r = await fetch(path.startsWith('http') ? path : 'https://api.github.com' + path, { method: opts.method || 'GET', headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, cache: 'no-store' }); }
+    catch (e) { const err = new Error("Can't reach GitHub (offline?)"); err.status = 0; throw err; }
+    if (!r.ok) {
+        let msg = '';
+        try { msg = (await r.json()).message || ''; } catch (e) {}
+        const err = new Error(msg || ('HTTP ' + r.status)); err.status = r.status; throw err;
+    }
+    if (r.status === 204) return null;
+    return opts.text ? r.text() : r.json();
+}
+function cloudFriendlyError(e) {
+    const s = e && e.status;
+    if (s === 0) return e.message;
+    if (s === 401) return 'GitHub rejected the token (expired or pasted wrong?).';
+    if (s === 403 && /rate limit/i.test(e.message || '')) return 'GitHub rate limit reached. Try again in a bit.';
+    if (s === 403 || s === 404) return "This token can't reach " + (cloud.repo || 'that repo') + '. Check it has Contents: Read and write on that repo.';
+    return (e && e.message) || 'Something went wrong.';
+}
+function cloudB64ToText(b64) {
+    const bin = atob(String(b64).replace(/\s/g, ''));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+}
+function cloudTextToB64(text) {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+}
+async function cloudReadBlob(sha) {
+    const b = await cloudApi('/repos/' + cloud.repo + '/git/blobs/' + sha);
+    return b.encoding === 'base64' ? cloudB64ToText(b.content) : b.content;
+}
+async function cloudWriteBlob(text) { return (await cloudApi('/repos/' + cloud.repo + '/git/blobs', { method: 'POST', body: { content: text, encoding: 'utf-8' } })).sha; }
+function getProjectDataP(id) { return new Promise((res, rej) => getProjectData(id, (d, err) => d ? res(d) : rej(new Error(err || 'no data')))); }
+
+function saveDataLooksValid(data) {
+    if (!data || typeof data !== 'object') return false;
+    if (!(Number.isFinite(data.gridW) && Number.isFinite(data.gridH) && data.gridW > 0 && data.gridH > 0 && data.gridW <= 4096 && data.gridH <= 4096)) return false;
+    const frameDefs = data.version >= 2 ? data.frames : [{ layers: data.layers }];
+    if (!Array.isArray(frameDefs) || !frameDefs.length) return false;
+    for (const fd of frameDefs) {
+        if (!fd || !Array.isArray(fd.layers)) return false;
+        for (const l of fd.layers) {
+            if (!l || typeof l !== 'object') return false;
+            if (l.dataURL != null && !(typeof l.dataURL === 'string' && /^data:image\//.test(l.dataURL))) return false;
+        }
+    }
+    return true;
+}
+function cloudPaths(id) { return { m: 'projects/' + id + '/meta.json', d: 'projects/' + id + '/project.json' }; }
+
+async function cloudFindHead() {
+    if (!cloud.branch) cloud.branch = (await cloudApi('/repos/' + cloud.repo)).default_branch || 'main';
+    try { return (await cloudApi('/repos/' + cloud.repo + '/git/ref/heads/' + cloud.branch)).object.sha; }
+    catch (e) {
+        if (e.status !== 409 && e.status !== 404) throw e;
+        await cloudApi('/repos/' + cloud.repo + '/contents/README.md', { method: 'PUT', body: { message: 'Set up Pixel Art App saves', content: cloudTextToB64('# Pixel Art App saves\n\nProjects synced from Pixel_Art_App.html. Each folder in projects/ is one project.\n'), branch: cloud.branch } });
+        return (await cloudApi('/repos/' + cloud.repo + '/git/ref/heads/' + cloud.branch)).object.sha;
+    }
+}
+
+function cloudStoreLocally(id, meta, data) {
+    const entry = { ...projectMetaOf({ ...meta, id }), id };
+    const idx = projectStore.findIndex(p => p.id === id);
+    if (idx !== -1) projectStore[idx] = entry; else projectStore.push(entry);
+    sortProjectsNewestFirst(projectStore);
+    cloud.suppress++;
+    try { persistProject(entry, data); } finally { cloud.suppress--; }
+    return entry;
+}
+function cloudRemoveLocally(id) {
+    const idx = projectStore.findIndex(p => p.id === id);
+    if (idx !== -1) projectStore.splice(idx, 1);
+    cloud.suppress++;
+    try { deleteProjectRecord(id); } finally { cloud.suppress--; }
+    if (currentProjectId === id) currentProjectId = null;
+}
+
+async function cloudSyncOnce() {
+    const R = cloud.repo;
+    const head = await cloudFindHead();
+    const commit = await cloudApi('/repos/' + R + '/git/commits/' + head);
+    const tree = await cloudApi('/repos/' + R + '/git/trees/' + commit.tree.sha + '?recursive=1');
+    const remote = {};
+    (tree.tree || []).forEach(t => {
+        const m = t.type === 'blob' && /^projects\/(\d+)\/(meta|project)\.json$/.exec(t.path);
+        if (!m) return;
+        const r = remote[m[1]] || (remote[m[1]] = {});
+        r[m[2] === 'meta' ? 'm' : 'd'] = t.sha;
+    });
+    Object.keys(remote).forEach(id => { if (!remote[id].m || !remote[id].d) delete remote[id]; });
+
+    const editingId = cloudEditorOpenId();
+    const items = cloudState.items, dirty = cloudState.dirty, tomb = cloudState.tomb;
+    const changes = [], uploads = new Set(), afterCommit = [];
+    const sameAsSynced = (r, s) => !!(s && r.m === s.m && r.d === s.d);
+    let downloaded = 0, removed = 0, conflicts = 0;
+
+    const download = async (key, asCopy) => {
+        const r = remote[key];
+        const meta = JSON.parse(await cloudReadBlob(r.m));
+        const data = JSON.parse(await cloudReadBlob(r.d));
+        if (!saveDataLooksValid(data)) throw new Error('A project in ' + R + " isn't a valid save (" + key + ').');
+        if (asCopy) {
+            const id = newProjectId();
+            const name = (meta.name || 'Untitled') + ' (other device)';
+            cloudStoreLocally(id, { ...meta, name }, { ...data, name });
+            uploads.add(id);
+        } else {
+            cloudStoreLocally(Number(key), meta, data);
+            items[key] = { m: r.m, d: r.d };
+            delete dirty[key];
+        }
+        downloaded++;
+    };
+
+    for (const key of Object.keys(tomb)) {
+        const r = remote[key];
+        if (!r) { delete tomb[key]; delete items[key]; continue; }
+        if (sameAsSynced(r, items[key])) {
+            const p = cloudPaths(key);
+            changes.push({ path: p.m, sha: null }, { path: p.d, sha: null });
+            afterCommit.push(() => { delete tomb[key]; delete items[key]; });
+            delete remote[key];
+        } else delete tomb[key];
+    }
+
+    const keys = Object.keys(remote);
+    for (let i = 0; i < keys.length; i++) {
+        const key = keys[i], r = remote[key], id = Number(key), s = items[key];
+        cloud.progress = 'Checking ' + (i + 1) + ' of ' + keys.length;
+        renderCloudBar();
+        const local = projectStore.find(p => p.id === id);
+        if (!local) { if (!tomb[key]) await download(key, false); continue; }
+        const remoteChanged = !sameAsSynced(r, s), localChanged = !!dirty[key];
+        if (!s) {
+            const meta = JSON.parse(await cloudReadBlob(r.m));
+            if (meta.updatedAt === local.updatedAt && meta.name === local.name) { items[key] = { m: r.m, d: r.d }; if (!localChanged) continue; uploads.add(id); continue; }
+            if (id === editingId) continue;
+            await download(key, true); conflicts++;
+            uploads.add(id);
+        } else if (remoteChanged && localChanged) {
+            if (id === editingId) continue;
+            await download(key, true); conflicts++;
+            uploads.add(id);
+        } else if (remoteChanged) {
+            if (id === editingId) continue;
+            await download(key, false);
+        } else if (localChanged) uploads.add(id);
+    }
+
+    projectStore.slice().forEach(p => {
+        const key = String(p.id);
+        if (remote[key] || tomb[key]) return;
+        if (items[key] && !dirty[key]) {
+            if (p.id === editingId) return;
+            cloudRemoveLocally(p.id); delete items[key]; removed++;
+        } else uploads.add(p.id);
+    });
+
+    const ups = [...uploads];
+    for (let i = 0; i < ups.length; i++) {
+        const id = ups[i], key = String(id);
+        const local = projectStore.find(p => p.id === id);
+        if (!local) continue;
+        cloud.progress = 'Uploading ' + (i + 1) + ' of ' + ups.length;
+        renderCloudBar();
+        const mark = dirty[key];
+        let data;
+        try { data = await getProjectDataP(id); } catch (e) { continue; }
+        const mSha = await cloudWriteBlob(JSON.stringify(projectMetaOf(local)));
+        const dSha = await cloudWriteBlob(JSON.stringify(data));
+        const p = cloudPaths(key);
+        changes.push({ path: p.m, sha: mSha }, { path: p.d, sha: dSha });
+        afterCommit.push(() => { items[key] = { m: mSha, d: dSha }; if (dirty[key] === mark) delete dirty[key]; });
+    }
+
+    if (changes.length) {
+        cloud.progress = 'Saving to GitHub';
+        renderCloudBar();
+        const newTree = await cloudApi('/repos/' + R + '/git/trees', { method: 'POST', body: { base_tree: commit.tree.sha, tree: changes.map(c => ({ path: c.path, mode: '100644', type: 'blob', sha: c.sha })) } });
+        const ups2 = changes.filter(c => c.sha && /meta\.json$/.test(c.path)).length, dels = changes.filter(c => !c.sha && /meta\.json$/.test(c.path)).length;
+        const msg = [ups2 ? 'Save ' + ups2 + ' project' + (ups2 > 1 ? 's' : '') : '', dels ? 'delete ' + dels : ''].filter(Boolean).join(', ') + ' (Pixel Art App)';
+        const newCommit = await cloudApi('/repos/' + R + '/git/commits', { method: 'POST', body: { message: msg.charAt(0).toUpperCase() + msg.slice(1), tree: newTree.sha, parents: [head] } });
+        await cloudApi('/repos/' + R + '/git/refs/heads/' + cloud.branch, { method: 'PATCH', body: { sha: newCommit.sha, force: false } });
+        afterCommit.forEach(f => f());
+    }
+    cloudSaveState();
+    if ((downloaded || removed) && isGalleryVisible()) renderGallery();
+    if (conflicts) showAppToast(conflicts + (conflicts > 1 ? ' projects were' : ' project was') + ' changed on two devices. Both versions are kept: look for “(other device)”.', 8000);
+}
+
+async function cloudSync() {
+    if (!cloudConnected()) return;
+    if (projectStorageState !== 'ready') { cloud.status = 'waiting'; renderCloudBar(); return; }
+    if (cloud.running) { cloud.again = true; return; }
+    clearTimeout(cloud.timer); cloud.timer = 0;
+    cloud.running = true; cloud.status = 'syncing'; cloud.progress = ''; renderCloudBar();
+    try {
+        try { await cloudSyncOnce(); }
+        catch (e) { if (e.status === 422 || e.status === 409) await cloudSyncOnce(); else throw e; }
+        cloud.status = 'idle'; cloud.error = ''; cloud.lastSync = Date.now();
+    } catch (e) {
+        console.warn('cloud sync failed:', e && e.status, e && e.message);
+        cloud.status = 'error'; cloud.error = cloudFriendlyError(e);
+    } finally {
+        cloud.running = false; cloud.progress = '';
+        renderCloudBar();
+        if (document.getElementById('cloud-modal').classList.contains('open') && cloudSheetMode === 'settings') renderCloudSheet();
+        if (cloud.again) { cloud.again = false; cloudScheduleSync(500); }
+    }
+}
+
+async function cloudConnect(token, repoInput) {
+    let repo = String(repoInput || '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '') || CLOUD_DEFAULT_REPO;
+    if (!/^[\w.-]+(\/[\w.-]+)?$/.test(repo)) throw new Error('Repo should look like pixelart-saves or yourname/pixelart-saves.');
+    if (!repo.includes('/')) {
+        const u = await cloudApi('/user', { token });
+        repo = u.login + '/' + repo;
+    }
+    let info;
+    try { info = await cloudApi('/repos/' + repo, { token }); }
+    catch (e) { if (e.status === 404) throw new Error("Can't find " + repo + '. Make the repo first, and give the token access to it.'); throw e; }
+    if (cloudState.repo !== repo) cloudState = cloudFreshState(repo);
+    cloud.token = token; cloud.repo = repo; cloud.branch = info.default_branch || 'main';
+    cloudLsSet(CLOUD_TOKEN_KEY, token); cloudLsSet(CLOUD_REPO_KEY, repo);
+    cloudSaveState();
+    return info;
+}
+function cloudDisconnect() {
+    clearTimeout(cloud.timer);
+    cloud.token = null; cloud.repo = null; cloud.branch = null; cloud.status = 'idle'; cloud.error = ''; cloud.lastSync = 0;
+    cloudLsSet(CLOUD_TOKEN_KEY, null); cloudLsSet(CLOUD_REPO_KEY, null);
+    renderCloudBar();
+}
+
+function cloudTimeAgo(t) {
+    const s = Math.round((Date.now() - t) / 1000);
+    if (s < 45) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return Math.round(s / 3600) + ' h ago';
+    return new Date(t).toLocaleDateString();
+}
+function renderCloudBar() {
+    const el = document.getElementById('galleryCloudBar');
+    if (!el) return;
+    let main, sub = '', warn = false;
+    const pending = Object.keys(cloudState.dirty).length + Object.keys(cloudState.tomb).length;
+    if (!cloudConnected()) { main = '☁️ Sync with GitHub'; sub = 'Carry on from your other devices'; }
+    else if (cloud.status === 'syncing') { main = '☁️ Syncing…'; sub = cloud.progress || cloud.repo; }
+    else if (cloud.status === 'error') { main = '☁️ Sync problem'; sub = cloud.error; warn = true; }
+    else if (cloud.status === 'waiting') { main = '☁️ Waiting for browser storage'; sub = cloud.repo; }
+    else { main = cloud.lastSync ? '☁️ Synced ' + cloudTimeAgo(cloud.lastSync) : '☁️ ' + cloud.repo; sub = pending ? pending + ' change' + (pending > 1 ? 's' : '') + ' waiting to sync' : cloud.repo; }
+    el.innerHTML = '';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cloud-bar-btn' + (warn ? ' warn' : '');
+    const t1 = document.createElement('span'); t1.className = 'cloud-bar-main'; t1.textContent = main;
+    const t2 = document.createElement('span'); t2.className = 'cloud-bar-sub'; t2.textContent = sub;
+    b.append(t1, t2);
+    b.addEventListener('click', () => openCloudSheet('settings'));
+    el.appendChild(b);
+}
+
+let cloudSheetMode = null, cloudSheetArg = null;
+function openCloudSheet(mode, arg) {
+    cloudSheetMode = mode; cloudSheetArg = arg;
+    document.getElementById('cloud-modal').classList.add('open');
+    renderCloudSheet();
+}
+function closeCloudSheet() {
+    document.getElementById('cloud-modal').classList.remove('open');
+    cloudSheetMode = null; cloudSheetArg = null;
+}
+function cloudEl(tag, props, kids) {
+    const e = document.createElement(tag);
+    Object.entries(props || {}).forEach(([k, v]) => { if (k === 'onclick') e.addEventListener('click', v); else e[k] = v; });
+    (kids || []).forEach(k => e.append(k));
+    return e;
+}
+function cloudLink(href, text) { return cloudEl('a', { href, target: '_blank', rel: 'noopener', textContent: text }); }
+function renderCloudSheet() {
+    const box = document.getElementById('cloud-box');
+    box.innerHTML = '';
+    if (cloudSheetMode === 'settings') renderCloudSettings(box);
+    else if (cloudSheetMode === 'share') renderShareSheet(box);
+    else if (cloudSheetMode === 'incoming') renderIncomingSheet(box);
+    box.scrollTop = 0;
+}
+
+function renderCloudSettings(box) {
+    box.append(cloudEl('div', { className: 'cloud-title', textContent: '☁️ Cloud Sync' }));
+    if (cloudConnected()) {
+        const pending = Object.keys(cloudState.dirty).length + Object.keys(cloudState.tomb).length;
+        box.append(
+            cloudEl('div', { className: 'cloud-hint' }, ['Your projects sync with ', cloudLink('https://github.com/' + cloud.repo, cloud.repo), '. Open this app on another device with a token for the same repo and they show up there too.']),
+            cloudEl('div', { className: 'cloud-hint', textContent: cloud.status === 'syncing' ? 'Syncing now…' : cloud.status === 'error' ? 'Last try failed: ' + cloud.error : cloud.lastSync ? 'Last synced ' + cloudTimeAgo(cloud.lastSync) + (pending ? ' · ' + pending + ' waiting' : '') + '.' : 'Not synced yet this visit.' }),
+            cloudEl('div', { className: 'cloud-hint', textContent: 'Syncs when you open the gallery, after saving, and when you come back to the app. A project changed on two devices keeps both versions. The project open in the editor is never replaced while you draw.' }),
+            cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: cloud.status === 'syncing' ? 'SYNCING…' : 'SYNC NOW', disabled: cloud.status === 'syncing', onclick: () => { cloudSync(); renderCloudSheet(); } })
+        );
+        const off = cloudEl('button', { className: 'cloud-btn danger', type: 'button', textContent: 'DISCONNECT THIS DEVICE' });
+        off.addEventListener('click', () => elementTapTwiceConfirm(off, 'DISCONNECT THIS DEVICE', 'TAP AGAIN: FORGET TOKEN HERE', () => { cloudDisconnect(); renderCloudSheet(); }, 5000));
+        box.append(off, cloudEl('div', { className: 'cloud-hint', textContent: 'Disconnecting forgets the token on this device only. Projects stay here and on GitHub.' }));
+    } else {
+        const tokenUrl = 'https://github.com/settings/personal-access-tokens/new?name=' + encodeURIComponent('Pixel Art App sync') + '&description=' + encodeURIComponent('Saves Pixel Art App projects to my ' + CLOUD_DEFAULT_REPO + ' repo') + '&expires_in=366&contents=write&gists=write';
+        box.append(
+            cloudEl('div', { className: 'cloud-hint', textContent: 'Keep your projects in a private GitHub repo of your own, then carry on from any device that has the token. Nobody else sees your projects: each person uses their own GitHub account and repo, and the token stays in this browser.' }),
+            cloudEl('ol', { className: 'cloud-steps' }, [
+                cloudEl('li', {}, [cloudLink('https://github.com/new?name=' + CLOUD_DEFAULT_REPO + '&visibility=private&description=' + encodeURIComponent('My Pixel Art App projects'), 'Make a private repo'), ' called ' + CLOUD_DEFAULT_REPO + '.']),
+                cloudEl('li', {}, [cloudLink(tokenUrl, 'Make a fine-grained token'), '. Under Repository access pick Only select repositories › ' + CLOUD_DEFAULT_REPO + '. Contents (read and write) is already ticked; Gists lets you make share links.']),
+                cloudEl('li', { textContent: 'Paste the token here. Do the same on your other devices with the same token (or another one for the same repo).' })
+            ])
+        );
+        const tokIn = cloudEl('input', { className: 'cloud-input', type: 'password', placeholder: 'github_pat_…', autocomplete: 'off', spellcheck: false });
+        const repoIn = cloudEl('input', { className: 'cloud-input', type: 'text', placeholder: CLOUD_DEFAULT_REPO, value: cloudState.repo || '', autocomplete: 'off', spellcheck: false });
+        repoIn.setAttribute('autocapitalize', 'off'); tokIn.setAttribute('autocapitalize', 'off');
+        const err = cloudEl('div', { className: 'cloud-err' });
+        const go = cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: 'CONNECT' });
+        go.addEventListener('click', async () => {
+            const t = tokIn.value.trim();
+            if (!t) { err.textContent = 'Paste a token first.'; return; }
+            go.disabled = true; go.textContent = 'CHECKING…'; err.textContent = '';
+            try {
+                const info = await cloudConnect(t, repoIn.value);
+                renderCloudSheet();
+                if (!info.private) showAppToast(cloud.repo + ' is public: anyone can see the projects in it. Make it private on GitHub (Settings › Danger Zone) if you want them hidden.', 9000);
+                cloudSync();
+            } catch (e) { err.textContent = e.status != null ? cloudFriendlyError(e) : e.message; go.disabled = false; go.textContent = 'CONNECT'; }
+        });
+        box.append(cloudEl('label', { className: 'cloud-label', textContent: 'Token' }), tokIn, cloudEl('label', { className: 'cloud-label', textContent: 'Repo' }), repoIn, err, go);
+    }
+    box.append(cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'DONE', onclick: closeCloudSheet }));
+}
+
+function shareBaseUrl() { return location.origin + location.pathname; }
+function bytesToB64url(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlToBytes(s) {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+}
+async function shareCompress(text) {
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return bytesToB64url(new Uint8Array(await new Response(stream).arrayBuffer()));
+}
+async function shareDecompress(s) {
+    const stream = new Blob([b64urlToBytes(s)]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Response(stream).text();
+}
+function shareDataOf(data, name) {
+    const d = { ...data, name: name || data.name || 'Untitled' };
+    delete d.thumbHidden;
+    return d;
+}
+function openShareSheet(id) {
+    const proj = projectStore.find(p => p.id === id);
+    if (!proj) return;
+    openCloudSheet('share', { id, name: proj.name, link: null, linkKind: null, busy: '', err: '' });
+    getProjectData(id, async (data, e) => {
+        const st = cloudSheetArg;
+        if (!st || st.id !== id) return;
+        if (!data) { st.err = "Couldn't read it: " + e; renderCloudSheet(); return; }
+        st.data = shareDataOf(data, proj.name);
+        if (window.CompressionStream) {
+            try { st.inlineLink = shareBaseUrl() + '#p=' + await shareCompress(JSON.stringify(st.data)); } catch (_) { st.inlineLink = null; }
+        }
+        if (cloudSheetArg === st) renderCloudSheet();
+    });
+}
+async function shareMakeGist(st) {
+    const files = {};
+    files[(st.name || 'pixel-art').replace(/[^\w .-]+/g, '_').slice(0, 60) + '.pxproj.json'] = { content: JSON.stringify(st.data) };
+    const g = await cloudApi('/gists', { method: 'POST', body: { description: 'Pixel Art App project: ' + st.name, public: false, files } });
+    return shareBaseUrl() + '#gist=' + g.id;
+}
+function renderShareSheet(box) {
+    const st = cloudSheetArg;
+    box.append(cloudEl('div', { className: 'cloud-title', textContent: '🔗 Share “' + st.name + '”' }));
+    if (st.err) box.append(cloudEl('div', { className: 'cloud-err', textContent: st.err }));
+    if (location.protocol === 'file:') box.append(cloudEl('div', { className: 'cloud-err', textContent: 'This copy of the app is a local file, so links point at your device. Share from the online app instead.' }));
+    if (!st.data && !st.err) box.append(cloudEl('div', { className: 'cloud-hint', textContent: 'Getting it ready…' }));
+    if (st.data) {
+        box.append(cloudEl('div', { className: 'cloud-hint', textContent: 'Whoever opens the link gets their own copy to open and keep. Your gallery and account stay private.' }));
+        if (st.link) {
+            const out = cloudEl('input', { className: 'cloud-input', type: 'text', readOnly: true, value: st.link });
+            out.addEventListener('focus', () => out.select());
+            const note = st.link.length <= DISCORD_MSG_MAX ? 'Fits in a Discord message.' : st.link.length.toLocaleString() + ' characters: too long for a Discord message (2,000). A Gist link is short.';
+            const copyBtn = cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: 'COPY LINK' });
+            copyBtn.addEventListener('click', async () => {
+                let ok = false;
+                try { await navigator.clipboard.writeText(st.link); ok = true; } catch (_) { out.focus(); out.select(); try { ok = document.execCommand('copy'); } catch (__) {} }
+                copyBtn.textContent = ok ? 'COPIED ✓' : 'SELECT AND COPY ABOVE';
+                setTimeout(() => { if (copyBtn.isConnected) copyBtn.textContent = 'COPY LINK'; }, 2000);
+            });
+            const row = cloudEl('div', { className: 'cloud-row' }, [copyBtn]);
+            if (navigator.share) row.append(cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'SHARE…', onclick: () => navigator.share({ title: st.name, url: st.link }).catch(() => {}) }));
+            box.append(out, cloudEl('div', { className: 'cloud-hint', textContent: (st.linkKind === 'gist' ? 'Secret Gist on your GitHub account: not listed anywhere, but anyone with the link can open it (and see your GitHub name). Delete the Gist on GitHub to stop sharing. ' : 'The drawing is inside the link itself: no account, nothing uploaded. ') + note }), row);
+        }
+        if (st.link == null || st.linkKind !== 'inline') {
+            const fits = st.inlineLink && st.inlineLink.length <= SHARE_LINK_MAX;
+            const b = cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'LINK WITH THE DRAWING INSIDE', disabled: !fits });
+            b.addEventListener('click', () => { st.link = st.inlineLink; st.linkKind = 'inline'; renderCloudSheet(); });
+            box.append(b, cloudEl('div', { className: 'cloud-hint', textContent: !window.CompressionStream ? "This browser can't make these links." : !st.inlineLink ? 'Making it…' : fits ? 'No account needed. ' + st.inlineLink.length.toLocaleString() + ' characters long.' : 'Too big to fit in a link. Use a Gist link.' }));
+        }
+        if (st.linkKind !== 'gist') {
+            const g = cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: st.busy === 'gist' ? 'MAKING GIST…' : 'SHORT LINK WITH A GITHUB GIST', disabled: st.busy === 'gist' || !cloudConnected() });
+            g.addEventListener('click', async () => {
+                st.busy = 'gist'; st.err = ''; renderCloudSheet();
+                try { st.link = await shareMakeGist(st); st.linkKind = 'gist'; }
+                catch (e) { st.err = e.status === 403 || e.status === 404 ? "Your token can't make Gists. Give it Account permissions › Gists: Read and write on GitHub, then try again." : cloudFriendlyError(e); }
+                st.busy = '';
+                if (cloudSheetArg === st) renderCloudSheet();
+            });
+            box.append(g, cloudEl('div', { className: 'cloud-hint', textContent: cloudConnected() ? 'Works for any size. Uses your Cloud Sync token.' : 'Connect Cloud Sync first (gallery › ☁️) to make Gist links.' }));
+        }
+    }
+    box.append(cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'DONE', onclick: closeCloudSheet }));
+}
+
+let incomingShareHandled = false;
+async function readIncomingShare() {
+    const h = location.hash || '';
+    let m;
+    if ((m = /^#p=([\w-]+)$/.exec(h))) {
+        let data;
+        try { data = JSON.parse(await shareDecompress(m[1])); } catch (e) { throw new Error('This link is broken or incomplete. It may have been cut off when it was pasted.'); }
+        return { data, from: 'link' };
+    }
+    if ((m = /^#gist=([0-9a-f]+)$/i.exec(h))) {
+        const g = await cloudApi('/gists/' + m[1], { token: null });
+        const f = Object.values(g.files || {}).find(x => /\.json$/i.test(x.filename || '')) || Object.values(g.files || {})[0];
+        if (!f) throw new Error('That Gist has no project in it.');
+        const text = f.truncated ? await cloudApi(f.raw_url, { token: null, text: true }) : f.content;
+        return { data: JSON.parse(text), from: 'gist', owner: g.owner && g.owner.login };
+    }
+    return null;
+}
+function clearShareHash() { try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { location.hash = ''; } }
+async function checkIncomingShare() {
+    if (incomingShareHandled || !/^#(p|gist)=/.test(location.hash || '')) return;
+    incomingShareHandled = true;
+    openCloudSheet('incoming', { loading: true });
+    try {
+        const r = await readIncomingShare();
+        if (!r || !saveDataLooksValid(r.data)) throw new Error("This link doesn't contain a project this app can open.");
+        cloudSheetArg = { ...r, name: String(r.data.name || 'Shared project').slice(0, 60) };
+        renderCloudSheet();
+        buildFramesFromSaveData(r.data, built => {
+            const keepW = gridW, keepH = gridH;
+            try {
+                gridW = r.data.gridW; gridH = r.data.gridH;
+                built.forEach(f => f.layers.forEach(l => { if (l.type === 'vector') l.layoutCSS(); }));
+                const bg = r.data.backgroundColor !== undefined ? r.data.backgroundColor : (r.data.profile === 'mapart' ? MAPART_DEFAULT_BACKGROUND : null);
+                const url = generateThumbnailDataURL(built, gridW, gridH, bg);
+                if (cloudSheetMode === 'incoming' && cloudSheetArg && cloudSheetArg.data === r.data) { cloudSheetArg.thumb = url; renderCloudSheet(); }
+            } catch (_) {} finally { gridW = keepW; gridH = keepH; }
+        });
+    } catch (e) {
+        cloudSheetArg = { err: e.status === 404 ? 'That shared project was deleted, or the link is wrong.' : e.status != null ? cloudFriendlyError(e) : (e.message || "Couldn't open the link.") };
+        renderCloudSheet();
+    }
+}
+function renderIncomingSheet(box) {
+    const st = cloudSheetArg || {};
+    box.append(cloudEl('div', { className: 'cloud-title', textContent: '📩 Shared project' }));
+    if (st.loading) box.append(cloudEl('div', { className: 'cloud-hint', textContent: 'Opening the link…' }));
+    if (st.err) box.append(cloudEl('div', { className: 'cloud-err', textContent: st.err }));
+    if (st.data) {
+        const wrap = cloudEl('div', { className: 'cloud-incoming-thumb checkerboard-bg' });
+        if (st.thumb) wrap.append(cloudEl('img', { src: st.thumb, alt: '' }));
+        box.append(wrap,
+            cloudEl('div', { className: 'cloud-incoming-name', textContent: st.name }),
+            cloudEl('div', { className: 'cloud-hint', textContent: st.data.gridW + ' × ' + st.data.gridH + (st.owner ? ' · shared by ' + st.owner + ' on GitHub' : '') + '. Opening it gives you your own copy; it joins your gallery when you go back to it.' }),
+            cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: 'OPEN MY COPY', onclick: () => {
+                const data = st.data, name = st.name;
+                closeCloudSheet(); clearShareHash();
+                hideGallery();
+                openProjectFromSaveData(data, { name, projectId: null });
+            } })
+        );
+    }
+    box.append(cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: st.data ? 'NOT NOW' : 'CLOSE', onclick: () => { closeCloudSheet(); clearShareHash(); } }));
+}
+window.addEventListener('hashchange', () => { incomingShareHandled = false; checkIncomingShare(); });
+
+document.getElementById('cloud-modal').addEventListener('click', e => { if (e.target.id === 'cloud-modal') closeCloudSheet(); });
+document.getElementById('ctx-share').addEventListener('click', () => {
+    const id = galleryCtxTargetId;
+    closeGalleryCtxMenu();
+    if (id != null) openShareSheet(id);
+});
+document.addEventListener('visibilitychange', () => {
+    if (!cloudConnected()) return;
+    if (document.visibilityState === 'hidden') { if (Object.keys(cloudState.dirty).length || Object.keys(cloudState.tomb).length) cloudSync(); }
+    else cloudScheduleSync(400);
+});
+setInterval(() => { if (isGalleryVisible() && cloud.status === 'idle') renderCloudBar(); }, 30000);
+renderCloudBar();
+
 // ── Override goToMainMenu to save + return to gallery ────────
 // (Replaces the original which went back to init-screen)
 function goToMainMenu() {
@@ -13889,6 +14472,7 @@ requestAnimationFrame(() => {
     initSpriteAnimEditor();
     showGallery();
     initProjectStorage();
+    checkIncomingShare();
 });
 
 /* ============================================================
