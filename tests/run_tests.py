@@ -44,13 +44,13 @@ GROUPS = {
     'zoom-indicator': ('On-screen zoom readout: #zoomIndicator, formatZoom, updateZoomIndicator, live during pinch (applyCameraTransform).',
                        ['test_zoom_indicator']),
     'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
-                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone']),
+                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone', 'test_layers_duplicate_reachable']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
                   ['test_transform_basics', 'test_transform_selection_and_kinds', 'test_transform_live_preview']),
     'eyedrop': ('Eyedropper sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
-                ['test_eyedrop_sample_size']),
+                ['test_eyedrop_sample_size', 'test_eyedrop_faded_reference']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
                   ['test_space_pan', 'test_wheel_zoom_anchor', 'test_mouse_cursor_visibility']),
     'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load. Mapart colours on references: see the mapart group.',
@@ -75,7 +75,7 @@ GROUPS = {
     'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load, reference layer MAPART COLOURS (ReferenceLayer.mapartMatched, MAPART_REF_SCALINGS, lanczosResizeImage, refreshMapartReferenceLayers, #refMapartMatchBtn, #refMapartScalingRow).',
                ['test_mapart_new_canvas_in_maps', 'test_resize_sheet_no_autoselect_outside_mapart', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
-                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods', 'test_mapart_reference_match']),
+                'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods', 'test_mapart_reference_match', 'test_mapart_pencil_after_empty_pick']),
     'background': ('Background fill (roadmap 9): backgroundColor, setBackgroundColor, updateBackgroundFill/UI, background pick mode (Colours + Layers), flattenTreeToCanvas bg argument, saveImage, save/load, mapart default and snapping.',
                    ['test_background_fill', 'test_background_mapart']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
@@ -242,6 +242,19 @@ async def test_layers_drag_reorder(pg):
     b0 = await pg.locator('#layersList .layer-row').nth(0).bounding_box()
     await pg.mouse.move(b0['x'] + b0['width'] * 0.75, b0['y'] + 10); await pg.mouse.down(); await pg.mouse.move(b0['x'] + b0['width'] * 0.75, b0['y'] + 60, steps=4); await pg.mouse.up(); await pg.wait_for_timeout(300)
     check('drag: a quick swipe without holding does not reorder', await pg.evaluate(LAYER_ORDER) == after3)
+
+async def test_layers_duplicate_reachable(pg):
+    await new_canvas(pg)
+    await pg.evaluate("() => { openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }"); await pg.wait_for_timeout(300)
+    await pg.locator('#layerDuplicateBtn').click(); await pg.wait_for_timeout(200)
+    check('dup: layer settings DUPLICATE copies the active layer and selects the copy', await pg.evaluate("() => layers.length === 2 && activeLayer().name === 'Layer 1 copy'"))
+    await pg.evaluate("() => undo()")
+    check('dup: one undo removes the copy', await pg.evaluate("() => layers.length === 1"))
+    await pg.locator('#layerSelectBtn').click(); await pg.wait_for_timeout(300)
+    hit = await pg.evaluate("""() => { const b = [...document.querySelectorAll('#layerSelectionActions button')].find(b => b.textContent.includes('DUPLICATE')); const r = b.getBoundingClientRect();
+        const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return el === b || b.contains(el); }""")
+    check('dup: Select mode DUPLICATE is on screen and not covered', hit)
+    check('dup: add-layer buttons hidden while selecting', await pg.evaluate("() => getComputedStyle(document.querySelector('.layers-icon-grid')).display === 'none'"))
 
 async def test_layers_drag_into_group_and_cancel(pg):
     await open_layers_full(pg, 1)
@@ -984,6 +997,32 @@ async def test_mapart_reference_match(pg):
     check('refmatch: setting and scaling saved with the project', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l && l.mapartMatch && l.mapartScaling === 'lanczos' && l.el.width === 128; }"))
     await pg.evaluate("() => selectProfile('pixelArt')"); await pg.wait_for_timeout(200)
     check('refmatch: outside Mapart the reference shows the original image again', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l.el.width === 64 && l.el.height === 48 && l.el.style.transform !== 'none'; }"))
+
+async def test_eyedrop_faded_reference(pg):
+    import base64
+    await new_canvas(pg)
+    png = base64.b64decode(await pg.evaluate(REF_PNG))
+    await pg.locator('#refInput').set_input_files({'name': 'ref.png', 'mimeType': 'image/png', 'buffer': png})
+    await pg.wait_for_timeout(800)
+    await pg.evaluate("() => { const r = activeLayer(); r.setActualSize(); r.gx = 0; r.gy = 0; r.opacity = 0.3; r.applyVisualState(); const t = frames[activeFrameIndex].layerTree; t.unshift(...t.splice(t.findIndex(n => n.layer === r), 1)); syncActiveLayersFromTree(); setActiveLayer(layers.findIndex(l => l.type === 'pixel')); zoomIndex = ZOOM_STEPS.indexOf(8); scale = 8; layoutAll(); closePanel(); }")
+    for n in (1, 3):
+        await pg.evaluate("(n) => { setEyedropSampleSize(n); handleToolBtn('eyedrop'); }", n)
+        await tap(pg, 3, 3)
+        c = await pg.evaluate("() => selectedColor")
+        check(f'eyedrop: {n}x{n} on a pixel layer over a 30% reference picks its real colour', c == '#ABCDEF', c)
+    await pg.evaluate("() => setEyedropSampleSize(1)")
+    check('eyedrop: reference opacity left unchanged', await pg.evaluate("() => layers.find(l => l.type === 'reference').opacity === 0.3"))
+
+async def test_mapart_pencil_after_empty_pick(pg):
+    await mapart_canvas(pg)
+    await pg.evaluate("() => handleSwatchClick('#DC0000')")
+    await pg.evaluate("() => toggleMapartStaircase()")
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(4); scale = 4; layoutAll(); closePanel(); handleToolBtn('eyedrop'); }")
+    await tap(pg, 10, 10)
+    check('mapart empty pick: eyedropper on an empty pixel picks transparent', await pg.evaluate("() => selectedColor") is None)
+    await pg.evaluate("() => handleToolBtn('pencil')")
+    c = await pg.evaluate("() => selectedColor")
+    check('mapart empty pick: pencil goes back to the last real colour, not the last palette swatch', c == '#DC0000', c)
 
 async def test_mapart_colour_methods(pg):
     await mapart_canvas(pg)

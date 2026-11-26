@@ -732,6 +732,7 @@
         .layers-icon-btn:disabled { opacity: 0.35; }
         .layers-icon-btn:active { background: rgba(255,255,255,0.16); }
         #layerSelectionActions { flex-wrap: wrap; }
+        #panel-layers.selecting .layers-icon-grid { display: none; }
         .layer-search-shell.collapsed { display: none; }
         .layers-done-btn { flex: 1 0 100%; height: 48px; border: none; border-radius: 12px; background: #0a84ff; color: #fff; font-size: 15px; font-weight: 800; letter-spacing: .5px; cursor: pointer; box-shadow: 0 0 0 2px rgba(10,132,255,.35); }
         .layers-done-btn:active { filter: brightness(1.15); }
@@ -1394,7 +1395,7 @@
                 <div class="row" id="layerSelectionActions" style="display:none; flex-wrap:wrap;"><button class="layers-done-btn" id="layerSelectionDoneBtn" onclick="uiAction(toggleLayerSelectionMode)">✓ DONE</button><div id="selectionCount" class="selection-count">0 selected</div>
                 <button class="btn" onclick="uiAction(selectAllTreeNodes)">SELECT ALL</button>
                 <button class="btn" onclick="uiAction(clearTreeSelection)">CLEAR</button><button class="btn" onclick="uiAction(toggleSelectedVisibility)">👁 VISIBILITY</button>
-                <button class="btn" id="groupSelectedActionBtn" onclick="uiAction(createGroupFromSelected)">🗂️ ADD SELECTED LAYERS TO A NEW GROUP</button>
+                <button class="btn" id="groupSelectedActionBtn" onclick="uiAction(createGroupFromSelected)">🗂️ GROUP</button>
                 <button class="btn" onclick="uiAction(() => moveSelectedBlock(1))">⬆️ MOVE UP</button>
                 <button class="btn" onclick="uiAction(() => moveSelectedBlock(-1))">⬇️ MOVE DOWN</button>
                 <button class="btn" onclick="uiAction(duplicateSelectedItems)">📋 DUPLICATE</button>
@@ -2815,9 +2816,11 @@ function syncMapartPalette(force) {
             force = true;
         }
         if (force) {
+            const keepLast = lastNonTransparentColor;
             mapartResetPaletteCache();
             mapartBuildingPalette = true;
             try { replaceVisiblePalette(mapartAllowedHexes()); } finally { mapartBuildingPalette = false; }
+            lastNonTransparentColor = mapartSnapColor(keepLast) || mapartAllowedHexes()[0];
         }
         if (pal) pal.classList.add('mapart-locked');
         const bg = mapartValidBackground(backgroundColor);
@@ -3217,6 +3220,18 @@ function duplicateSelectedItems(){
     created.forEach((n,i)=>remapDuplicatedHooks(n,maps[i]));
     syncActiveLayersFromTree(); layers.forEach(l=>{if(!l.el.parentNode)container.appendChild(l.el);l.applyVisualState();}); reindexDom(); refreshHookedComposites();
     clearLayerTreeSelection(); created.forEach(n=>selectTreeNode(n,true)); pushTreeOperation('Duplicate selected items',before); renderLayersPanel();
+}
+function duplicateActiveLayer(){
+    const f=frames[activeFrameIndex], layer=activeLayer(); if(!f||!layer)return;
+    const found=findLayerNode(f.layerTree, layer.id); if(!found)return;
+    const keep=new Set(selectedNodeIds);
+    clearLayerTreeSelection(); selectTreeNode(found.node,true);
+    duplicateSelectedItems();
+    const copyId=[...selectedNodeIds][0];
+    selectedNodeIds.clear(); keep.forEach(id=>selectedNodeIds.add(id));
+    const idx=layers.findIndex(l=>'layer-'+l.id===copyId);
+    if(idx!==-1) setActiveLayer(idx);
+    renderLayersPanel();
 }
 function collectTreeNodes(nodes,out){out=out||[];(nodes||[]).forEach(n=>{out.push(n);if(n.kind==='group')collectTreeNodes(n.children,out);});return out;}
 // Entry point for the DELETE button in the multi-select layers toolbar --
@@ -7128,7 +7143,7 @@ function renderLayersPanel() {
         const del=mkLayerIconBtn('\u{1F5D1}\uFE0F',e=>{e.stopPropagation();deleteLayer(i,e.currentTarget);});
         row.onpointerdown=e=>{if(e.target.closest('button,input'))return;beginTreeDrag(node,row,e);}; row.onclick=()=>{if(suppressNextTreeClick){suppressNextTreeClick=false;return;}if(treeDragState)return;if(isLayersStrip() && i===activeLayerIndex){setLayersDrawerMode('full');return;}if(layerSelectionMode){selectTreeNode(node,!isNodeSelected(node));renderLayersPanel();}else setActiveLayer(i);};
         row.append(colorTag,sel,thumb); if(layers.length>1)row.append(vis); row.append(name,badge); list.appendChild(row);
-        if(!layerSelectionMode && i===activeLayerIndex){const settings=document.getElementById('layerSettingsPane');const title=document.createElement('div');title.className='layer-settings-title';title.textContent=layer.name;const tsm=document.createElement('small');tsm.textContent=layer.type;title.append(tsm);settings.append(title);const acts=document.createElement('div');acts.className='layer-settings-actions';if(isMaskOrClip){acts.append(up,down);}if(layer.type!=='reference')acts.append(clr);acts.append(del);settings.append(acts);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';opRow.append(opCaption);const sliderCtl=mkIosSlider(Math.round(layer.opacity*100),v=>{layer.opacity=v/100;layer.applyVisualState();refreshHookedComposites();});opRow.append(sliderCtl.el);
+        if(!layerSelectionMode && i===activeLayerIndex){const settings=document.getElementById('layerSettingsPane');const title=document.createElement('div');title.className='layer-settings-title';title.textContent=layer.name;const tsm=document.createElement('small');tsm.textContent=layer.type;title.append(tsm);settings.append(title);const acts=document.createElement('div');acts.className='layer-settings-actions';if(isMaskOrClip){acts.append(up,down);}const dup=mkLayerIconBtn('\u{1F4CB}',e=>{e.stopPropagation();duplicateActiveLayer();});dup.id='layerDuplicateBtn';dup.title='Duplicate layer';if(layer.type!=='reference')acts.append(clr);acts.append(dup,del);settings.append(acts);const opRow=document.createElement('div');opRow.className='layer-opacity-row';const opCaption=document.createElement('span');opCaption.className='layer-opacity-caption';opCaption.innerText='opacity';opRow.append(opCaption);const sliderCtl=mkIosSlider(Math.round(layer.opacity*100),v=>{layer.opacity=v/100;layer.applyVisualState();refreshHookedComposites();});opRow.append(sliderCtl.el);
             // Session 7d: per-layer blend mode, only for layer types that
             // are real visible artwork painted into the normal stack --
             // mask/clip are control data (already display:none, see
@@ -9984,7 +9999,11 @@ function setupDrawingEvents() {
                 // What's on screen, visible references included (like CSP's
                 // "obtain colour from display"), background left out so an
                 // empty pixel still picks transparent (= eraser).
-                const comp = flattenTreeToCanvas(frames[activeFrameIndex].layerTree, gridW, gridH, false, undefined, true);
+                const fadedRefs = layers.filter(l => l.type === 'reference' && l.opacity < 1), keepOpacity = fadedRefs.map(l => l.opacity);
+                fadedRefs.forEach(l => { l.opacity = 1; });
+                let comp;
+                try { comp = flattenTreeToCanvas(frames[activeFrameIndex].layerTree, gridW, gridH, false, undefined, true); }
+                finally { fadedRefs.forEach((l, i) => { l.opacity = keepOpacity[i]; }); }
                 if (eyedropSampleSize > 1) selectedColor = averageCanvasColour(comp, x, y, eyedropSampleSize);
                 else { const d = comp.getContext('2d').getImageData(x, y, 1, 1).data; selectedColor = d[3] === 0 ? null : rgbToHexBytes(d[0], d[1], d[2]); }
                 if (selectedColor) createSwatch(selectedColor); else updateUI();
