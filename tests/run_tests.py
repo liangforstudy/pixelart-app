@@ -45,6 +45,8 @@ GROUPS = {
                        ['test_zoom_indicator']),
     'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
                       ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drawer_closes_after_three_strokes', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone', 'test_layers_duplicate_reachable']),
+    'colour-triangle': ('Colour triangle in the Colours panel (V2_9): krt state, krtHsvToRgb/krtRgbToHsv, krtBuildRing/krtBuildTriangle/krtDraw, krtPointerDown/Move/End, krtEmit, krtSyncFromSelected, krtRefreshUI, krtAddSwatch, #krtCanvas, #krtReadout, #krtAddBtn; snaps to the map colours in Mapart via mapartSnapColor.',
+                        ['test_colour_triangle_layout', 'test_colour_triangle_free_colour', 'test_colour_triangle_mapart_snaps', 'test_colour_triangle_syncs_from_drawing_colour', 'test_colour_triangle_one_pointer_and_background_pick']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
@@ -145,6 +147,95 @@ async def px(pg, x, y):
 DRAW = "([pts, col]) => { selectedColor = col; pts.forEach(([x,y]) => plot(x,y)); }"
 
 # ---------------------------------------------------------------- tests
+KRT_POINT = """([kind, a, b]) => {
+    const r = krt.canvas.getBoundingClientRect(), m = krtMetrics(), f = r.width / krt.px;
+    let x, y;
+    if (kind === 'ring') { const rad = (m.outerR + m.innerR) / 2, t = a * Math.PI / 180; x = m.cx + rad * Math.cos(t); y = m.cy + rad * Math.sin(t); }
+    else { const { A, B, C } = krtVertices(m), wA = a * b, wB = (1 - a) * b, wC = 1 - b; x = wA * A.x + wB * B.x + wC * C.x; y = wA * A.y + wB * B.y + wC * C.y; }
+    return [r.left + x * f, r.top + y * f];
+}"""
+
+async def krt_drag(pg, kind, a, b=0):
+    x, y = await pg.evaluate(KRT_POINT, [kind, a, b])
+    await pg.mouse.move(x, y); await pg.mouse.down(); await pg.mouse.up()
+    await pg.wait_for_timeout(60)
+
+async def test_colour_triangle_layout(pg):
+    await mapart_canvas(pg)
+    await pg.evaluate("() => openPanel('colors')")
+    box = await pg.evaluate("() => { const c = document.getElementById('krtCanvas').getBoundingClientRect(), s = document.getElementById('mapartStaircaseBtn').getBoundingClientRect(); return { cw: c.width, ch: c.height, cb: c.bottom, st: s.top }; }")
+    check('colour triangle: shown in the Colours panel at a usable size', box['cw'] >= 150 and abs(box['cw'] - box['ch']) < 2, box)
+    check('colour triangle: sits above the STAIRCASE button', box['cb'] <= box['st'], box)
+    lit = await pg.evaluate("() => { const d = krt.ctx.getImageData(0, 0, krt.px, krt.px).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; }")
+    check('colour triangle: ring and triangle are drawn', lit > 5000, lit)
+
+async def test_colour_triangle_free_colour(pg):
+    await pg.evaluate("() => openPanel('colors')")
+    check('colour triangle: add-to-swatches button shows outside Mapart', await pg.locator('#krtAddBtn').is_visible())
+    await krt_drag(pg, 'ring', 120)
+    await krt_drag(pg, 'tri', 0.8, 0.9)
+    got = await pg.evaluate("() => [selectedColor, krtRawHex(), krt.h]")
+    check('colour triangle: drawing colour is exactly the wheel colour outside Mapart', got[0] == got[1] and abs(got[2] - 120) < 3, got)
+    check('colour triangle: readout shows the colour', await pg.locator('#krtReadout').text_content() == got[1], await pg.locator('#krtReadout').text_content())
+    n0 = len(await pg.evaluate(SWATCHES))
+    await pg.locator('#krtAddBtn').click(); await pg.wait_for_timeout(100)
+    sw = await pg.evaluate(SWATCHES)
+    check('colour triangle: add-to-swatches saves the colour', len(sw) == n0 + 1 and got[1] in sw, [n0, len(sw)])
+    await krt_drag(pg, 'tri', 0.5, 0.0)
+    check('colour triangle: dragging to the black corner gives black and keeps the hue', await pg.evaluate("() => selectedColor === '#000000' && Math.abs(krt.h - 120) < 3"))
+
+async def test_colour_triangle_mapart_snaps(pg):
+    await mapart_canvas(pg)
+    await pg.evaluate("() => openPanel('colors')")
+    check('colour triangle: add-to-swatches hidden in Mapart', not await pg.locator('#krtAddBtn').is_visible())
+    spots = [('ring', 10, 0), ('tri', 0.6, 0.8), ('ring', 200, 0), ('tri', 0.35, 0.55), ('ring', 300, 0), ('tri', 0.9, 0.95)]
+    bad = []
+    for kind, a, b in spots:
+        await krt_drag(pg, kind, a, b)
+        sel, ok, raw = await pg.evaluate("() => [selectedColor, mapartAllowedHexes().includes(selectedColor), krtRawHex()]")
+        if not ok: bad.append((kind, a, b, sel))
+    check('colour triangle: every pick in Mapart is a real map colour', not bad, bad)
+    await krt_drag(pg, 'ring', 0); await krt_drag(pg, 'tri', 1.0, 1.0)
+    got = await pg.evaluate("() => [selectedColor, mapartSnapColor(krtRawHex()), krtRawHex()]")
+    check('colour triangle: Mapart pick is the nearest map colour to the wheel colour', got[0] == got[1], got)
+    check('colour triangle: readout names the map colour', '\u00B7' in await pg.locator('#krtReadout').text_content(), await pg.locator('#krtReadout').text_content())
+    await pg.evaluate("() => { selectedColor = null; toggleMapartStaircase(); openPanel('colors'); }")
+    await krt_drag(pg, 'ring', 0); await krt_drag(pg, 'tri', 1.0, 1.0)
+    check('colour triangle: with staircase on the pick can be a shaded colour', await pg.evaluate("() => mapartAllowedHexes().length === 183 && mapartAllowedHexes().includes(selectedColor)"))
+    await pg.evaluate(DRAW, [[[5, 5]], await pg.evaluate("() => selectedColor")])
+    check('colour triangle: the picked colour draws as a map colour', await px(pg, 5, 5) == await pg.evaluate("() => selectedColor"))
+
+async def test_colour_triangle_syncs_from_drawing_colour(pg):
+    await pg.evaluate("() => { openPanel('colors'); handleSwatchClick('#FF0000'); }")
+    st = await pg.evaluate("() => [krt.h, krt.s, krt.v]")
+    check('colour triangle: follows a swatch tap', st[0] < 1 and abs(st[1] - 1) < 0.01 and abs(st[2] - 1) < 0.01, st)
+    await pg.evaluate("() => handleSwatchClick('#808080')")
+    st = await pg.evaluate("() => [krt.h, krt.s, krt.v]")
+    check('colour triangle: grey keeps the old hue so the triangle does not jump', st[0] < 1 and st[1] < 0.01 and abs(st[2] - 0.502) < 0.01, st)
+    await pg.evaluate("() => handleSwatchClick('#0000FF')")
+    check('colour triangle: follows the eyedropper-style colour change to blue', await pg.evaluate("() => Math.abs(krt.h - 240) < 1"))
+
+async def test_colour_triangle_one_pointer_and_background_pick(pg):
+    await pg.evaluate("() => { openPanel('colors'); handleSwatchClick('#FF0000'); }")
+    await pg.evaluate("""() => {
+        const c = krt.canvas, r = c.getBoundingClientRect(), m = krtMetrics(), f = r.width / krt.px;
+        const ring = (deg) => { const t = deg * Math.PI / 180, rad = (m.outerR + m.innerR) / 2; return [r.left + (m.cx + rad * Math.cos(t)) * f, r.top + (m.cy + rad * Math.sin(t)) * f]; };
+        const fire = (type, id, [x, y]) => c.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, cancelable: true, isPrimary: id === 1 }));
+        window.__krtA = fire('pointerdown', 1, ring(90));
+        fire('pointerdown', 2, ring(270));
+        fire('pointermove', 2, ring(270));
+        window.__krtHue = krt.h;
+        fire('pointerup', 1, ring(90));
+        fire('pointerup', 2, ring(270));
+    }""")
+    check('colour triangle: a second finger does not steal an active drag', await pg.evaluate("() => Math.abs(window.__krtHue - 90) < 3"), await pg.evaluate("() => window.__krtHue"))
+    await pg.evaluate("() => { toggleBackgroundPickMode(); }")
+    before = await pg.evaluate("() => [backgroundColor, selectedColor]")
+    await krt_drag(pg, 'ring', 200)
+    after = await pg.evaluate("() => [backgroundColor, selectedColor, backgroundPickMode]")
+    check('colour triangle: while picking a background it changes nothing', after[0] == before[0] and after[1] == before[1] and after[2] is True, [before, after])
+    await pg.evaluate("() => exitBackgroundPickMode()")
+
 async def test_zoom_indicator(pg):
     txt = lambda: pg.evaluate("() => document.getElementById('zoomIndicator').textContent")
     vis = await pg.evaluate("() => { const r = document.getElementById('zoomIndicator').getBoundingClientRect(); return r.width > 0 && r.height > 0; }")
@@ -675,6 +766,7 @@ async def test_palette_drag_swaps(pg):
     check('palette: edit mode shows delete badges', await pg.locator('#palette .swatch-wrapper .delete-badge').first.is_visible())
     shape = await pg.evaluate("() => { const w = document.querySelector('#palette .swatch-wrapper'); const cs = getComputedStyle(w); return [cs.borderTopLeftRadius, getComputedStyle(w.querySelector('.swatch')).borderTopLeftRadius, cs.animationName]; }")
     check('palette: swatches are rounded squares that wiggle in edit mode', shape == ['22%', '20%', 'wiggle'], shape)
+    await pg.evaluate("() => { const p = document.getElementById('panel-colors'); p.scrollTop = p.scrollHeight; }")
     w = pg.locator('#palette .swatch-wrapper')
     a = await w.nth(i1).bounding_box(); b = await w.nth(i2).bounding_box()
     await pg.mouse.move(a['x'] + a['width'] / 2, a['y'] + a['height'] / 2); await pg.mouse.down()
