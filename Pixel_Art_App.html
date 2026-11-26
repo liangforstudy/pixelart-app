@@ -12553,7 +12553,7 @@ let currentProjectId = null;
 let currentProjectName = 'Untitled';
 
 // ── Gallery render ───────────────────────────────────────────
-function cardInCloud(id) { try { return cloudIsLinked(id); } catch (_) { return false; } }
+function cardInCloud(id) { try { return cloudIsLinked(id) ? (cloudState.ask[id] === 'later' ? 'later' : 'yes') : ''; } catch (_) { return ''; } }
 function renderGallery() {
     renderStorageStatus();
     const grid = document.getElementById('gallery-grid');
@@ -12606,7 +12606,7 @@ function renderGallery() {
 
         const info = document.createElement('div');
         info.className = 'card-info';
-        info.innerHTML = '<div class="card-name">' + (cardInCloud(proj.id) ? '<span class="card-cloud" title="In the cloud">\u2601\uFE0F</span> ' : '') + escapeHtml(proj.name) + '</div>' +
+        info.innerHTML = '<div class="card-name">' + (cardInCloud(proj.id) === 'later' ? '<span class="card-cloud" title="Cloud version waiting for your choice">\u26A0\uFE0F\u2601\uFE0F</span> ' : cardInCloud(proj.id) ? '<span class="card-cloud" title="In the cloud">\u2601\uFE0F</span> ' : '') + escapeHtml(proj.name) + '</div>' +
                          '<div class="card-dims">' + proj.gridW + ' \u00D7 ' + proj.gridH + 'px &middot; ' + (proj.profile || 'standard') + '</div>';
 
         if (!proj.thumbHidden) card.appendChild(thumbWrap);
@@ -12922,7 +12922,7 @@ function openGalleryCtxMenu(id, e) {
     const ctxHide = document.getElementById('ctx-thumb-hide');
     if (ctxHide) ctxHide.textContent = ctxProj && ctxProj.thumbHidden ? '\u{1F441}\uFE0F Show Thumbnail' : '\u{1F648} Hide Thumbnail';
     const ctxCloud = document.getElementById('ctx-cloud');
-    if (ctxCloud) ctxCloud.textContent = cloudIsLinked(id) ? '\u2601\uFE0F Unlink from Cloud' : '\u2601\uFE0F Save to Cloud';
+    if (ctxCloud) ctxCloud.textContent = cloudState.ask[id] === 'later' && cloudIsLinked(id) ? '\u26A0\uFE0F Choose Cloud Version\u2026' : cloudIsLinked(id) ? '\u2601\uFE0F Unlink from Cloud' : '\u2601\uFE0F Save to Cloud';
     const backdrop = document.getElementById('gallery-ctx-backdrop');
     menu.classList.add('open');
     backdrop.classList.add('open');
@@ -13710,8 +13710,9 @@ function cloudConnected() { return !!(cloud.token && cloud.repo); }
 function cloudEditorOpenId() { const s = document.getElementById('pixel-canvas-screen'); return s && s.style.display === 'block' ? currentProjectId : null; }
 
 function cloudIsLinked(id) { return !!cloudState.linked[id]; }
+function cloudLaterCount() { return Object.keys(cloudState.ask).filter(k => cloudState.ask[k] === 'later' && cloudState.linked[k]).length; }
 function cloudLinkedCount() { return Object.keys(cloudState.linked).length; }
-function cloudPendingCount() { return Object.keys(cloudState.dirty).filter(k => !cloud.awaiting.has(k)).length + Object.keys(cloudState.tomb).length + Object.keys(cloudState.unlink).length; }
+function cloudPendingCount() { return Object.keys(cloudState.dirty).filter(k => !cloud.awaiting.has(k) && cloudState.ask[k] !== 'later').length + Object.keys(cloudState.tomb).length + Object.keys(cloudState.unlink).length; }
 function cloudMarkDirty(id) {
     if (cloud.suppress || id == null || !cloudState.linked[id]) return;
     cloudState.dirty[id] = Date.now();
@@ -13914,7 +13915,10 @@ async function cloudSyncOnce() {
         if (!s) {
             const meta = JSON.parse(await cloudReadBlob(r.m));
             if (meta.updatedAt === local.updatedAt && meta.name === local.name) { items[key] = { m: r.m, d: r.d }; delete ask[key]; if (localChanged) uploads.add(id); continue; }
-            if (ask[key]) { choices.push({ id, key, r, meta }); cloud.awaiting.add(key); continue; }
+            if (ask[key]) {
+                if (ask[key] === 'later' && cloud.wantChoice !== key) continue;
+                choices.push({ id, key, r, meta }); cloud.awaiting.add(key); continue;
+            }
             if (id === editingId) continue;
             await download(key, true); conflicts++;
             uploads.add(id);
@@ -13976,19 +13980,22 @@ async function cloudSyncOnce() {
     if ((downloaded || removed) && isGalleryVisible()) renderGallery();
     if (conflicts) showAppToast(conflicts + (conflicts > 1 ? ' projects were' : ' project was') + ' changed on two devices. Both versions are kept: look for “(other device)”.', 8000);
     cloud.choices = choices;
+    cloud.wantChoice = null;
 }
 function cloudOfferNextChoice() {
     if (!cloud.choices || !cloud.choices.length) return;
     if (document.getElementById('cloud-modal').classList.contains('open')) return;
     const c = cloud.choices.shift();
     if (!projectStore.some(p => p.id === c.id) || !cloudState.ask[c.key]) { cloudOfferNextChoice(); return; }
+    if (cloud.wantChoice === c.key) cloud.wantChoice = null;
     openCloudSheet('choice', c);
 }
 function cloudResolveChoice(c, how) {
     const key = c.key, st = cloudState;
     delete st.ask[key];
     cloud.awaiting.delete(key);
-    if (how === 'later') { delete st.linked[key]; delete st.dirty[key]; }
+    if (how === 'later') { st.ask[key] = 'later'; if (!st.dirty[key]) st.dirty[key] = Date.now(); }
+    else if (how === 'unlink') { delete st.linked[key]; delete st.dirty[key]; }
     else if (how === 'mine') { st.items[key] = { m: c.r.m, d: c.r.d }; st.dirty[key] = Date.now(); }
     else if (how === 'cloud') { st.items[key] = { m: '', d: '' }; delete st.dirty[key]; }
     else { st.items[key] = { m: '', d: '' }; st.dirty[key] = Date.now(); }
@@ -14008,7 +14015,7 @@ function renderChoiceSheet(box) {
     const newer = (c.meta.updatedAt || 0) > (local.updatedAt || 0) ? 'The cloud one was edited more recently.' : (c.meta.updatedAt || 0) < (local.updatedAt || 0) ? 'The one on this device was edited more recently.' : '';
     box.append(
         cloudEl('div', { className: 'cloud-title', textContent: '☁️ Two versions of “' + (local.name || c.meta.name || 'Untitled') + '”' }),
-        cloudEl('div', { className: 'cloud-hint', textContent: 'The cloud already has this project, and it is different from the copy on this device (it was changed while unlinked). ' + newer }),
+        cloudEl('div', { className: 'cloud-hint', textContent: (cloudState.ask[c.key] === 'later' ? 'You put this choice off. Here is your copy as it is now next to the cloud one. ' : 'The cloud already has this project, and it is different from the copy on this device (it was changed while unlinked). ') + newer }),
         cloudEl('div', { className: 'cloud-choice-row' }, [side('This device', local), side('Cloud', c.meta)]),
         cloudEl('button', { className: 'cloud-btn primary', type: 'button', textContent: "KEEP THIS DEVICE'S", onclick: () => cloudResolveChoice(c, 'mine') }),
         cloudEl('div', { className: 'cloud-hint', textContent: "Replaces the cloud's version. Your other devices get this one." }),
@@ -14016,8 +14023,10 @@ function renderChoiceSheet(box) {
         cloudEl('div', { className: 'cloud-hint', textContent: 'Replaces the copy on this device.' }),
         cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'KEEP BOTH', onclick: () => cloudResolveChoice(c, 'both') }),
         cloudEl('div', { className: 'cloud-hint', textContent: 'This device keeps its copy; the cloud one comes in as “(other device)”. Both stay in the cloud.' }),
-        cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'NOT NOW', onclick: () => cloudResolveChoice(c, 'later') }),
-        cloudEl('div', { className: 'cloud-hint', textContent: 'Leaves it unlinked. Nothing changes.' })
+        cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'DECIDE LATER', onclick: () => cloudResolveChoice(c, 'later') }),
+        cloudEl('div', { className: 'cloud-hint', textContent: 'Keep drawing on this copy. It waits, marked ⚠️☁️, and nothing syncs for it until you choose: long-press › Choose Cloud Version.' }),
+        cloudEl('button', { className: 'cloud-btn', type: 'button', textContent: 'UNLINK', onclick: () => cloudResolveChoice(c, 'unlink') }),
+        cloudEl('div', { className: 'cloud-hint', textContent: 'Leaves it out of the cloud. Nothing changes.' })
     );
 }
 
@@ -14078,7 +14087,8 @@ function renderCloudBar() {
     if (!el) return;
     let main, sub = '', warn = false;
     const pending = cloudPendingCount(), n = cloudLinkedCount();
-    const inCloud = n ? n + ' project' + (n > 1 ? 's' : '') + ' in the cloud' : 'Long-press a project › Save to Cloud';
+    const later = cloudLaterCount();
+    const inCloud = (n ? n + ' project' + (n > 1 ? 's' : '') + ' in the cloud' : 'Long-press a project › Save to Cloud') + (later ? ' · ' + later + ' waiting for your choice' : '');
     if (!cloudConnected()) { main = '☁️ Sync with GitHub'; sub = 'Carry on from your other devices'; }
     else if (cloud.status === 'syncing') { main = '☁️ Syncing…'; sub = cloud.progress || cloud.repo; }
     else if (cloud.status === 'error') { main = '☁️ Sync problem'; sub = cloud.error; warn = true; }
@@ -14333,7 +14343,12 @@ document.getElementById('ctx-cloud').addEventListener('click', () => {
     closeGalleryCtxMenu();
     const proj = projectStore.find(p => p.id === id);
     if (!proj) return;
-    if (cloudIsLinked(id)) {
+    if (cloudIsLinked(id) && cloudState.ask[id] === 'later') {
+        if (!cloudConnected()) { openCloudSheet('settings'); return; }
+        cloud.wantChoice = String(id);
+        showAppToast('Checking the cloud version…', 2500);
+        cloudSync();
+    } else if (cloudIsLinked(id)) {
         cloudUnlinkProject(id);
         showAppToast('“' + proj.name + '” is out of the cloud. It stays on this device, and other devices keep their copy (no longer synced).', 7000);
     } else if (!cloudConnected()) openCloudSheet('settings', { linkAfter: id });
