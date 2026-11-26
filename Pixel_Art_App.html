@@ -13605,6 +13605,8 @@ function xfOpen() {
     XF.st = { ...XF.st0 };
     XF.backdrop = null; XF.comp = null; XF.compKey = null;
     XF.view = { zoom: 1, panX: 0, panY: 0 }; XF.ptrs.clear(); XF.drag = null; XF.pinch = null;
+    // Remember the main canvas's on-screen zoom and centre before the screen covers it, so Transform opens at the same view (MediBang-style).
+    try { const cr = container.getBoundingClientRect(); XF.mainView = { sc: scale * cameraScale, cx: cr.left + cr.width / 2, cy: cr.top + cr.height / 2 }; } catch (_) { XF.mainView = null; }
     closePanel(); closeDrawer();
     XF.open = true;
     document.body.classList.add('xf-open');
@@ -13636,14 +13638,14 @@ function xfViewMetrics() {
     const sc = fit * XF.view.zoom;
     return { sc, ox: (r.width - gridW * sc) / 2 + XF.view.panX, oy: (r.height - gridH * sc) / 2 + XF.view.panY, rect: r };
 }
-// Opens zoomed in on small pieces (handles crowd otherwise), centred on them.
+// Opens at the main canvas's current zoom and position (keeps your view, like MediBang). Pinch or wheel to zoom from there.
 function xfFocusView() {
-    const m = xfViewMetrics(), fit = m.sc / XF.view.zoom, big = Math.max(XF.st.w, XF.st.h) * fit;
-    XF.view.zoom = big < 160 ? Math.min(64, 160 / Math.max(0.01, big)) : 1;
-    if (XF.view.zoom > 1) {
-        const sc = fit * XF.view.zoom;
-        XF.view.panX = gridW * sc / 2 - XF.st.cx * sc; XF.view.panY = gridH * sc / 2 - XF.st.cy * sc;
-    } else { XF.view.panX = XF.view.panY = 0; }
+    const m = xfViewMetrics(), fit = m.sc / XF.view.zoom, mv = XF.mainView;
+    if (mv && mv.sc > 0) {
+        XF.view.zoom = Math.max(0.1, Math.min(64, mv.sc / fit));
+        XF.view.panX = mv.cx - m.rect.left - m.rect.width / 2;
+        XF.view.panY = mv.cy - m.rect.top - m.rect.height / 2;
+    } else { XF.view.zoom = 1; XF.view.panX = XF.view.panY = 0; }
     xfDraw();
 }
 function xfToGrid(clientX, clientY) { const m = xfViewMetrics(); return [(clientX - m.rect.left - m.ox) / m.sc, (clientY - m.rect.top - m.oy) / m.sc]; }

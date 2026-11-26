@@ -377,7 +377,7 @@
 - `xfResample(st, src, sw, sh, interp, mask)` Inverse-mapped nearest/bilinear/bicubic into a canvas-sized RGBA buffer (+ transformed selection mask).
 - `xfNudge(dx, dy)` / `xfStepSize(sign)` / `xfStepRotate(sign)` / `xfFlip(axis)` / `xfReset()` Step edits.
 - `xfFieldChanged(id)` Typed X/Y/W/H/degree and step boxes. `xfSyncUI()` / `xfSyncFields()` Refresh the bar.
-- `xfPointerDown/Move/Up`, `xfWheel` Handles, move, rotate, pinch (piece or view), Space pan, zoom. `xfFocusView()` Zooms in on small pieces.
+- `xfPointerDown/Move/Up`, `xfWheel` Handles, move, rotate, pinch (piece or view), Space pan, zoom. `xfFocusView()` Opens at the main canvas zoom/centre (`XF.mainView`, captured in `xfOpen`); rotation not carried.
 - `xfBoxPoint(st, sx, sy)` / `xfToLocal(st, gx, gy)` Box geometry. `xfLayerRGBA(layer)` RGBA of a pixel-like layer.
 - `buildTransformOpenRow()` Layer settings TRANSFORM (SELECTION) button.
 
