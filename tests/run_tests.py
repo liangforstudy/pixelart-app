@@ -48,7 +48,7 @@ GROUPS = {
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
-                  ['test_transform_basics', 'test_transform_selection_and_kinds']),
+                  ['test_transform_basics', 'test_transform_selection_and_kinds', 'test_transform_live_preview']),
     'eyedrop': ('Eyedropper sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
                 ['test_eyedrop_sample_size']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
@@ -1134,6 +1134,21 @@ async def test_mouse_cursor_visibility(pg):
     await pg.evaluate("() => { setActiveLayer(0); handleToolBtn('pan'); }")
     await pg.mouse.move(x + 9, y + 9)
     check('cursor: a tool without a pixel cursor shows the system pointer', await pg.evaluate("() => !container.classList.contains('pixel-cursor-mode')"))
+
+async def test_transform_live_preview(pg):
+    await new_canvas(pg)
+    await pg.evaluate(DRAW, [[[x, y] for x in range(32) for y in range(32)], '#3D7BE5'])
+    await pg.evaluate("() => { addPixelLayer(); selectedColor = '#E5533D'; for (let x = 8; x < 20; x++) for (let y = 8; y < 20; y++) plot(x, y); const l = activeLayer(); l.opacity = 0.5; l.blendMode = 'multiply'; l.applyVisualState(); reindexDom(); xfPrefs.interp = 'nearest'; }")
+    for rot, interp in ((30, 'nearest'), (15, 'bilinear')):
+        same = await pg.evaluate("""([rot, interp]) => { xfPrefs.interp = interp; xfOpen(); XF.st.rot = rot; XF.st.cx += 2;
+            const live = xfLiveComposite().getContext('2d').getImageData(0, 0, gridW, gridH).data;
+            xfDone(); const real = flattenToCanvas().getContext('2d').getImageData(0, 0, gridW, gridH).data;
+            let diff = 0; for (let i = 0; i < live.length; i++) if (Math.abs(live[i] - real[i]) > 1) diff++;
+            undo(); return diff; }""", [rot, interp])
+        check(f'xf live: preview equals the result after Done, with opacity + blend mode ({interp}, {rot} deg)', same == 0, same)
+    keep = await pg.evaluate("() => { xfOpen(); const d = xfLiveComposite().getContext('2d').getImageData(12, 12, 1, 1).data; xfCancel(); return Array.from(d); }")
+    check('xf live: the layer keeps its opacity and blend mode in the preview (50% multiply, not plain red)', keep[0] < 120 and keep[2] > 60, keep)
+    check('xf live: opacity and blend mode untouched after Done', await pg.evaluate("() => { xfOpen(); XF.st.cx += 1; xfDone(); const l = activeLayer(); return l.opacity === 0.5 && l.blendMode === 'multiply'; }"))
 
 # ---------------------------------------------------------------- runner
 BASE_URL = ''

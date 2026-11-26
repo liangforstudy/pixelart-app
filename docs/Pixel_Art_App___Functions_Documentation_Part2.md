@@ -370,6 +370,7 @@
 - `setEyedropSampleSize(n)` / `renderEyedropSampleRow()` Sample size pref and its button row. `averageCanvasColour(canvas, x, y, n)` Alpha-weighted N x N average or null.
 
 ## Transform screen (V2_6)
+- `xfLiveComposite()` Live preview frame (real compositing). `xfComposeResult(s)` / `xfSnappedState(st)` Result pixels shared by preview and Done. `xfSourceFor(l)` Preview override hook.
 - `zoomAtClientPoint(clientX, clientY, dir)` One wheel zoom step keeping the canvas point under the mouse fixed.
 - `xfOpen()` Lifts the active layer's pixels (or selected pixels) and opens `#xfScreen`; false + toast if nothing to transform.
 - `xfDone()` / `xfCancel()` / `xfClose()` Apply (one `layerTransform` undo step) / discard / hide.
