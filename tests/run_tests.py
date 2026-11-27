@@ -1565,7 +1565,7 @@ async def test_eyedrop_reopen_and_toast(pg):
     await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(8); scale = 8; layoutAll(); setEyedropReopen('tools', false); setEyedropReopen('colours', false); }")
     TOAST = "() => document.getElementById('eyedropToast').classList.contains('showing')"
     await pg.evaluate("() => openDrawer('tools')"); await pg.wait_for_timeout(400)
-    check('eyedrop reopen: checkbox sits under the Tools eyedropper, unticked', await pg.evaluate("() => { const b = document.querySelector('#toolsDrawer .tool-btn[data-tool=eyedrop]'), c = document.getElementById('eyedropReopenTools'); return !!c && b.parentElement.nextElementSibling === c.closest('label') && document.querySelectorAll('#eyedropReopenTools').length === 1 && !c.checked && c.closest('label').textContent.includes('Open this menu after selecting'); }"))
+    check('eyedrop reopen: checkbox sits under the Tools eyedropper, unticked', await pg.evaluate("() => { const b = document.querySelector('#toolsDrawer .tool-btn[data-tool=eyedrop]'), c = document.getElementById('eyedropReopenTools'); return !!c && b.parentElement.nextElementSibling === c.closest('label') && document.querySelectorAll('#eyedropReopenTools').length === 1 && !c.checked && c.closest('label').textContent.includes('Open this menu after selecting a colour'); }"))
     await pg.locator('#toolsDrawer .tool-btn[data-tool=eyedrop]').click(); await pg.wait_for_timeout(450)
     check('eyedrop toast: shows when the eyedropper is active and drawers are closed', await pg.evaluate(TOAST) and await pg.locator('#eyedropToast').is_visible())
     check('eyedrop toast: says the eyedropper is active', 'eyedropper is active' in (await pg.locator('#eyedropToast').text_content()).lower())

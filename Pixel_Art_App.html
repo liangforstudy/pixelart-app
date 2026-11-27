@@ -1470,7 +1470,7 @@
                 <div id="currentColourChip" class="current-colour-chip" title="Drawing colour"></div>
                 <button id="coloursEyedropBtn" class="btn" onclick="uiAction(startEyedropFromColours)">💧 EYEDROPPER</button>
             </div>
-            <label class="eyedrop-reopen-row"><input type="checkbox" id="eyedropReopenColours" onchange="setEyedropReopen('colours', this.checked)"> Open this menu after selecting</label>
+            <label class="eyedrop-reopen-row"><input type="checkbox" id="eyedropReopenColours" onchange="setEyedropReopen('colours', this.checked)"> Open this menu after selecting a colour</label>
             <div class="panel-subtitle">BACKGROUND (CANVAS FILL)</div>
             <div class="row" id="bgRow" style="align-items:center;">
                 <div id="bgSwatchColours" class="bg-swatch bg-none"></div>
@@ -2525,7 +2525,7 @@ function renderToolButtons() {
                 const lab = document.createElement('label'); lab.className = 'eyedrop-reopen-row';
                 const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'eyedropReopenTools'; cb.checked = !!eyedropReopenPrefs.tools;
                 cb.onchange = () => setEyedropReopen('tools', cb.checked);
-                lab.append(cb, document.createTextNode(' Open this menu after selecting'));
+                lab.append(cb, document.createTextNode(' Open this menu after selecting a colour'));
                 const prev = document.getElementById('eyedropReopenTools'); if (prev) prev.closest('label').remove();
                 container.after(lab);
             }
