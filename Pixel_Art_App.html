@@ -410,9 +410,11 @@
         #xfFinishRow #xfDoneBtn { flex: 1 1 auto; }
         .xf-tab.active { background: #55555c; color: #fff; }
         .xf-tab-later { color: #777; }
-        #xfStage { flex: 1 1 auto; min-height: 0; position: relative; }
+        #xfStage { flex: 0 0 auto; height: 100vh; max-height: 55%; min-height: 0; position: relative; }
+        #xfSplitHandle { background: #1c1c1c; border-top: 1px solid #333; }
+        #xfFinishRow { position: sticky; top: 0; z-index: 2; background: #1c1c1c; padding: 6px 0; margin-bottom: -2px; }
         #xfCanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
-        #xfBar { flex: none; background: #1c1c1c; border-top: 1px solid #333; padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+        #xfBar { flex: 1 1 auto; min-height: 0; background: #1c1c1c; padding: 0 8px 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 6px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
         .xf-row { display: flex; gap: 6px; }
         .xf-row .btn { flex: 1 1 0; min-height: 44px; }
         .xf-row .btn.xf-icon { font-size: 20px; }
@@ -1122,7 +1124,13 @@
             </div>
         </div>
         <div id="xfStage"><canvas id="xfCanvas"></canvas></div>
+        <div id="xfSplitHandle" class="cdsplit" role="separator" aria-label="Drag to resize"></div>
         <div id="xfBar">
+            <div class="xf-row" id="xfFinishRow">
+                <button class="btn xf-hist-btn" id="xfUndoBtn" onclick="uiAction(xfUndo)" aria-label="Undo transform step" disabled>↶ UNDO</button>
+                <button class="btn xf-hist-btn" id="xfRedoBtn" onclick="uiAction(xfRedo)" aria-label="Redo transform step" disabled>↷ REDO</button>
+                <button class="layers-done-btn" id="xfDoneBtn" onclick="uiAction(xfDone)">✓ DONE</button>
+            </div>
             <div class="xf-row">
                 <button class="btn" id="xfResetBtn" onclick="uiAction(xfReset)">RESET</button>
                 <button class="btn xf-icon" id="xfShrinkBtn" onclick="uiAction(() => xfStepSize(-1))" aria-label="Smaller">−</button>
@@ -1161,11 +1169,6 @@
                 <label>MOVE STEP px<input type="number" inputmode="decimal" id="xfMoveStep" class="num-input" min="0.01"></label>
                 <label>SIZE STEP px<input type="number" inputmode="decimal" id="xfSizeStep" class="num-input" min="0.01"></label>
                 <label>ROTATE STEP °<input type="number" inputmode="decimal" id="xfRotStep" class="num-input" min="0.01"></label>
-            </div>
-            <div class="xf-row" id="xfFinishRow">
-                <button class="btn xf-hist-btn" id="xfUndoBtn" onclick="uiAction(xfUndo)" aria-label="Undo transform step" disabled>↶ UNDO</button>
-                <button class="btn xf-hist-btn" id="xfRedoBtn" onclick="uiAction(xfRedo)" aria-label="Redo transform step" disabled>↷ REDO</button>
-                <button class="layers-done-btn" id="xfDoneBtn" onclick="uiAction(xfDone)">✓ DONE</button>
             </div>
         </div>
     </div>
@@ -1733,7 +1736,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_6';
+const BUILD_VERSION = 'V2_8_7';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -13604,8 +13607,10 @@ function xfOpen() {
     document.body.classList.add('xf-open');
     document.getElementById('xfScreen').style.display = 'flex';
     xfSyncUI();
+    XF.lastSc = null;
     xfResizeCanvas();
     xfFocusView();
+    XF.lastSc = xfViewMetrics().sc;
     return true;
 }
 function xfClose() {
@@ -14024,6 +14029,12 @@ function buildTransformOpenRow() {
         c.addEventListener('wheel', xfWheel, { passive: false });
         ['xfX', 'xfY', 'xfW', 'xfH', 'xfR', 'xfMoveStep', 'xfSizeStep', 'xfRotStep'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('change', () => uiAction(() => xfFieldChanged(id))); });
         window.addEventListener('resize', () => { if (XF.open) xfResizeCanvas(); });
+        // Divider between canvas and controls (same collapsing split as the Layers/Debug drawers); stage resizes keep the on-screen zoom.
+        let xfSplitPct = 55; try { const v = parseFloat(localStorage.getItem('pixelAppXfSplitPct')); if (v >= 15 && v <= 85) xfSplitPct = v; } catch (_) {}
+        makeCollapsingSplit({ handleId: 'xfSplitHandle', boxId: 'xfScreen', topId: 'xfStage', getPct: () => xfSplitPct, setPct: v => { xfSplitPct = v; },
+            save: () => { try { localStorage.setItem('pixelAppXfSplitPct', String(Math.round(xfSplitPct))); } catch (_) {} } });
+        const stage = document.getElementById('xfStage');
+        if (stage && window.ResizeObserver) new ResizeObserver(() => { if (!XF.open) return; const prev = XF.lastSc; xfResizeCanvas(); if (prev) { const m = xfViewMetrics(); XF.view.zoom = Math.max(0.1, Math.min(64, XF.view.zoom * prev / m.sc)); xfDraw(); } XF.lastSc = xfViewMetrics().sc; }).observe(stage);
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
