@@ -403,7 +403,11 @@
         .xf-top-btn { min-width: 52px; min-height: 44px; background: none; border: none; color: #4da3ff; font-size: 17px; font-weight: 600; cursor: pointer; }
         #xfCancelBtn { font-size: 22px; }
         #xfModeTabs { flex: 1; display: flex; background: #2a2a2e; border-radius: 10px; padding: 3px; gap: 2px; }
-        .xf-tab { flex: 1; min-height: 38px; border: none; border-radius: 8px; background: none; color: #ddd; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .xf-tab { flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 3px 6px; border: none; border-radius: 8px; background: none; color: #ddd; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; white-space: nowrap; }
+        .xf-tab-ico { font-size: 17px; line-height: 1; }
+        .xf-hist-btn { min-width: 40px; font-size: 22px; }
+        .xf-hist-btn:disabled { color: #555; }
+        #xfDoneBtn { margin-top: 2px; }
         .xf-tab.active { background: #55555c; color: #fff; }
         .xf-tab-later { color: #777; }
         #xfStage { flex: 1 1 auto; min-height: 0; position: relative; }
@@ -421,7 +425,6 @@
         .xf-fields label { flex: 1 1 0; display: flex; flex-direction: column; font-size: 9px; color: #888; text-align: center; gap: 2px; min-width: 0; }
         .xf-fields input { height: 38px; font-size: 16px; width: 100%; box-sizing: border-box; text-align: center; }
         .xf-steps label { font-size: 8px; }
-        #xfDoneBtn { color: #4da3ff; }
         body.xf-open #debugFab { display: none; } /* it sat on top of Done */
         .rs-row { display: flex; gap: 6px; }
         .rs-row .btn { flex: 1 1 0; min-height: 44px; }
@@ -1113,11 +1116,12 @@
         <div id="xfTopBar">
             <button class="xf-top-btn" id="xfCancelBtn" onclick="uiAction(xfCancel)" aria-label="Cancel">✕</button>
             <div id="xfModeTabs">
-                <button class="xf-tab active" data-mode="default">Default</button>
-                <button class="xf-tab xf-tab-later" data-mode="free" onclick="uiAction(() => showAppToast('Free (corner / perspective distort) is planned -- roadmap item 12.', 3500))">Free</button>
-                <button class="xf-tab xf-tab-later" data-mode="mesh" onclick="uiAction(() => showAppToast('Mesh (puppet warp) is planned -- roadmap item 12.', 3500))">Mesh</button>
+                <button class="xf-tab active" data-mode="default"><span class="xf-tab-ico">▭</span>Default</button>
+                <button class="xf-tab xf-tab-later" data-mode="perspective" onclick="uiAction(() => showAppToast('Perspective (corner distort) is planned -- roadmap item 12.', 3500))"><span class="xf-tab-ico">⏢</span>Perspective</button>
+                <button class="xf-tab xf-tab-later" data-mode="puppet" onclick="uiAction(() => showAppToast('Puppet (pin warp) is planned -- roadmap item 12.', 3500))"><span class="xf-tab-ico">📍</span>Puppet</button>
             </div>
-            <button class="xf-top-btn" id="xfDoneBtn" onclick="uiAction(xfDone)">Done</button>
+            <button class="xf-top-btn xf-hist-btn" id="xfUndoBtn" onclick="uiAction(xfUndo)" aria-label="Undo transform step" disabled>↶</button>
+            <button class="xf-top-btn xf-hist-btn" id="xfRedoBtn" onclick="uiAction(xfRedo)" aria-label="Redo transform step" disabled>↷</button>
         </div>
         <div id="xfStage"><canvas id="xfCanvas"></canvas></div>
         <div id="xfBar">
@@ -1125,8 +1129,8 @@
                 <button class="btn" id="xfResetBtn" onclick="uiAction(xfReset)">RESET</button>
                 <button class="btn xf-icon" id="xfShrinkBtn" onclick="uiAction(() => xfStepSize(-1))" aria-label="Smaller">−</button>
                 <button class="btn xf-icon" id="xfGrowBtn" onclick="uiAction(() => xfStepSize(1))" aria-label="Bigger">+</button>
-                <button class="btn xf-icon" id="xfRotLeftBtn" onclick="uiAction(() => xfStepRotate(-1))" aria-label="Rotate left">↺</button>
-                <button class="btn xf-icon" id="xfRotRightBtn" onclick="uiAction(() => xfStepRotate(1))" aria-label="Rotate right">↻</button>
+                <button class="btn" id="xfRotLeftBtn" onclick="uiAction(() => xfStepRotate(-1))" aria-label="Rotate left">ROT −15°</button>
+                <button class="btn" id="xfRotRightBtn" onclick="uiAction(() => xfStepRotate(1))" aria-label="Rotate right">ROT +15°</button>
             </div>
             <div class="xf-split">
                 <div class="xf-col">
@@ -1160,6 +1164,7 @@
                 <label>SIZE STEP px<input type="number" inputmode="decimal" id="xfSizeStep" class="num-input" min="0.01"></label>
                 <label>ROTATE STEP °<input type="number" inputmode="decimal" id="xfRotStep" class="num-input" min="0.01"></label>
             </div>
+            <button class="layers-done-btn" id="xfDoneBtn" onclick="uiAction(xfDone)">✓ DONE</button>
         </div>
     </div>
 
@@ -1726,7 +1731,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_4';
+const BUILD_VERSION = 'V2_8_5';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -6698,8 +6703,8 @@ function updateToolVisibility() {
 
 // True only when TRANSFORM mode is on AND the active layer is a reference layer -- gates the drag/pinch reposition-and-scale gesture.
 function transformActive() {
-    const layer = activeLayer();
-    return transformMode && layer && layer.type === 'reference';
+    // V2_8_5: the old in-place reference TRANSFORM mode has no UI any more, so this is always false (its gesture branches are now dead).
+    return false;
 }
 
 // Returns the Layer object tools currently act on (or null).
@@ -7510,33 +7515,7 @@ function buildReferenceTransformUI(layer) {
     wrap.style.alignItems = 'stretch';
     wrap.style.gap = '6px';
 
-    const toggleRow = document.createElement('div');
-    toggleRow.className = 'row';
-    const toggle = document.createElement('button');
-    toggle.className = 'btn' + (transformMode ? ' active' : '');
-    toggle.style.fontSize = '10px';
-    toggle.innerText = transformMode ? 'TRANSFORM: ON (drag=move, pinch=scale+rotate)' : 'TRANSFORM: OFF';
-    toggle.onclick = (e) => { e.stopPropagation(); transformMode = !transformMode; renderLayersPanel(); };
-    toggleRow.appendChild(toggle);
-    wrap.appendChild(toggleRow);
-
-    const mkField = (labelText, key) => {
-        const col = document.createElement('div');
-        col.style.flex = '1';
-        const lab = document.createElement('div');
-        lab.innerText = labelText; lab.style.fontSize = '9px'; lab.style.color = '#888'; lab.style.textAlign = 'center';
-        const input = document.createElement('input');
-        input.type = 'number'; input.className = 'num-input'; input.style.height = '30px';
-        input.value = Math.round((layer[key] || 0) * 100) / 100;
-        input.onchange = (e) => { e.stopPropagation(); layer[key] = parseFloat(input.value) || 0; layer.layoutCSS(); };
-        input.onclick = (e) => e.stopPropagation();
-        col.append(lab, input);
-        return col;
-    };
-    const fieldRow = document.createElement('div');
-    fieldRow.className = 'row';
-    fieldRow.append(mkField('X', 'gx'), mkField('Y', 'gy'), mkField('W', 'gw'), mkField('H', 'gh'), mkField('\u00B0', 'rotation'));
-    wrap.appendChild(fieldRow);
+    // Old in-place TRANSFORM toggle + X/Y/W/H/° fields removed in V2_8_5 -- the fullscreen Transform screen (#xfScreen) replaces them.
 
     const resetRow = document.createElement('div');
     resetRow.className = 'row';
@@ -13613,6 +13592,7 @@ function xfOpen() {
         XF.st0 = { cx: x0 + sw / 2, cy: y0 + sh / 2, w: sw, h: sh, rot: 0, fh: false, fv: false };
     }
     XF.st = { ...XF.st0 };
+    XF.hist = [{ ...XF.st0 }]; XF.histIdx = 0;
     XF.backdrop = null; XF.comp = null; XF.compKey = null;
     XF.view = { zoom: 1, panX: 0, panY: 0 }; XF.ptrs.clear(); XF.drag = null; XF.pinch = null;
     // Remember the main canvas's on-screen zoom and centre before the screen covers it, so Transform opens at the same view (MediBang-style).
@@ -13758,19 +13738,19 @@ function xfLiveComposite() {
 let xfDrawPending = false;
 function xfRequestDraw() { if (xfDrawPending) return; xfDrawPending = true; requestAnimationFrame(() => { xfDrawPending = false; xfDraw(); }); }
 function xfChanged() { xfSyncFields(); xfRequestDraw(); }
-function xfNudge(dx, dy) { XF.st.cx += dx * xfPrefs.moveStep; XF.st.cy += dy * xfPrefs.moveStep; xfChanged(); }
+function xfNudge(dx, dy) { XF.st.cx += dx * xfPrefs.moveStep; XF.st.cy += dy * xfPrefs.moveStep; xfChanged(); xfPushHist(); }
 // -/+ by pixels of width (height follows when the ratio is locked), centre anchored.
 function xfStepSize(sign) {
     const st = XF.st, nw = Math.max(1, st.w + sign * xfPrefs.sizeStep);
     if (xfPrefs.lock) st.h = Math.max(1, st.h * nw / st.w);
-    st.w = nw; xfChanged();
+    st.w = nw; xfChanged(); xfPushHist();
 }
-function xfStepRotate(sign) { XF.st.rot = xfNormDeg(XF.st.rot + sign * xfPrefs.rotStep); xfChanged(); }
+function xfStepRotate(sign) { XF.st.rot = xfNormDeg(XF.st.rot + sign * xfPrefs.rotStep); xfChanged(); xfPushHist(); }
 function xfNormDeg(d) { d = ((d % 360) + 360) % 360; return Math.abs(d - Math.round(d)) < 1e-9 ? Math.round(d) : d; }
-function xfFlip(axis) { if (axis === 'h') XF.st.fh = !XF.st.fh; else XF.st.fv = !XF.st.fv; xfSyncUI(); xfDraw(); }
+function xfFlip(axis) { if (axis === 'h') XF.st.fh = !XF.st.fh; else XF.st.fv = !XF.st.fv; xfPushHist(); xfSyncUI(); xfDraw(); }
 function xfToggleLock() { xfPrefs.lock = !xfPrefs.lock; saveXfPrefs(); xfSyncUI(); }
 function xfSetInterp(v) { if (['nearest', 'bilinear', 'bicubic'].includes(v)) { xfPrefs.interp = v; saveXfPrefs(); } xfSyncUI(); xfDraw(); }
-function xfReset() { XF.st = { ...XF.st0 }; xfSyncUI(); xfDraw(); }
+function xfReset() { XF.st = { ...XF.st0 }; xfPushHist(); xfSyncUI(); xfDraw(); }
 const xfRound = v => Math.round(v * 100) / 100;
 function xfSyncFields() {
     const st = XF.st, f = { xfX: st.cx - st.w / 2, xfY: st.cy - st.h / 2, xfW: st.w, xfH: st.h, xfR: st.rot };
@@ -13785,7 +13765,25 @@ function xfSyncUI() {
     if (sel) { sel.value = xfPrefs.interp; sel.disabled = XF.kind === 'reference'; sel.title = XF.kind === 'reference' ? 'Reference layers are never resampled: their display mode decides how they look.' : ''; }
     const fh = document.getElementById('xfFlipHBtn'); if (fh && XF.st) fh.classList.toggle('active', XF.st.fh);
     const fv = document.getElementById('xfFlipVBtn'); if (fv && XF.st) fv.classList.toggle('active', XF.st.fv);
+    const rs = +(+xfPrefs.rotStep).toFixed(2), rl = document.getElementById('xfRotLeftBtn'), rr = document.getElementById('xfRotRightBtn');
+    if (rl) rl.textContent = 'ROT −' + rs + '°'; if (rr) rr.textContent = 'ROT +' + rs + '°';
+    xfSyncHistBtns();
 }
+// ---- Transform-screen undo/redo: linear stack of piece states (XF.hist / XF.histIdx), local to this session. ----
+function xfSyncHistBtns() {
+    const u = document.getElementById('xfUndoBtn'), r = document.getElementById('xfRedoBtn');
+    if (u) u.disabled = !XF.hist || XF.histIdx <= 0; if (r) r.disabled = !XF.hist || XF.histIdx >= XF.hist.length - 1;
+}
+function xfPushHist() {
+    if (!XF.st || !XF.hist) return;
+    const cur = XF.hist[XF.histIdx], st = XF.st;
+    if (cur && ['cx','cy','w','h','rot','fh','fv'].every(k => cur[k] === st[k])) return;
+    XF.hist.length = XF.histIdx + 1; XF.hist.push({ ...st }); XF.histIdx = XF.hist.length - 1;
+    if (XF.hist.length > 200) { XF.hist.shift(); XF.histIdx--; }
+    xfSyncHistBtns();
+}
+function xfUndo() { if (!XF.hist || XF.histIdx <= 0) return; XF.histIdx--; XF.st = { ...XF.hist[XF.histIdx] }; xfSyncUI(); xfDraw(); }
+function xfRedo() { if (!XF.hist || XF.histIdx >= XF.hist.length - 1) return; XF.histIdx++; XF.st = { ...XF.hist[XF.histIdx] }; xfSyncUI(); xfDraw(); }
 // Typed boxes: X/Y = top-left before rotation; W/H centre-anchored (W
 // keeps the ratio when locked); ° about the centre.
 function xfFieldChanged(id) {
@@ -13801,7 +13799,7 @@ function xfFieldChanged(id) {
         if (v > 0) xfPrefs[id === 'xfMoveStep' ? 'moveStep' : id === 'xfSizeStep' ? 'sizeStep' : 'rotStep'] = v;
         saveXfPrefs(); xfSyncUI(); return;
     }
-    xfChanged();
+    xfChanged(); xfPushHist();
 }
 
 // ---- pointer: handles (opposite side anchored), inside = move,
@@ -13874,7 +13872,7 @@ function xfPointerMove(e) {
 function xfPointerUp(e) {
     XF.ptrs.delete(e.pointerId);
     if (XF.ptrs.size < 2) XF.pinch = null;
-    if (XF.ptrs.size === 0) XF.drag = null;
+    if (XF.ptrs.size === 0) { XF.drag = null; xfPushHist(); }
 }
 function xfWheel(e) {
     e.preventDefault();

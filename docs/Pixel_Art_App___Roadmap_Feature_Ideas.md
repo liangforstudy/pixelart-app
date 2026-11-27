@@ -19,7 +19,7 @@ New capability only (defects go in the Fix List). Nothing here is scheduled unti
 | 9 | Solid background fill (document setting) | Done V2_3 |
 | 10 | Checkerboard colour profiles | Done V1_39 (8-canvas-px squares V1_44_2) |
 | 11 | SVG export for vector layers | Open |
-| 12 | Transform: selection / layers / masks | Selection resize + rotate done V1_40-V1_41_3; Transform screen Default mode V2_6; Free, Mesh, vector open |
+| 12 | Transform: selection / layers / masks | Selection resize + rotate done V1_40-V1_41_3; Transform screen Default mode V2_6; Perspective, Puppet, vector open |
 | 13 | Blend modes (group + layer) | Done Sessions 7a-7d |
 | 14 | Raster tool gating on huge canvases | Done; toast + tappable greyed buttons V1_44_1 |
 | 15 | Expand canvas by selecting outside it | Done V2_1 as the resize screen (choosing how it's opened is still being tried out) |

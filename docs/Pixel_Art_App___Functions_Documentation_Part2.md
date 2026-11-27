@@ -44,7 +44,7 @@
 
 ## Reference Layer
 
-- `buildReferenceTransformUI(layer)` Builds the small transform-editing panel shown beneath a Reference layer's row when it's.
+- `buildReferenceTransformUI(layer)` Reference layer extras under its row: reset transform, 1:1 actual size, display sampling, mapart colours (old TRANSFORM toggle/fields removed V2_8_5). `xfUndo/xfRedo/xfPushHist/xfSyncHistBtns` Transform-screen undo stack.
 
 ## Search / Command Palette
 
