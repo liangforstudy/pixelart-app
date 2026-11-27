@@ -1120,6 +1120,8 @@ async def test_gallery_canvas_flies_to_card(pg):
     await pg.evaluate("() => goToMainMenu()")
     g = await pg.evaluate("() => ({ghost: !!document.getElementById('galleryFxGhost'), black: !!document.getElementById('galleryFxBlack'), cardHidden: document.querySelector('.gallery-card[data-id] .thumb-wrap img').style.visibility === 'hidden'})")
     check('gallery anim: exit shows the canvas ghost over a black fade', g['ghost'] and g['black'] and g['cardHidden'], g)
+    ar = await pg.evaluate("() => { const g = document.getElementById('galleryFxGhost'), i = g.querySelector('img'); return [g.offsetWidth / g.offsetHeight, getComputedStyle(i).objectFit]; }")
+    check('gallery anim: ghost has the canvas shape and crops the square thumbnail padding', abs(ar[0] - 1) < 0.02 and ar[1] == 'cover', ar)
     await pg.wait_for_timeout(700)
     check('gallery anim: ghost lands and the card shows again', await pg.evaluate("() => !document.getElementById('galleryFxGhost') && !document.getElementById('galleryFxBlack') && document.querySelector('.gallery-card[data-id] .thumb-wrap img').style.visibility === ''"))
     for i in range(7):

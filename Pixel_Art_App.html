@@ -15150,10 +15150,10 @@ function galleryFxClear() {
 }
 let galleryFxFailsafe = null;
 function galleryMakeGhost(src, to) {
-    const g = galleryFxLayer('galleryFxGhost', 1157, 'left:' + (to.cx - to.w / 2) + 'px;top:' + (to.cy - to.h / 2) + 'px;width:' + to.w + 'px;height:' + to.h + 'px;transform-origin:50% 50%;box-shadow:0 10px 30px rgba(0,0,0,.5);');
+    const g = galleryFxLayer('galleryFxGhost', 1157, 'left:' + (to.cx - to.w / 2) + 'px;top:' + (to.cy - to.h / 2) + 'px;width:' + to.w + 'px;height:' + to.h + 'px;transform-origin:50% 50%;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.5);');
     g.className = 'checkerboard-bg';
     try { applyCheckerProfile(g, checkerSettings.canvas, 'canvas'); } catch (_) {}
-    const img = document.createElement('img'); img.src = src; img.style.cssText = 'width:100%;height:100%;display:block;image-rendering:pixelated;';
+    const img = document.createElement('img'); img.src = src; img.style.cssText = 'width:100%;height:100%;display:block;object-fit:cover;image-rendering:pixelated;';
     g.appendChild(img);
     return g;
 }
