@@ -1736,7 +1736,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_7';
+const BUILD_VERSION = 'V2_8_8';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -5305,7 +5305,8 @@ function newCanvasCreation() {
     currentThumbHidden = false;
     zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
     scale = ZOOM_STEPS[zoomIndex];
-    layoutAll();
+    cameraScale = 1; cameraPanX = 0; cameraPanY = 0; cameraRotation = 0; // clean camera for a new canvas
+    layoutAll(); applyCameraTransform();
 }
 
 // Converts the base raster layer type when a Pixel Art canvas crosses the
@@ -5930,6 +5931,24 @@ function getViewportSize() {
 // rather than an arbitrary saved zoom level; see newCanvasCreation() and
 // openProjectFromStore().
 const FIT_TO_SCREEN_MARGIN = 10;
+// V2_8_8: reopens a project at its saved zoom / pan / rotation. Falls back to the fit view already set up
+// if the saved values are invalid or would leave the canvas off screen (the black-screen bug).
+function restoreSavedView(v) {
+    const fitIdx = zoomIndex;
+    const ok = n => typeof n === 'number' && isFinite(n);
+    if (v && ok(v.zoomIndex) && v.zoomIndex >= 0 && v.zoomIndex < ZOOM_STEPS.length && ok(v.cameraScale) && v.cameraScale > 0.01 && v.cameraScale < 100 && ok(v.panX) && ok(v.panY) && ok(v.rot)) {
+        zoomIndex = Math.round(v.zoomIndex); scale = ZOOM_STEPS[zoomIndex];
+        cameraScale = v.cameraScale; cameraPanX = v.panX; cameraPanY = v.panY; cameraRotation = v.rot;
+        layoutAll(); applyCameraTransform();
+        let visible = false;
+        try { const r = container.getBoundingClientRect(), m = 40; visible = r.width > 4 && r.height > 4 && r.right > m && r.bottom > m && r.left < window.innerWidth - m && r.top < window.innerHeight - m; } catch (_) {}
+        if (visible) { if (typeof updateRotationLabel === 'function') updateRotationLabel(); return; }
+    }
+    zoomIndex = fitIdx; scale = ZOOM_STEPS[zoomIndex];
+    cameraScale = 1; cameraPanX = 0; cameraPanY = 0; cameraRotation = 0;
+    layoutAll(); applyCameraTransform();
+    if (typeof updateRotationLabel === 'function') updateRotationLabel();
+}
 function computeFitToScreenZoomIndex(w, h) {
     const { w: vw, h: vh } = getViewportSize();
     const availW = Math.max(1, vw - FIT_TO_SCREEN_MARGIN * 2);
@@ -12480,7 +12499,8 @@ function currentProjectSaveData(name) {
         mapartStaircase: selectedProfile === 'mapart' ? !!mapartStaircase : undefined,
         gridLines: !!showGridLines,
         backgroundColor: backgroundColor || null,
-        thumbHidden: !!currentThumbHidden
+        thumbHidden: !!currentThumbHidden,
+        view: { zoomIndex, cameraScale, panX: cameraPanX, panY: cameraPanY, rot: cameraRotation }
     };
 }
 function downloadProjectData(data, fileBase) {
@@ -12583,9 +12603,11 @@ function openProjectFromSaveData(data, opts, onDone) {
             gridW = data.gridW; gridH = data.gridH;
             selectedProfile = data.profile || 'pixelArt';
             if (selectedProfile === 'standard') selectedProfile = 'pixelArt';
-            // Always open fit-to-screen, never at the saved zoom (see computeFitToScreenZoomIndex).
+            // Start from fit-to-screen with a clean camera (stale pan/pinch from the previous project used to leave the screen black);
+            // the project's saved view (data.view) is restored after layout below if it still shows the canvas.
             zoomIndex = computeFitToScreenZoomIndex(gridW, gridH);
             scale = ZOOM_STEPS[zoomIndex];
+            cameraScale = 1; cameraPanX = 0; cameraPanY = 0; cameraRotation = 0;
             portraitTilePalettes = new Map(Object.entries(data.portraitTilePalettes || {}));
             portraitActiveTileKey = data.portraitActiveTileKey || '0,0';
             portraitTileIsolation = selectedProfile === 'portrait' && !!data.portraitTileIsolation;
@@ -12610,6 +12632,7 @@ function openProjectFromSaveData(data, opts, onDone) {
             setActiveLayer(data.activeLayerId != null && layers.some(l => l.id === data.activeLayerId) ? layers.findIndex(l => l.id === data.activeLayerId) : Math.min(data.activeLayerIndex || 0, layers.length - 1));
             document.getElementById('framesSection').style.display = selectedProfile === 'sprite' ? 'flex' : 'none';
             layoutAll();
+            restoreSavedView(data.view);
             refreshHookedComposites();
             renderLayersPanel();
             renderFramesPanel();
