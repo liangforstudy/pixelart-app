@@ -316,6 +316,17 @@
             display: none; opacity: 0; transition: opacity .18s ease;
         }
         #appToast.showing { opacity: 1; }
+        .eyedrop-reopen-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px; font-size: 13px; color: #ccc; cursor: pointer; flex: 0 0 auto; width: 100%; box-sizing: border-box; }
+        .eyedrop-reopen-row input { width: 22px; height: 22px; margin: 0; accent-color: #0a84ff; flex: none; }
+        #eyedropToast {
+            position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); z-index: 905;
+            transform: translate(-50%, -8px); opacity: 0; pointer-events: none; white-space: nowrap;
+            background: rgba(30,30,34,var(--drawer-glass, 0.82)); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+            border: 1px solid rgba(255,255,255,0.12); border-radius: 18px; padding: 8px 14px;
+            font-size: 13px; font-weight: 600; color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.45);
+            transition: opacity .2s ease, transform .25s cubic-bezier(.32,.72,0,1);
+        }
+        #eyedropToast.showing { opacity: 1; transform: translate(-50%, 0); }
         #mapartProgressToast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 64px); z-index: 1440; width: min(320px, calc(100vw - 24px)); box-sizing: border-box;
             background: #232334; border: 1px solid #45475a; border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.5); display: none; pointer-events: none; }
         #mapartProgressToast .mpt-label { font-size: 13px; color: #eee; margin-bottom: 6px; }
@@ -1069,6 +1080,7 @@
     </div>
     <!-- Generic timed toast (showAppToast). Tap anywhere on it to dismiss early. -->
     <div id="appToast" onclick="hideAppToast()"></div>
+    <div id="eyedropToast">💧 Your eyedropper is active</div>
     <div id="mapartProgressToast" role="status" aria-live="polite"><div class="mpt-label">Matching mapart colours…</div><div class="mpt-bar"><div class="mpt-fill"></div></div></div>
 
     <!-- New Canvas / Import sheet (slides up over gallery) -->
@@ -1458,6 +1470,7 @@
                 <div id="currentColourChip" class="current-colour-chip" title="Drawing colour"></div>
                 <button id="coloursEyedropBtn" class="btn" onclick="uiAction(startEyedropFromColours)">💧 EYEDROPPER</button>
             </div>
+            <label class="eyedrop-reopen-row"><input type="checkbox" id="eyedropReopenColours" onchange="setEyedropReopen('colours', this.checked)"> Open this menu after selecting</label>
             <div class="panel-subtitle">BACKGROUND (CANVAS FILL)</div>
             <div class="row" id="bgRow" style="align-items:center;">
                 <div id="bgSwatchColours" class="bg-swatch bg-none"></div>
@@ -1780,7 +1793,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_12';
+const BUILD_VERSION = 'V2_8_13';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -2506,8 +2519,16 @@ function renderToolButtons() {
             btn.dataset.tool = t.id;
             btn.dataset.category = t.category;
             btn.textContent = t.label;
-            btn.onclick = () => uiAction(() => { handleToolBtn(t.id); if (t.id === 'eyedrop' && drawerOpenName === 'tools') closeDrawer(); });
+            btn.onclick = () => uiAction(() => { handleToolBtn(t.id); if (t.id === 'eyedrop') { eyedropSource = 'tools'; if (drawerOpenName === 'tools') closeDrawer(); } });
             container.appendChild(btn);
+            if (t.id === 'eyedrop') {
+                const lab = document.createElement('label'); lab.className = 'eyedrop-reopen-row';
+                const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'eyedropReopenTools'; cb.checked = !!eyedropReopenPrefs.tools;
+                cb.onchange = () => setEyedropReopen('tools', cb.checked);
+                lab.append(cb, document.createTextNode(' Open this menu after selecting'));
+                const prev = document.getElementById('eyedropReopenTools'); if (prev) prev.closest('label').remove();
+                container.after(lab);
+            }
         });
     });
 }
@@ -9895,6 +9916,8 @@ function setupPaletteDragEvents() {
 }
 
 let toolBeforeEyedrop = 'brush';
+let eyedropSource = null;
+let eyedropReopenPrefs = (() => { try { const v = JSON.parse(localStorage.getItem('pixelart.eyedropReopen') || '{}'); return { tools: !!v.tools, colours: !!v.colours }; } catch (_) { return { tools: false, colours: false }; } })();
 // Remembers the most recently used pixel tool and the most recently used
 // vector tool separately, so switching between a pixel layer and a vector
 // layer restores whichever tool was actually last used on that layer type
@@ -9975,6 +9998,7 @@ function handleToolBtn(t) {
     // not size/softness-based), so it needs its own check here.
     if ((selectedProfile === 'portrait' || selectedProfile === 'mapart') && t === 'colorToAlpha') t = 'pencil';
     if (t !== 'eyedrop') eyedropReturnToColours = false;
+    if (t !== 'eyedrop') eyedropSource = null;
     if (t === 'eyedrop' && currentTool !== 'eyedrop') toolBeforeEyedrop = currentTool;
     // Remember the tool actually being switched to, per type, so a later
     // pixel<->vector layer switch can restore it (see lastPixelTool/
@@ -10015,7 +10039,26 @@ function startEyedropFromColours() {
     exitBackgroundPickMode();
     handleToolBtn('eyedrop');
     eyedropReturnToColours = true;
+    eyedropSource = 'colours';
     closePanel();
+}
+function setEyedropReopen(which, on) {
+    eyedropReopenPrefs[which] = !!on;
+    try { localStorage.setItem('pixelart.eyedropReopen', JSON.stringify(eyedropReopenPrefs)); } catch (_) {}
+    const cb = document.getElementById(which === 'tools' ? 'eyedropReopenTools' : 'eyedropReopenColours'); if (cb) cb.checked = !!on;
+}
+function eyedropAfterSample() {
+    const src = eyedropSource; eyedropSource = null;
+    if (src === 'tools' && eyedropReopenPrefs.tools) openDrawer('tools');
+    else if (src === 'colours' && eyedropReopenPrefs.colours) openPanel('colors');
+}
+function updateEyedropToast() {
+    const el = document.getElementById('eyedropToast'); if (!el) return;
+    const shell = document.getElementById('pixel-canvas-screen');
+    const editorShown = !shell || shell.style.display !== 'none';
+    const panelsOk = !openPanelName || (openPanelName === 'layers' && typeof isLayersStrip === 'function' && isLayersStrip());
+    const xfOn = typeof XF !== 'undefined' && XF.open;
+    el.classList.toggle('showing', currentTool === 'eyedrop' && editorShown && !drawerOpenName && panelsOk && !xfOn);
 }
 const KRT_SIZE = 220;
 const KRT_OUTER = 0.96;
@@ -10733,6 +10776,7 @@ function setupDrawingEvents() {
             if (!activeL || activeL.type !== 'reference') currentTool = toolBeforeEyedrop;
             updateUI();
             eyedropReturnToColours = false;
+            if (currentTool !== 'eyedrop') eyedropAfterSample();
             g.suppressStroke = true;
             return;
         }
@@ -16727,6 +16771,11 @@ function setupSpriteAnimOffsetDrag() {
     canvas.addEventListener('pointercancel', end);
     canvas.addEventListener('pointerleave', end);
 }
+['openPanel','closePanel','openDrawer','closeDrawer','updateUI','applyLayersDrawerPrefs','xfOpen','xfClose','showGallery','goToMainMenu','handleToolBtn'].forEach(n => {
+    const f = window[n]; if (typeof f !== 'function') return;
+    window[n] = function () { const r = f.apply(this, arguments); try { updateEyedropToast(); } catch (_) {} return r; };
+});
+try { updateEyedropToast(); } catch (_) {}
 </script>
 </body>
 </html>

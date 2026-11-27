@@ -51,8 +51,8 @@ GROUPS = {
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
                   ['test_transform_basics', 'test_transform_selection_and_kinds', 'test_transform_live_preview', 'test_transform_intro_outro']),
-    'eyedrop': ('Eyedropper (Colours drawer #coloursEyedropBtn, startEyedropFromColours, #currentColourChip) and sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
-                ['test_eyedrop_sample_size', 'test_eyedrop_faded_reference', 'test_eyedrop_from_colours']),
+    'eyedrop': ('Eyedropper (Colours drawer #coloursEyedropBtn, startEyedropFromColours, #currentColourChip) and sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, open-this-menu-after-selecting checkboxes (eyedropReopenPrefs, setEyedropReopen, eyedropAfterSample), #eyedropToast (updateEyedropToast), #eyedropControls, doToolAt eyedrop, cursor square.',
+                ['test_eyedrop_sample_size', 'test_eyedrop_faded_reference', 'test_eyedrop_from_colours', 'test_eyedrop_reopen_and_toast']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
                   ['test_space_pan', 'test_wheel_zoom_anchor', 'test_mouse_cursor_visibility']),
     'reference': ('Reference layers: ReferenceLayer (drawSource, isPixelated, layoutCSS, setActualSize, drawInto, sampleAt), sampling modes, buildReferenceTransformUI, eyedropper (doToolAt eyedrop), flattenTreeToCanvas includeRefs, generateThumbnailDataURL, reference save/load. Mapart colours on references: see the mapart group.',
@@ -1558,6 +1558,41 @@ async def test_mapart_reference_match(pg):
     check('refmethod: per-layer method saved with the project', await pg.evaluate("() => layers.find(l => l.type === 'reference').mapartMethod === 'hct'"))
     await pg.evaluate("() => selectProfile('pixelArt')"); await pg.wait_for_timeout(200)
     check('refmatch: outside Mapart the reference shows the original image again', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l.el.width === 64 && l.el.height === 48 && l.el.style.transform !== 'none'; }"))
+
+async def test_eyedrop_reopen_and_toast(pg):
+    await new_canvas(pg)
+    await pg.evaluate(DRAW, [[[3, 3]], '#123456'])
+    await pg.evaluate("() => { zoomIndex = ZOOM_STEPS.indexOf(8); scale = 8; layoutAll(); setEyedropReopen('tools', false); setEyedropReopen('colours', false); }")
+    TOAST = "() => document.getElementById('eyedropToast').classList.contains('showing')"
+    await pg.evaluate("() => openDrawer('tools')"); await pg.wait_for_timeout(400)
+    check('eyedrop reopen: checkbox sits under the Tools eyedropper, unticked', await pg.evaluate("() => { const b = document.querySelector('#toolsDrawer .tool-btn[data-tool=eyedrop]'), c = document.getElementById('eyedropReopenTools'); return !!c && b.parentElement.nextElementSibling === c.closest('label') && document.querySelectorAll('#eyedropReopenTools').length === 1 && !c.checked && c.closest('label').textContent.includes('Open this menu after selecting'); }"))
+    await pg.locator('#toolsDrawer .tool-btn[data-tool=eyedrop]').click(); await pg.wait_for_timeout(450)
+    check('eyedrop toast: shows when the eyedropper is active and drawers are closed', await pg.evaluate(TOAST) and await pg.locator('#eyedropToast').is_visible())
+    check('eyedrop toast: says the eyedropper is active', 'eyedropper is active' in (await pg.locator('#eyedropToast').text_content()).lower())
+    await tap(pg, 3, 3); await pg.wait_for_timeout(450)
+    check('eyedrop reopen: unticked leaves the Tools drawer closed', await pg.evaluate("() => drawerOpenName === null && selectedColor === '#123456'"))
+    check('eyedrop toast: gone once the tool is back to the pencil', not await pg.evaluate(TOAST))
+    await pg.evaluate("() => openDrawer('tools')"); await pg.wait_for_timeout(400)
+    await pg.locator('#eyedropReopenTools').click()
+    await pg.locator('#toolsDrawer .tool-btn[data-tool=eyedrop]').click(); await pg.wait_for_timeout(450)
+    await tap(pg, 3, 3); await pg.wait_for_timeout(450)
+    check('eyedrop reopen: ticked reopens the Tools drawer after picking', await pg.evaluate("() => drawerOpenName === 'tools'"))
+    await pg.evaluate("() => { closeDrawer(); openPanel('colors'); }")
+    await pg.wait_for_timeout(400)
+    check('eyedrop reopen: checkbox sits under the Colours eyedropper, unticked', await pg.evaluate("() => { const c = document.getElementById('eyedropReopenColours'); return !!c && !c.checked && document.getElementById('currentColourRow').nextElementSibling === c.closest('label'); }"))
+    await pg.locator('#eyedropReopenColours').click()
+    await pg.locator('#coloursEyedropBtn').click(); await pg.wait_for_timeout(450)
+    check('eyedrop toast: shows after starting from Colours', await pg.evaluate(TOAST))
+    await pg.evaluate("() => openPanel('layers')"); await pg.wait_for_timeout(300)
+    await pg.evaluate("() => setLayersDrawerMode('full')"); await pg.wait_for_timeout(100)
+    check('eyedrop toast: hidden while the full layers drawer is open', not await pg.evaluate(TOAST))
+    await pg.evaluate("() => setLayersDrawerMode('strip')"); await pg.wait_for_timeout(100)
+    check('eyedrop toast: shows with the layers drawer in compact view', await pg.evaluate(TOAST))
+    await pg.evaluate("() => closePanel()"); await pg.wait_for_timeout(450)
+    await tap(pg, 3, 3); await pg.wait_for_timeout(450)
+    check('eyedrop reopen: ticked reopens the Colours panel after picking', await pg.evaluate("() => openPanelName === 'colors'"))
+    check('eyedrop reopen: both choices saved', await pg.evaluate("() => { const v = JSON.parse(localStorage.getItem('pixelart.eyedropReopen')); return v.tools === true && v.colours === true; }"))
+    await pg.evaluate("() => { setEyedropReopen('tools', false); setEyedropReopen('colours', false); closePanel(); }")
 
 async def test_eyedrop_faded_reference(pg):
     import base64
