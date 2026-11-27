@@ -13836,11 +13836,14 @@ function xfFieldChanged(id) {
 // outside = rotate, two fingers = pinch scale + rotate + move, Space = pan view.
 function xfHitHandle(clientX, clientY) {
     const m = xfViewMetrics();
+    // Nearest handle within reach (small pieces have overlapping hit circles; first-match picked the wrong one).
+    let best = -1, bestD = 22;
     for (let i = 0; i < XF_HANDLES.length; i++) {
         const [gx, gy] = xfBoxPoint(XF.st, XF_HANDLES[i][0], XF_HANDLES[i][1]);
-        if (Math.hypot(m.rect.left + m.ox + gx * m.sc - clientX, m.rect.top + m.oy + gy * m.sc - clientY) <= 22) return i;
+        const d = Math.hypot(m.rect.left + m.ox + gx * m.sc - clientX, m.rect.top + m.oy + gy * m.sc - clientY);
+        if (d <= bestD) { bestD = d; best = i; }
     }
-    return -1;
+    return best;
 }
 function xfPointerDown(e) {
     const c = e.currentTarget; try { c.setPointerCapture(e.pointerId); } catch (_) {}

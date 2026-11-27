@@ -1592,7 +1592,7 @@ async def test_transform_basics(pg):
     await pg.evaluate("() => { openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }"); await pg.wait_for_timeout(300)
     await pg.locator('#layerTransformOpenBtn').click(); await pg.wait_for_timeout(300)
     check('xf: TRANSFORM opens the full screen around the layer content', await pg.evaluate("() => XF.open && document.getElementById('xfScreen').style.display === 'flex' && XF.st.w === 3 && XF.st.h === 2 && XF.st.cx === 5.5 && XF.st.cy === 5"))
-    check('xf: Free and Mesh are shown as planned, Default is active', await pg.evaluate("() => document.querySelector('.xf-tab.active').textContent === 'Default' && document.querySelectorAll('.xf-tab-later').length === 2"))
+    check('xf: Perspective and Puppet are shown as planned, Default is active', await pg.evaluate("() => document.querySelector('.xf-tab.active').textContent.trim().endsWith('Default') && [...document.querySelectorAll('.xf-tab-later')].map(b => b.dataset.mode).join() === 'perspective,puppet' && document.querySelectorAll('.xf-tab-later').length === 2"))
     await pg.locator('#xfMoveStep').fill('10'); await pg.locator('#xfMoveStep').dispatch_event('change')
     await pg.locator('#xfRightBtn').click()
     check('xf: typed move step: one arrow press moves 10 px', await pg.evaluate("() => xfPrefs.moveStep === 10 && document.getElementById('xfX').value === '14'"))
@@ -1628,11 +1628,11 @@ async def test_transform_basics(pg):
     await pg.evaluate("() => { xfOpen(); XF.st.cx += 4; }")
     await pg.locator('#xfCancelBtn').click()
     check('xf: cancel changes nothing and adds no undo step', await pg.evaluate("() => !XF.open && undoStack.length") == n_undo and await pg.evaluate(LAYER_GRID) == {f'{x},{y}': c for (x, y), c in cols.items()})
-    # handle drag: right edge with ratio unlocked -> left edge stays
+    # handle drag: right edge with ratio unlocked -> centre stays (V2_8_6: handles anchor at the centre)
     await pg.evaluate("() => { xfPrefs.lock = false; xfOpen(); }"); await pg.wait_for_timeout(200)
     p0 = await pg.evaluate("() => { const m = xfViewMetrics(); const [gx, gy] = xfBoxPoint(XF.st, 1, 0); return [m.rect.left + m.ox + gx * m.sc, m.rect.top + m.oy + gy * m.sc, m.sc]; }")
     await pg.mouse.move(p0[0], p0[1]); await pg.mouse.down(); await pg.mouse.move(p0[0] + 3 * p0[2], p0[1], steps=4); await pg.mouse.up()
-    check('xf: dragging the right handle widens it, left edge stays put', await pg.evaluate("() => Math.abs(XF.st.w - 6) < 0.01 && Math.abs((XF.st.cx - XF.st.w / 2) - 4) < 0.01 && XF.st.h === 2"), await pg.evaluate("() => XF.st"))
+    check('xf: dragging the right handle widens both sides, centre stays put', await pg.evaluate("() => Math.abs(XF.st.w - 9) < 0.01 && Math.abs(XF.st.cx - 5.5) < 0.01 && XF.st.h === 2"), await pg.evaluate("() => XF.st"))
     await pg.keyboard.press('Escape')
     check('xf: Escape cancels', await pg.evaluate("() => !XF.open"))
     # off-canvas content is cut on Done
