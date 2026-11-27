@@ -1780,7 +1780,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_11';
+const BUILD_VERSION = 'V2_8_12';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -6551,18 +6551,20 @@ function updateGridOverlay() {
     const addLines = (step, thick, color, cls) => {
         for (let x = step; x < gridW; x += step) {
             const d = document.createElement('div'); d.className = cls;
-            d.style.cssText = 'position:absolute;top:0;height:' + H + 'px;width:' + thick + 'px;left:' + (Math.round(x * scale) - thick / 2) + 'px;background:' + color + ';';
+            d.style.cssText = 'position:absolute;top:0;height:' + H + 'px;width:' + thick + 'px;left:' + (Math.round(x * scale) - Math.floor(thick / 2)) + 'px;background:' + color + ';';
             frag.appendChild(d);
         }
         for (let y = step; y < gridH; y += step) {
             const d = document.createElement('div'); d.className = cls;
-            d.style.cssText = 'position:absolute;left:0;width:' + W + 'px;height:' + thick + 'px;top:' + (Math.round(y * scale) - thick / 2) + 'px;background:' + color + ';';
+            d.style.cssText = 'position:absolute;left:0;width:' + W + 'px;height:' + thick + 'px;top:' + (Math.round(y * scale) - Math.floor(thick / 2)) + 'px;background:' + color + ';';
             frag.appendChild(d);
         }
     };
     // Chunk lines first so map lines paint over them where they coincide.
-    if (showChunk) addLines(GRID_CHUNK_PX, 2, 'rgba(48,48,48,0.9)', 'grid-chunk-line');
-    if (showMap) addLines(GRID_MAP_PX, 3, '#e53935', 'grid-map-line');
+    const chunkThick = showPixel ? 2 : 1;
+    const mapThick = showPixel ? 3 : showChunk ? 2 : 1;
+    if (showChunk) addLines(GRID_CHUNK_PX, chunkThick, 'rgba(48,48,48,0.9)', 'grid-chunk-line');
+    if (showMap) addLines(GRID_MAP_PX, mapThick, '#e53935', 'grid-map-line');
     el.appendChild(frag);
 }
 // Sets the grid on/off, syncs the View panel button and redraws.
