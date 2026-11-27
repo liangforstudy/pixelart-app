@@ -1554,6 +1554,13 @@
             <div id="customisationMenu4" class="row">
                 <button class="btn" onclick="uiAction(() => openCustomisationSection('mapart'))">🗺️ MAPART COLOUR MATCHING</button>
             </div>
+            <div id="customisationMenu5" style="padding:2px 0;">
+                <div class="panel-subtitle">Wait before drawing after a pinch / pan</div>
+                <div class="row" style="align-items:center;">
+                    <input type="range" id="gestureDrawDelay" min="0" max="0.5" step="0.05" value="0.15" oninput="uiAction(() => setGestureDrawDelay(this.value))" style="flex:1;">
+                    <span id="gestureDrawDelayLabel" style="font-size:12px;color:#ccc;width:44px;text-align:right;">0.15 s</span>
+                </div>
+            </div>
             <div id="customisationSection-mapart" style="display:none;">
                 <button class="btn" onclick="uiAction(closeCustomisationSection)">← BACK</button>
                 <div class="panel-subtitle">Mapart Colour Matching</div>
@@ -1736,7 +1743,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_8';
+const BUILD_VERSION = 'V2_8_9';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -3945,6 +3952,7 @@ function openCustomisationSection(section) {
     document.getElementById('customisationMenu2').style.display = 'none';
     document.getElementById('customisationMenu3').style.display = 'none';
     document.getElementById('customisationMenu4').style.display = 'none';
+    document.getElementById('customisationMenu5').style.display = 'none';
     document.getElementById('customisationSection-mapart').style.display = section === 'mapart' ? '' : 'none';
     if (section === 'mapart') syncMapartPrefsUI();
     document.getElementById('customisationSection-resize').style.display = section === 'resize' ? '' : 'none';
@@ -3955,11 +3963,26 @@ function openCustomisationSection(section) {
     if (section === 'checker') renderCheckerProfilePicker();
     if (section === 'gradient') renderGradientStopColorSourcePicker();
 }
+// V2_8_9: after a two-finger pinch/pan (or a Pan-tool / Space drag) ends, a new one-finger touch that starts
+// within this many seconds is ignored, so the finger left over from the gesture doesn't draw. 0..0.5 s, default 0.15.
+let gestureDrawDelay = 0.15, lastGestureEndAt = 0;
+try { const v = parseFloat(localStorage.getItem('pixelAppGestureDrawDelay')); if (isFinite(v) && v >= 0 && v <= 0.5) gestureDrawDelay = v; } catch (_) {}
+function syncGestureDrawDelayUI() {
+    const r = document.getElementById('gestureDrawDelay'), l = document.getElementById('gestureDrawDelayLabel');
+    if (r && document.activeElement !== r) r.value = gestureDrawDelay; if (l) l.textContent = gestureDrawDelay.toFixed(2) + ' s';
+}
+function setGestureDrawDelay(v) {
+    gestureDrawDelay = Math.max(0, Math.min(0.5, Math.round((parseFloat(v) || 0) * 100) / 100));
+    try { localStorage.setItem('pixelAppGestureDrawDelay', String(gestureDrawDelay)); } catch (_) {}
+    syncGestureDrawDelayUI();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncGestureDrawDelayUI); else syncGestureDrawDelayUI();
 function closeCustomisationSection() {
     document.getElementById('customisationMenu').style.display = '';
     document.getElementById('customisationMenu2').style.display = '';
     document.getElementById('customisationMenu3').style.display = '';
     document.getElementById('customisationMenu4').style.display = '';
+    document.getElementById('customisationMenu5').style.display = '';
     document.getElementById('customisationSection-mapart').style.display = 'none';
     document.getElementById('customisationSection-resize').style.display = 'none';
     document.getElementById('customisationSection-tools').style.display = 'none';
@@ -11709,6 +11732,7 @@ function setupDrawingEvents() {
 
         const layer = activeLayer();
         if (!layer) return;
+        if (touches && performance.now() - lastGestureEndAt < gestureDrawDelay * 1000) return; // settle time after a pinch / pan
         g.lastClient = { x: cx, y: cy };
         const [x, y] = getPosFromClient(cx, cy);
         syncPortraitPaletteForPoint(x,y);
@@ -11795,6 +11819,8 @@ function setupDrawingEvents() {
 
     const onEnd = (e) => {
         const touches = e.touches;
+        if (g.cameraGesture || g.xform || (g.manualPan && g.manualPan.moved)) g.hadGesture = true;
+        if (g.hadGesture && !(touches && touches.length)) { lastGestureEndAt = performance.now(); g.hadGesture = false; }
         if (touches && touches.length >= 1) {
             if (g.xform && g.xform.type === 'pinch' && touches.length === 1 && transformActive()) {
                 const layer = activeLayer();
