@@ -316,6 +316,11 @@
             display: none; opacity: 0; transition: opacity .18s ease;
         }
         #appToast.showing { opacity: 1; }
+        #mapartProgressToast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 64px); z-index: 1440; width: min(320px, calc(100vw - 24px)); box-sizing: border-box;
+            background: #232334; border: 1px solid #45475a; border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.5); display: none; pointer-events: none; }
+        #mapartProgressToast .mpt-label { font-size: 13px; color: #eee; margin-bottom: 6px; }
+        #mapartProgressToast .mpt-bar { height: 6px; border-radius: 3px; background: #3a3a4a; overflow: hidden; }
+        #mapartProgressToast .mpt-fill { height: 100%; width: 0; background: #0a84ff; transition: width .12s linear; }
         #galleryStorageStatus { font-size: 11px; color: #888; padding: 0 16px 8px; line-height: 1.4; }
         #galleryStorageStatus.warn { color: #f0c36a; }
         #galleryStorageStatus .storage-status-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
@@ -1039,6 +1044,7 @@
     </div>
     <!-- Generic timed toast (showAppToast). Tap anywhere on it to dismiss early. -->
     <div id="appToast" onclick="hideAppToast()"></div>
+    <div id="mapartProgressToast" role="status" aria-live="polite"><div class="mpt-label">Matching mapart colours…</div><div class="mpt-bar"><div class="mpt-fill"></div></div></div>
 
     <!-- New Canvas / Import sheet (slides up over gallery) -->
     <div id="new-canvas-modal">
@@ -1743,7 +1749,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_9';
+const BUILD_VERSION = 'V2_8_10';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -2740,8 +2746,9 @@ function colourHct(r, g, b) {
 }
 // A colour in the chosen method's space (CIEDE2000 modes return Lab and
 // compare with colourDeltaE2000; the rest compare by squared distance).
-function mapartMetric(r, g, b) {
-    switch (mapartColourMethod) {
+function mapartMetric(r, g, b) { return mapartMetricFor(mapartColourMethod, r, g, b); }
+function mapartMetricFor(method, r, g, b) {
+    switch (method) {
         case 'euclidean': return [r, g, b];
         case 'cie76-d65': case 'ciede2000-d65': return colourLab(r, g, b, false);
         case 'cie76-d50': case 'ciede2000-d50': return colourLab(r, g, b, true);
@@ -2854,7 +2861,85 @@ function openBackgroundPickerFromLayers() {
     backgroundPickReturnPanel = 'layers';
     updateBackgroundUI();
 }
-function mapartResetPaletteCache() { mapartAllowed = null; mapartAllowedSet = null; mapartAllowedLab = null; mapartSnapCache.clear(); mapartPaletteVersion++; }
+function mapartResetPaletteCache() { mapartAllowed = null; mapartAllowedSet = null; mapartAllowedLab = null; mapartSnapCache.clear(); mapartMethodCaches.clear(); mapartPaletteVersion++; }
+// V2_8_10: per-reference-layer matching method. Other methods than the global one keep their own palette values + snap cache.
+const mapartMethodCaches = new Map(); // method id -> { lab:[...], cache: Map }
+function mapartSnapRGBWith(method, r, g, b) {
+    if (!method || method === mapartColourMethod) return mapartSnapRGB(r, g, b);
+    const pal = mapartAllowedHexes();
+    let e = mapartMethodCaches.get(method);
+    if (!e) { e = { lab: pal.map(hx => mapartMetricFor(method, parseInt(hx.slice(1, 3), 16), parseInt(hx.slice(3, 5), 16), parseInt(hx.slice(5, 7), 16))), cache: new Map() }; mapartMethodCaches.set(method, e); }
+    const key = (r << 16) | (g << 8) | b, hit = e.cache.get(key);
+    if (hit) return hit;
+    const v = mapartMetricFor(method, r, g, b), de2000 = method === 'ciede2000-d65' || method === 'ciede2000-d50';
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < pal.length; i++) {
+        const q = e.lab[i]; let d;
+        if (de2000) d = colourDeltaE2000(v, q);
+        else { const d0 = v[0] - q[0], d1 = v[1] - q[1], d2 = v[2] - q[2]; d = d0 * d0 + d1 * d1 + d2 * d2; }
+        if (d < bestD) { bestD = d; best = i; }
+    }
+    e.cache.set(key, pal[best]);
+    return pal[best];
+}
+// V2_8_10: mapart reference matching runs in time-sliced chunks with a progress toast (#mapartProgressToast)
+// so big maps (e.g. 4x3) don't freeze the page. Sync callers (eyedrop, thumbnails, exports) finish a job on the spot.
+const mapartMatchJobs = new Set();
+let mapartMatchTimer = 0, mapartMatchTotal = 0, mapartMatchDoneBase = 0;
+function mapartMatchProgress() {
+    let done = mapartMatchDoneBase, total = mapartMatchTotal;
+    mapartMatchJobs.forEach(j => { done += j.i / 4; });
+    return total ? Math.min(1, done / total) : 1;
+}
+function updateMapartProgressToast() {
+    const t = document.getElementById('mapartProgressToast'); if (!t) return;
+    if (!mapartMatchJobs.size) { t.style.display = 'none'; mapartMatchTotal = 0; mapartMatchDoneBase = 0; return; }
+    const pct = Math.round(mapartMatchProgress() * 100);
+    t.style.display = 'block';
+    t.querySelector('.mpt-label').textContent = 'Matching mapart colours\u2026 ' + pct + '%' + (mapartMatchJobs.size > 1 ? ' (' + mapartMatchJobs.size + ' layers)' : '');
+    t.querySelector('.mpt-fill').style.width = pct + '%';
+}
+function runMapartMatchJobStep(job, budgetMs) {
+    const o = job.data, n = o.length, t0 = performance.now();
+    while (job.i < n) {
+        const end = Math.min(n, job.i + 16384);
+        for (let i = job.i; i < end; i += 4) {
+            if (o[i + 3] < 128) { o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0; continue; }
+            const ck = (o[i] << 16) | (o[i + 1] << 8) | o[i + 2];
+            let pv = job.memo.get(ck);
+            if (pv === undefined) { pv = parseInt(mapartSnapRGBWith(job.method, o[i], o[i + 1], o[i + 2]).slice(1), 16); job.memo.set(ck, pv); }
+            o[i] = pv >> 16; o[i + 1] = (pv >> 8) & 255; o[i + 2] = pv & 255; o[i + 3] = 255;
+        }
+        job.i = end;
+        if (budgetMs != null && performance.now() - t0 > budgetMs) break;
+    }
+    return job.i >= n;
+}
+function finishMapartMatchJob(job) {
+    if (mapartMatchJobs.delete(job)) mapartMatchDoneBase += job.data.length / 4;
+    const layer = job.layer;
+    if (layer._mmJob === job) layer._mmJob = null;
+    const c = document.createElement('canvas'); c.width = job.W; c.height = job.H;
+    c.getContext('2d').putImageData(job.out, 0, 0);
+    layer._mmCanvas = c; layer._mmKey = job.key;
+}
+function pumpMapartMatchJobs() {
+    mapartMatchTimer = 0;
+    const t0 = performance.now(), finished = [];
+    for (const job of mapartMatchJobs) {
+        if (runMapartMatchJobStep(job, 24)) { finishMapartMatchJob(job); finished.push(job.layer); }
+        if (performance.now() - t0 > 24) break;
+    }
+    finished.forEach(l => { try { l.layoutCSS(); } catch (_) {} });
+    if (finished.length) { try { refreshHookedComposites(); } catch (_) {} }
+    updateMapartProgressToast();
+    if (mapartMatchJobs.size) mapartMatchTimer = setTimeout(pumpMapartMatchJobs, 0);
+}
+function queueMapartMatchJob(job) {
+    mapartMatchJobs.add(job); mapartMatchTotal += job.data.length / 4;
+    updateMapartProgressToast();
+    if (!mapartMatchTimer) mapartMatchTimer = setTimeout(pumpMapartMatchJobs, 0);
+}
 function refreshMapartReferenceLayers() {
     if (typeof frames === 'undefined' || !Array.isArray(frames)) return;
     frames.forEach(f => (f.layers || []).forEach(l => { if (l && l.type === 'reference' && l.mapartMatch) l.layoutCSS(); }));
@@ -4676,6 +4761,8 @@ class ReferenceLayer extends Layer {
         this.sampling = 'auto';
         this.mapartMatch = false;
         this.mapartScaling = 'pixel';
+        this.mapartMethod = null; // null = follow the Customise default; else a MAPART_COLOUR_METHODS id (V2_8_10)
+        this._mmJob = null;
         this._mmCanvas = null; this._mmKey = null; this._elShows = null; this._lzCanvas = null; this._lzKey = null;
         this.drawSource();
         traceLog('ReferenceLayer constructed: img=' + img.naturalWidth + '×' + img.naturalHeight + ' canvas=' + gridW + '×' + gridH + ' -> gx=' + this.gx.toFixed(2) + ' gy=' + this.gy.toFixed(2) + ' gw=' + this.gw.toFixed(2) + ' gh=' + this.gh.toFixed(2));
@@ -4694,38 +4781,47 @@ class ReferenceLayer extends Layer {
         catch (err) { console.error('ReferenceLayer drawImage failed:', err && err.message); }
     }
     mapartMatchActive() { return !!this.mapartMatch && selectedProfile === 'mapart'; }
-    mapartMatched() {
-        const W = gridW, H = gridH, mode = MAPART_REF_SCALINGS.includes(this.mapartScaling) ? this.mapartScaling : 'pixel';
-        const key = [mapartPaletteVersion, mode, W, H, this.gx, this.gy, this.gw, this.gh, this.rotation || 0, this.flipH ? 1 : 0, this.flipV ? 1 : 0].join(',');
+    mapartEffectiveMethod() { return this.mapartMethod && MAPART_COLOUR_METHODS.some(m => m.id === this.mapartMethod) ? this.mapartMethod : mapartColourMethod; }
+    // sync (default): returns the matched canvas, finishing any running job on the spot.
+    // sync=false (display path): starts/continues a time-sliced job and returns the last finished canvas (or null).
+    mapartMatched(sync) {
+        sync = sync !== false;
+        const W = gridW, H = gridH, mode = MAPART_REF_SCALINGS.includes(this.mapartScaling) ? this.mapartScaling : 'pixel', method = this.mapartEffectiveMethod();
+        const key = [mapartPaletteVersion, method, mode, W, H, this.gx, this.gy, this.gw, this.gh, this.rotation || 0, this.flipH ? 1 : 0, this.flipV ? 1 : 0].join(',');
         if (this._mmCanvas && this._mmKey === key) return this._mmCanvas;
-        let src = this.image;
-        if (mode === 'lanczos') {
-            const iw = Math.max(1, Math.round(Math.abs(this.gw))), ih = Math.max(1, Math.round(Math.abs(this.gh)));
-            const lk = iw + 'x' + ih;
-            if (!this._lzCanvas || this._lzKey !== lk) { this._lzCanvas = lanczosResizeImage(this.image, iw, ih); this._lzKey = lk; }
-            src = this._lzCanvas;
+        let job = this._mmJob;
+        if (job && job.key !== key) { if (mapartMatchJobs.delete(job)) mapartMatchTotal -= job.data.length / 4; job = this._mmJob = null; updateMapartProgressToast(); }
+        if (!job) {
+            let src = this.image;
+            if (mode === 'lanczos') {
+                const iw = Math.max(1, Math.round(Math.abs(this.gw))), ih = Math.max(1, Math.round(Math.abs(this.gh)));
+                const lk = iw + 'x' + ih;
+                if (!this._lzCanvas || this._lzKey !== lk) { this._lzCanvas = lanczosResizeImage(this.image, iw, ih); this._lzKey = lk; }
+                src = this._lzCanvas;
+            }
+            const sc = document.createElement('canvas'); sc.width = W; sc.height = H;
+            const sx = sc.getContext('2d', { willReadFrequently: true });
+            sx.imageSmoothingEnabled = mode === 'smooth';
+            sx.imageSmoothingQuality = 'high';
+            sx.translate(this.gx + this.gw / 2, this.gy + this.gh / 2);
+            sx.rotate((this.rotation || 0) * Math.PI / 180);
+            sx.scale(this.flipH ? -1 : 1, this.flipV ? -1 : 1);
+            try { sx.drawImage(src, -this.gw / 2, -this.gh / 2, this.gw, this.gh); } catch (e) { console.error('mapart reference match failed:', e && e.message); }
+            const out = sx.getImageData(0, 0, W, H);
+            job = this._mmJob = { layer: this, key, method, W, H, out, data: out.data, i: 0, memo: new Map() };
+            if (!sync) queueMapartMatchJob(job);
         }
-        const sc = document.createElement('canvas'); sc.width = W; sc.height = H;
-        const sx = sc.getContext('2d', { willReadFrequently: true });
-        sx.imageSmoothingEnabled = mode === 'smooth';
-        sx.imageSmoothingQuality = 'high';
-        sx.translate(this.gx + this.gw / 2, this.gy + this.gh / 2);
-        sx.rotate((this.rotation || 0) * Math.PI / 180);
-        sx.scale(this.flipH ? -1 : 1, this.flipV ? -1 : 1);
-        try { sx.drawImage(src, -this.gw / 2, -this.gh / 2, this.gw, this.gh); } catch (e) { console.error('mapart reference match failed:', e && e.message); }
-        const out = sx.getImageData(0, 0, W, H), o = out.data, memo = new Map();
-        for (let i = 0; i < o.length; i += 4) {
-            if (o[i + 3] < 128) { o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0; continue; }
-            const ck = (o[i] << 16) | (o[i + 1] << 8) | o[i + 2];
-            let pv = memo.get(ck);
-            if (pv === undefined) { pv = parseInt(mapartSnapRGB(o[i], o[i + 1], o[i + 2]).slice(1), 16); memo.set(ck, pv); }
-            o[i] = pv >> 16; o[i + 1] = (pv >> 8) & 255; o[i + 2] = pv & 255; o[i + 3] = 255;
+        if (sync) {
+            runMapartMatchJobStep(job, null);
+            finishMapartMatchJob(job);
+            updateMapartProgressToast();
+            return this._mmCanvas;
         }
-        const c = this._mmCanvas || document.createElement('canvas');
-        c.width = W; c.height = H;
-        c.getContext('2d').putImageData(out, 0, 0);
-        this._mmCanvas = c; this._mmKey = key;
-        return c;
+        return this._mmKey && this._mmCanvas ? this._mmCanvas : null;
+    }
+    setMapartMethod(id) {
+        this.mapartMethod = id && MAPART_COLOUR_METHODS.some(m => m.id === id) ? id : null;
+        this.layoutCSS();
     }
     setMapartScaling(mode) {
         if (!MAPART_REF_SCALINGS.includes(mode)) return;
@@ -4734,7 +4830,7 @@ class ReferenceLayer extends Layer {
     }
     setMapartMatch(on) {
         this.mapartMatch = !!on;
-        if (!this.mapartMatch) { this._mmCanvas = null; this._mmKey = null; this._lzCanvas = null; this._lzKey = null; }
+        if (!this.mapartMatch) { if (this._mmJob) { mapartMatchJobs.delete(this._mmJob); this._mmJob = null; updateMapartProgressToast(); } this._mmCanvas = null; this._mmKey = null; this._lzCanvas = null; this._lzKey = null; }
         this.layoutCSS();
     }
     // True when the current zoom shows it pixelated (see sampling above).
@@ -4746,8 +4842,8 @@ class ReferenceLayer extends Layer {
         return (this.gw * scale * dpr) / (this.image.naturalWidth || 1) >= 1;
     }
     layoutCSS() {
-        if (this.mapartMatchActive()) {
-            const c = this.mapartMatched();
+        const c = this.mapartMatchActive() ? this.mapartMatched(false) : null;
+        if (c) {
             if (this._elShows !== this._mmKey) {
                 this.el.width = c.width; this.el.height = c.height;
                 this.ctx.clearRect(0, 0, c.width, c.height);
@@ -5167,7 +5263,7 @@ function cloneLayer(l) {
     }
     const nl = new ReferenceLayer(l.name, l.image);
     nl.gx = l.gx; nl.gy = l.gy; nl.gw = l.gw; nl.gh = l.gh;
-    nl.rotation = l.rotation; nl.flipH = l.flipH; nl.flipV = l.flipV; nl.sampling = l.sampling || 'auto'; nl.mapartMatch = !!l.mapartMatch; nl.mapartScaling = l.mapartScaling || 'pixel';
+    nl.rotation = l.rotation; nl.flipH = l.flipH; nl.flipV = l.flipV; nl.sampling = l.sampling || 'auto'; nl.mapartMatch = !!l.mapartMatch; nl.mapartScaling = l.mapartScaling || 'pixel'; nl.mapartMethod = l.mapartMethod || null;
     nl.visible = l.visible; nl.opacity = l.opacity;
     return nl;
 }
@@ -7636,6 +7732,19 @@ function buildReferenceTransformUI(layer) {
                 scRow.appendChild(b);
             });
             wrap.appendChild(scRow);
+            const meLabel = document.createElement('div');
+            meLabel.innerText = 'COLOUR MATCHING (THIS LAYER)'; meLabel.style.fontSize = '9px'; meLabel.style.color = '#888'; meLabel.style.textAlign = 'center';
+            wrap.appendChild(meLabel);
+            const meSel = document.createElement('select');
+            meSel.id = 'refMapartMethodSelect'; meSel.className = 'num-input';
+            meSel.style.cssText = 'width:100%;height:44px;font-size:16px;text-align:left;padding:0 8px;';
+            const defLabel = (MAPART_COLOUR_METHODS.find(m => m.id === mapartColourMethod) || {}).label || mapartColourMethod;
+            const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Default (Customise: ' + defLabel + ')'; meSel.appendChild(o0);
+            MAPART_COLOUR_METHODS.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.label; meSel.appendChild(o); });
+            meSel.value = layer.mapartMethod || '';
+            meSel.onclick = (e) => e.stopPropagation();
+            meSel.onchange = (e) => { e.stopPropagation(); layer.setMapartMethod(meSel.value || null); refreshHookedComposites(); };
+            wrap.appendChild(meSel);
         }
     }
     return wrap;
@@ -12472,7 +12581,7 @@ function serializeLayerCore(l) {
     if (l.type === 'pixel' || l.type === 'image') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', dataURL: l.el.toDataURL() };
     if (l.type === 'mask' || l.type === 'clip') return { type: l.type, name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, dataURL: l.el.toDataURL(), hookedTo: l.hookedTo };
     if (l.type === 'vector') return { type: 'vector', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode || 'source-over', splines: l.splines, gradientHostFor: l.gradientHostFor || null };
-    return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, sampling: l.sampling || 'auto', mapartMatch: !!l.mapartMatch, mapartScaling: l.mapartScaling || 'pixel', dataURL: l.image.src };
+    return { type: 'reference', name: l.name, color: l.color || null, visible: l.visible, opacity: l.opacity, gx: l.gx, gy: l.gy, gw: l.gw, gh: l.gh, rotation: l.rotation || 0, flipH: !!l.flipH, flipV: !!l.flipV, sampling: l.sampling || 'auto', mapartMatch: !!l.mapartMatch, mapartScaling: l.mapartScaling || 'pixel', mapartMethod: l.mapartMethod || null, dataURL: l.image.src };
 }
 
 function serializeLayerTree(nodes, frameLayers) {
@@ -12606,7 +12715,7 @@ function buildFramesFromSaveData(data, onDone) {
                 else if (ld.type === 'image') { l = new ImageLayer(ld.name, w, h); l.loadFromImage(img); }
                 else if (ld.type === 'mask') { l = new MaskLayer(ld.name, w, h); l.loadFromImage(img); }
                 else if (ld.type === 'clip') { l = new ClipLayer(ld.name, w, h); l.loadFromImage(img); }
-                else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; l.sampling = ['auto', 'pixel', 'smooth'].includes(ld.sampling) ? ld.sampling : 'auto'; l.mapartMatch = !!ld.mapartMatch; l.mapartScaling = MAPART_REF_SCALINGS.includes(ld.mapartScaling) ? ld.mapartScaling : 'pixel'; }
+                else { l = new ReferenceLayer(ld.name, img); l.gx = ld.gx; l.gy = ld.gy; l.gw = ld.gw; l.gh = ld.gh; l.rotation = ld.rotation || 0; l.flipH = !!ld.flipH; l.flipV = !!ld.flipV; l.sampling = ['auto', 'pixel', 'smooth'].includes(ld.sampling) ? ld.sampling : 'auto'; l.mapartMatch = !!ld.mapartMatch; l.mapartScaling = MAPART_REF_SCALINGS.includes(ld.mapartScaling) ? ld.mapartScaling : 'pixel'; l.mapartMethod = MAPART_COLOUR_METHODS.some(m => m.id === ld.mapartMethod) ? ld.mapartMethod : null; }
                 common(l, ld);
             } catch (e) { fail(e && e.message); return; }
             slots[fi][li] = l; done();

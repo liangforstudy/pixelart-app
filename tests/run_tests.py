@@ -76,7 +76,7 @@ GROUPS = {
                  ['test_resize_prefs']),
     'new-canvas': ('New Canvas sheet (openNewCanvasModal, #newCanvasSizeBox, #newCanvasCreateBtn), startNewProjectFromGallery, the resize screen in "new" mode.',
                    ['test_new_canvas_size_on_screen', 'test_new_canvas_discard', 'test_new_canvas_portrait_keeps_fields']),
-    'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load, reference layer MAPART COLOURS (ReferenceLayer.mapartMatched, MAPART_REF_SCALINGS, lanczosResizeImage, refreshMapartReferenceLayers, #refMapartMatchBtn, #refMapartScalingRow).',
+    'mapart': ('Mapart profile: MAPART_DATA, mapartSnapColor/mapartSnapRGB/mapartLab, syncMapartPalette, toggleMapartStaircase, resolveMapartStaircaseOff, mapartConvertToFlat (pixelsMulti history), mapart import snapping, New Canvas size in maps, mapart save/load, reference layer MAPART COLOURS (ReferenceLayer.mapartMatched, MAPART_REF_SCALINGS, lanczosResizeImage, refreshMapartReferenceLayers, #refMapartMatchBtn, #refMapartScalingRow, #refMapartMethodSelect, mapartSnapRGBWith, #mapartProgressToast).',
                ['test_mapart_new_canvas_in_maps', 'test_resize_sheet_no_autoselect_outside_mapart', 'test_mapart_resize_sheet_in_maps', 'test_mapart_palette_locked', 'test_mapart_snap_matches_mapartcraft',
                 'test_mapart_staircase_toggle', 'test_mapart_staircase_off_convert_undo', 'test_mapart_save_load_and_leave',
                 'test_mapart_import_snaps', 'test_mapart_resize_whole_maps', 'test_mapart_grid_lines', 'test_mapart_colour_methods', 'test_mapart_reference_match', 'test_mapart_pencil_after_empty_pick']),
@@ -1473,6 +1473,17 @@ async def test_mapart_reference_match(pg):
     data = await pg.evaluate("() => JSON.parse(JSON.stringify(currentProjectSaveData('rm')))")
     await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(500)
     check('refmatch: setting and scaling saved with the project', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l && l.mapartMatch && l.mapartScaling === 'lanczos' && l.el.width === 128; }"))
+    # V2_8_10: per-layer colour matching method + progress toast
+    await pg.evaluate("() => { const i = layers.findIndex(l => l.type === 'reference'); setActiveLayer(i); openPanel('layers'); setLayersDrawerMode('full'); renderLayersPanel(); }"); await pg.wait_for_timeout(200)
+    check('refmethod: per-layer COLOUR MATCHING select shown, Default first', await pg.evaluate("() => { const s = document.getElementById('refMapartMethodSelect'); return !!s && s.value === '' && s.options[0].textContent.startsWith('Default'); }"))
+    await pg.select_option('#refMapartMethodSelect', 'hct')
+    check('refmethod: toast shows while matching, then hides', await pg.evaluate("() => new Promise(r => { const t = document.getElementById('mapartProgressToast'); const t0 = performance.now(); (function w(){ if (!mapartMatchJobs.size) return r(t.style.display === 'none'); if (performance.now() - t0 > 8000) return r(false); setTimeout(w, 50); })(); })"))
+    r = await pg.evaluate("() => { const l = activeLayer(); const want = mapartSnapRGBWith('hct', 0x12, 0x34, 0x56); return [l.mapartMethod, l.mapartEffectiveMethod(), mapartColourMethod, want]; }")
+    check('refmethod: layer uses HCT while the Customise default stays MapartCraft', r[:3] == ['hct', 'hct', 'mapartcraft'], r)
+    check('refmethod: matched pixels use the layer method (synced read)', await pg.evaluate("() => { const l = activeLayer(), c = l.mapartMatched(), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, ok = new Set(mapartAllowedHexes()); for (let i = 0; i < d.length; i += 4) if (d[i + 3] && !ok.has(rgbToHexBytes(d[i], d[i+1], d[i+2]))) return false; return l._mmKey.split(',')[1] === 'hct'; }"))
+    data = await pg.evaluate("() => JSON.parse(JSON.stringify(currentProjectSaveData('rm2')))")
+    await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data); await pg.wait_for_timeout(500)
+    check('refmethod: per-layer method saved with the project', await pg.evaluate("() => layers.find(l => l.type === 'reference').mapartMethod === 'hct'"))
     await pg.evaluate("() => selectProfile('pixelArt')"); await pg.wait_for_timeout(200)
     check('refmatch: outside Mapart the reference shows the original image again', await pg.evaluate("() => { const l = layers.find(l => l.type === 'reference'); return l.el.width === 64 && l.el.height === 48 && l.el.style.transform !== 'none'; }"))
 
