@@ -755,6 +755,14 @@
         #pixelToolsSection.ref-mode .tool-btn:not([data-tool="select"]):not([data-tool="wand"]):not([data-tool="lasso"]) { display: none !important; }
         #panel-layers.strip #layersEdgeSlider { top: 108px; }
         #panel-layers.layers-drawer { container-type: inline-size; }
+        /* Short screens (landscape phone): strip header goes side by side so the thumbnails get the height. */
+        @media (max-height: 500px) {
+            #panel-layers.strip .layers-drawer-header { flex-direction: row; justify-content: center; padding: 4px; gap: 4px; }
+            #panel-layers.strip .layers-hdr-btn { width: 40px; height: 40px; font-size: 18px; }
+            #panel-layers.strip #layersEdgeSlider { top: 50px; }
+            #panel-layers.strip #layersListPane { padding: 4px; }
+            #panel-layers.strip .layer-row img { width: 64px !important; height: 64px !important; }
+        }
         /* Free-width drawer: hide what doesn't fit as it narrows (strip mode has its own rules). */
         @container (max-width: 300px) {
             #panel-layers:not(.strip) .layer-type-badge, #panel-layers:not(.strip) .layer-settings-title small, #panel-layers:not(.strip) .layer-opacity-caption, #panel-layers:not(.strip) .layer-opacity-row > span { display: none; }
@@ -1718,7 +1726,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_3';
+const BUILD_VERSION = 'V2_8_4';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
