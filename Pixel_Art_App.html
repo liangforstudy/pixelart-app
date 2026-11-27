@@ -1718,7 +1718,7 @@
 // actually open" cost real debugging time (a diagnostic build that looked
 // unchanged, and general risk of testing a stale/cached tab). Update this
 // string with every new build.
-const BUILD_VERSION = 'V2_8_2';
+const BUILD_VERSION = 'V2_8_3';
 
 /* Restored ImageLayer */
 const PHOTO_HISTORY_TILE_SIZE = 64;
@@ -4259,15 +4259,16 @@ function setupDebugDrawerSplitHandle() {
 }
 // Watches a 20px screen-edge strip for a horizontal swipe and opens the
 // given drawer once the finger has moved far enough in from the edge.
-function setupEdgeSwipe(zoneId, drawerName, expectDirection) {
+function setupEdgeSwipe(zoneId, drawerName, expectDirection, opener) {
+    const open = opener || (() => openDrawer(drawerName));
     const zone = document.getElementById(zoneId);
     let startX = null;
     zone.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, {passive: true});
     zone.addEventListener('touchmove', (e) => {
         if (startX === null) return;
         const dx = e.touches[0].clientX - startX;
-        if (expectDirection === 'right' && dx > 28) { openDrawer(drawerName); startX = null; }
-        else if (expectDirection === 'left' && dx < -28) { openDrawer(drawerName); startX = null; }
+        if (expectDirection === 'right' && dx > 28) { open(); startX = null; }
+        else if (expectDirection === 'left' && dx < -28) { open(); startX = null; }
     }, {passive: true});
     zone.addEventListener('touchend', () => { startX = null; });
 }
@@ -7297,7 +7298,8 @@ const LAYERS_DRAWER_PREFS_KEY = 'pixelArtLayersDrawerPrefs';
 const LAYERS_FREE_MIN_W = 150; // below this a released drag drops to the 96px strip
 let layersDrawerPrefs = { mode:'strip', returnAfterStroke:true, glass:82, split:45, width:340 };
 try { const v=JSON.parse(localStorage.getItem(LAYERS_DRAWER_PREFS_KEY)||'null'); if(v&&typeof v==='object'){ if(v.mode==='strip'||v.mode==='full') layersDrawerPrefs.mode=v.mode; if(typeof v.returnAfterStroke==='boolean') layersDrawerPrefs.returnAfterStroke=v.returnAfterStroke; if(Number.isFinite(v.glass)&&v.glass>=40&&v.glass<=100) layersDrawerPrefs.glass=v.glass; if(Number.isFinite(v.split)&&v.split>=15&&v.split<=85) layersDrawerPrefs.split=v.split; if(Number.isFinite(v.width)&&v.width>=LAYERS_FREE_MIN_W&&v.width<=2000) layersDrawerPrefs.width=v.width; } } catch(_) {}
-function layersFullMaxW(){ return window.innerWidth-16; }
+// Leaves ~54px of canvas on the left so the left-edge Tools swipe zone stays uncovered.
+function layersFullMaxW(){ return Math.max(LAYERS_FREE_MIN_W, window.innerWidth-62); }
 function saveLayersDrawerPrefs(){ try { localStorage.setItem(LAYERS_DRAWER_PREFS_KEY, JSON.stringify(layersDrawerPrefs)); } catch(_) {} }
 function isLayersStrip(){ const p=document.getElementById('panel-layers'); return !!(p && p.classList.contains('strip')); }
 let layersGlassSliderBuilt = false;
@@ -14899,7 +14901,8 @@ document.getElementById('resize-apply-btn').addEventListener('click', () => {
 drawerBackdrop.addEventListener('touchstart', (e) => { e.preventDefault(); closeDrawer(); }, {passive: false});
 drawerBackdrop.addEventListener('mousedown', () => closeDrawer());
 setupEdgeSwipe('leftEdgeZone', 'tools', 'right');
-setupEdgeSwipe('rightEdgeZone', 'debug', 'left');
+// Right-edge swipe opens the Layers drawer (Debug stays on the ladybug button).
+setupEdgeSwipe('rightEdgeZone', 'layers', 'left', () => { if (openPanelName !== 'layers') openPanel('layers'); });
 renderToolButtons();
 applyAllCheckerProfiles();
 setupDebugDrawerSplitHandle();
