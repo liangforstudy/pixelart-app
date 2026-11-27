@@ -44,13 +44,13 @@ GROUPS = {
     'zoom-indicator': ('On-screen zoom readout: #zoomIndicator, formatZoom, updateZoomIndicator, live during pinch (applyCameraTransform).',
                        ['test_zoom_indicator']),
     'layers-drawer': ('Right-side glass layers drawer (#panel-layers.layers-drawer): strip/full mode, layersDrawerPrefs, hide while drawing, #layerSettingsPane, icon row, #layersSplitHandle, beginTreeDrag drag-to-reorder, #debugFab.',
-                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drawer_closes_after_three_strokes', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone', 'test_layers_duplicate_reachable']),
+                      ['test_layers_drawer_modes', 'test_layers_drawer_hides_while_drawing', 'test_layers_drawer_closes_after_three_strokes', 'test_layers_drag_reorder', 'test_layers_drag_into_group_and_cancel', 'test_layers_debug_on_top', 'test_layers_back_to_strip_and_done', 'test_drawer_splits_collapse_on_phone', 'test_layers_duplicate_reachable', 'test_drawers_share_glass_and_motion']),
     'colour-triangle': ('Colour triangle in the Colours panel (V2_9): krt state, krtHsvToRgb/krtRgbToHsv, krtBuildRing/krtBuildTriangle/krtDraw, krtPointerDown/Move/End, krtEmit, krtSyncFromSelected, krtRefreshUI, krtAddSwatch, krtMapPoints/krtDrawMapPoints/krtDrawSnapMarker (map dots, hue ticks, snap marker, DOTS toggle), krtNearest/krtRenderSuggest/krtPickSuggestion (6 suggested map colours), #krtCanvas, #krtReadout, #krtAddBtn; snaps to the map colours in Mapart via mapartSnapColor.',
                         ['test_colour_triangle_layout', 'test_colour_triangle_free_colour', 'test_colour_triangle_mapart_snaps', 'test_colour_triangle_syncs_from_drawing_colour', 'test_colour_triangle_one_pointer_and_background_pick', 'test_colour_triangle_suggestions', 'test_colour_triangle_map_dots']),
     'palette': ('Colour swatches: createSwatch, handleManageClick edit mode, setupPaletteDragEvents drag-to-swap, delete badges.',
                 ['test_palette_drag_swaps']),
     'transform': ('Transform screen (V2_6): xfOpen/xfClose/xfDone/xfCancel, xfResample, xfNudge/xfStepSize/xfStepRotate/xfFlip, xfFieldChanged, handles (xfPointerDown/Move), layerTransform history, #xfScreen, buildTransformOpenRow.',
-                  ['test_transform_basics', 'test_transform_selection_and_kinds', 'test_transform_live_preview']),
+                  ['test_transform_basics', 'test_transform_selection_and_kinds', 'test_transform_live_preview', 'test_transform_intro_outro']),
     'eyedrop': ('Eyedropper (Colours drawer #coloursEyedropBtn, startEyedropFromColours, #currentColourChip) and sample size: EYEDROP_SAMPLE_SIZES, setEyedropSampleSize, renderEyedropSampleRow, averageCanvasColour, #eyedropControls, doToolAt eyedrop, cursor square.',
                 ['test_eyedrop_sample_size', 'test_eyedrop_faded_reference', 'test_eyedrop_from_colours']),
     'space-pan': ('Hold Space to pan: spacePanHeld, setSpacePanHeld, keyTargetIsTextField, setupKeyboardShortcuts keydown/keyup, onStart viaSpace manualPan, window mousemove forwarding manualPan.',
@@ -85,7 +85,7 @@ GROUPS = {
     'cloud': ('Cloud Sync and share links (V2_8): opt-in per project (#ctx-cloud, cloudLinkProject/cloudUnlinkProject, relink choice sheet cloudResolveChoice), pixel-app/ folder, cloud, cloudState, cloudSync/cloudSyncOnce, cloudConnect, cloudMarkDirty/cloudMarkDeleted (hooked into persistProject/deleteProjectRecord), #galleryCloudBar, #cloud-modal sheets, openShareSheet, shareCompress, checkIncomingShare, saveDataLooksValid, #ctx-share.',
               ['test_cloud_sync_two_devices', 'test_cloud_share_links']),
     'gallery': ('Hub/gallery and saving: projectStore, IndexedDB, goToMainMenu, saveCurrentStateToStore, openProjectFromStore, gallery long-press menu (#gallery-ctx-menu).',
-                ['test_resize_from_gallery', 'test_gallery_thumbnail_privacy']),
+                ['test_resize_from_gallery', 'test_gallery_thumbnail_privacy', 'test_gallery_canvas_flies_to_card']),
 }
 # Editing any of these can break every group: run them all.
 SHARED_CODE = 'PixelLayer / ImageLayer classes, plot() / layer.plot(), bulkPixelWrite, history (pushUndo, beginEdit, commitEdit, undo, redo), layoutAll / camera, boot / init, the canvas gesture handlers (onStart, onMove, onEnd), CSS shared by many screens.'
@@ -170,7 +170,7 @@ async def test_colour_triangle_layout(pg):
     check('colour triangle: ring and triangle are drawn', lit > 5000, lit)
 
 async def test_colour_triangle_free_colour(pg):
-    await pg.evaluate("() => openPanel('colors')")
+    await pg.evaluate("() => openPanel('colors')"); await pg.wait_for_timeout(350)
     check('colour triangle: add-to-swatches button shows outside Mapart', await pg.locator('#krtAddBtn').is_visible())
     await krt_drag(pg, 'ring', 120)
     await krt_drag(pg, 'tri', 0.8, 0.9)
@@ -1073,6 +1073,71 @@ THUMB_ALPHA = """(id) => new Promise(res => { const p = projectStore.find(q => q
     img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); res(x.getImageData(img.width >> 1, img.height >> 1, 1, 1).data[3]); };
     img.onerror = () => res(-1); img.src = p.thumbnailDataURL; })"""
 
+async def test_drawers_share_glass_and_motion(pg):
+    await new_canvas(pg)
+    check('drawers: glass slider is no longer in the layers drawer', await pg.evaluate("() => !document.querySelector('#panel-layers #drawerGlassSliderSlot') && !document.getElementById('layersGlassSliderSlot')"))
+    await pg.locator('#tab-customisation').click() if await pg.locator('#tab-customisation').count() and await pg.locator('#tab-customisation').is_visible() else await pg.evaluate("() => openPanel('customisation')")
+    await pg.wait_for_timeout(400)
+    check('drawers: opacity slider shows in Customise', await pg.locator('#drawerGlassSliderSlot input, #drawerGlassSliderSlot [role=slider], #drawerGlassSliderSlot *').first.is_visible())
+    await pg.evaluate("() => { layersDrawerPrefs.glass = 60; applyDrawerGlass(); }")
+    bgs = await pg.evaluate("""() => ['panel-customisation','toolsDrawer','debugDrawer','panel-layers','panel-file'].map(id => getComputedStyle(document.getElementById(id)).backgroundColor)""")
+    check('drawers: every drawer and panel uses the same see-through background', len(set(bgs)) == 1 and '0.6' in bgs[0], bgs)
+    check('drawers: setting reaches the whole app', await pg.evaluate("() => document.documentElement.style.getPropertyValue('--drawer-glass') === '0.6'"))
+    await pg.evaluate("() => closePanel()")
+    mid = await pg.evaluate("() => new Promise(r => { const el = document.getElementById('panel-customisation'); requestAnimationFrame(() => r({vis: getComputedStyle(el).visibility, op: parseFloat(getComputedStyle(el).opacity)})); })")
+    check('drawers: closing panel slides out (still visible mid-animation)', mid['vis'] == 'visible' and mid['op'] > 0, mid)
+    await pg.wait_for_timeout(600)
+    check('drawers: closed panel ends hidden', not await pg.locator('#panel-customisation').is_visible())
+    await pg.evaluate("() => openDrawer('tools')"); await pg.wait_for_timeout(450)
+    check('drawers: tools drawer opens fully visible', await pg.evaluate("() => { const s = getComputedStyle(document.getElementById('toolsDrawer')); return s.visibility === 'visible' && parseFloat(s.opacity) > 0.99; }"))
+    await pg.evaluate("() => closeDrawer()"); await pg.wait_for_timeout(600)
+    check('drawers: tools drawer ends hidden', not await pg.locator('#toolsDrawer').is_visible())
+
+async def test_transform_intro_outro(pg):
+    await new_canvas(pg)
+    await pg.evaluate(DRAW, [[[x, y] for x in range(4, 8) for y in range(4, 8)], '#AA0000'])
+    await pg.evaluate("() => xfOpen()")
+    s0 = await pg.evaluate("() => XF.anim && {mode: XF.anim.mode, hs: XF.anim.hs, ap: XF.anim.ap}")
+    check('xf anim: handles and ants start from nothing', s0 and s0['mode'] == 'in' and s0['hs'] < 0.2 and s0['ap'] == 0, s0)
+    peak = await pg.evaluate("() => new Promise(r => { let mx = 0; const t0 = performance.now(); (function w(){ if (XF.anim) mx = Math.max(mx, XF.anim.hs); if (performance.now() - t0 < 700) requestAnimationFrame(w); else r(mx); })(); })")
+    check('xf anim: handles pop with a little overshoot', peak > 1.02, peak)
+    check('xf anim: intro finishes with full handles and ants', await pg.evaluate("() => XF.anim === null && XF.open"))
+    check('xf anim: top bar and bottom panel slid into place', await pg.evaluate("() => !document.getElementById('xfScreen').classList.contains('xf-pre') && getComputedStyle(document.getElementById('xfTopBar')).transform === 'none'"))
+    await pg.evaluate("() => xfCancel()")
+    out = await pg.evaluate("() => ({open: XF.open, closing: XF.closing, mode: XF.anim && XF.anim.mode, disp: document.getElementById('xfScreen').style.display})")
+    check('xf anim: exit plays in reverse before the screen hides', not out['open'] and out['closing'] and out['mode'] == 'out' and out['disp'] == 'flex', out)
+    await pg.wait_for_timeout(250)
+    check('xf anim: ants leave toward the next corner', await pg.evaluate("() => !XF.anim || XF.anim.ap > 0.3"))
+    await pg.wait_for_timeout(700)
+    check('xf anim: screen hidden after the exit', await pg.evaluate("() => document.getElementById('xfScreen').style.display === 'none' && !XF.closing && !XF.src"))
+    await pg.evaluate("() => { xfOpen(); xfCancel(); xfOpen(); }")
+    check('xf anim: reopening during the exit opens cleanly', await pg.evaluate("() => XF.open && !XF.closing && document.getElementById('xfScreen').style.display === 'flex'"))
+    await pg.evaluate("() => xfCancel()"); await pg.wait_for_timeout(900)
+
+async def test_gallery_canvas_flies_to_card(pg):
+    await new_canvas(pg)
+    await pg.evaluate(DRAW, [[[x, y] for x in range(32) for y in range(32)], '#00AA00'])
+    await pg.evaluate("() => goToMainMenu()")
+    g = await pg.evaluate("() => ({ghost: !!document.getElementById('galleryFxGhost'), black: !!document.getElementById('galleryFxBlack'), cardHidden: document.querySelector('.gallery-card[data-id] .thumb-wrap img').style.visibility === 'hidden'})")
+    check('gallery anim: exit shows the canvas ghost over a black fade', g['ghost'] and g['black'] and g['cardHidden'], g)
+    await pg.wait_for_timeout(700)
+    check('gallery anim: ghost lands and the card shows again', await pg.evaluate("() => !document.getElementById('galleryFxGhost') && !document.getElementById('galleryFxBlack') && document.querySelector('.gallery-card[data-id] .thumb-wrap img').style.visibility === ''"))
+    for i in range(7):
+        await pg.evaluate("(i) => { projectStore.push(Object.assign({}, projectStore[0], {id: 'fake' + i, name: 'Filler ' + i})); }", i)
+    await pg.evaluate("() => { const p = projectStore.shift(); projectStore.push(p); renderGallery(); document.getElementById('gallery-grid').scrollTop = 0; }")
+    pid = await pg.evaluate("() => projectStore[projectStore.length - 1].id")
+    await pg.evaluate("(id) => new Promise(r => openProjectFromStore(id, r))", pid); await pg.wait_for_timeout(300)
+    await pg.evaluate("() => goToMainMenu()"); await pg.wait_for_timeout(50)
+    vis = await pg.evaluate("(id) => { const c = document.querySelector('.gallery-card[data-id=\"' + id + '\"]'), g = document.getElementById('gallery-grid').getBoundingClientRect(), r = c.getBoundingClientRect(); return r.top >= g.top - 1 && r.bottom <= g.bottom + 1; }", pid)
+    check('gallery anim: an off-screen card is scrolled into view first', vis)
+    await pg.wait_for_timeout(700)
+    await pg.locator('.gallery-card[data-id="%s"]' % pid).click()
+    await pg.wait_for_timeout(30)
+    check('gallery anim: opening starts the reverse (ghost from the card)', await pg.evaluate("() => !!document.getElementById('galleryFxGhost') && !!document.getElementById('galleryFxBlack')"))
+    await pg.wait_for_timeout(1200)
+    check('gallery anim: editor shown, overlays gone, canvas visible', await pg.evaluate("() => document.getElementById('pixel-canvas-screen').style.display !== 'none' && !document.getElementById('galleryFxGhost') && !document.getElementById('galleryFxBlack') && container.style.visibility === ''"))
+    await pg.evaluate("() => { projectStore = projectStore.filter(p => !String(p.id).startsWith('fake')); }")
+
 async def test_gallery_thumbnail_privacy(pg):
     await new_canvas(pg)
     await pg.evaluate(DRAW, [[[x, y] for x in range(32) for y in range(32)], '#FF0000'])
@@ -1300,7 +1365,7 @@ async def test_mapart_grid_lines(pg):
     await pg.evaluate("() => setGridLines(false)")
     await pg.evaluate("(d) => new Promise(r => openProjectFromSaveData(d, {}, r))", data)
     await pg.wait_for_timeout(300)
-    check('grid: reopening the project turns it back on', await pg.evaluate("() => showGridLines === true && document.getElementById('gridToggleBtn').innerText.includes('ON')") and (await pg.evaluate(LINES))[1] == 2)
+    check('grid: reopening the project turns it back on', await pg.evaluate("() => showGridLines === true && document.getElementById('gridToggleBtn').textContent.includes('ON')") and (await pg.evaluate(LINES))[1] == 2)
     await new_canvas(pg)
     check('grid: a new project starts with the grid off', await pg.evaluate("() => showGridLines === false") and (await pg.evaluate(LINES))[2] == 'none')
     await pg.evaluate("() => { toggleGridLines(); zoomIndex = ZOOM_STEPS.indexOf(8); scale = 8; layoutAll(); }")
